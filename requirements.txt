@@ -1,0 +1,12 @@
+# 網站與資料庫
+Django>=5.2,<5.3
+PyMySQL>=1.1
+python-dotenv>=1.0
+
+# 網路爬蟲
+requests>=2.32
+beautifulsoup4>=4.12
+
+# 機器學習與資料分析
+pandas>=2.2
+scikit-learn>=1.5
