@@ -1,0 +1,11 @@
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{% url 'backoffice:dashboard' %}">後台管理</a></li>
+    {% if current %}
+      <li class="breadcrumb-item"><a href="{{ list_url }}">{{ menu_item.label }}</a></li>
+      <li class="breadcrumb-item active" aria-current="page">{{ current }}</li>
+    {% else %}
+      <li class="breadcrumb-item active" aria-current="page">{{ menu_item.label }}</li>
+    {% endif %}
+  </ol>
+</nav>

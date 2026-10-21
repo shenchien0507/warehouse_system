@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}{{ menu_item.label }}{% endblock %}
+
+{% block page_header %}
+  {% include "backoffice/_breadcrumb.html" with current=object|default:"新增" %}
+  <h1 class="h3 mb-4">{% if object %}編輯{{ menu_item.label }}：{{ object }}{% else %}新增{{ menu_item.label }}{% endif %}</h1>
+{% endblock %}
+
+{% block content %}
+  <div class="row">
+    <div class="col-lg-6">
+      {% include "components/_form.html" with form=form submit_text="儲存" cancel_url=list_url %}
+      {% block extra_actions %}{% endblock %}
+    </div>
+  </div>
+{% endblock %}

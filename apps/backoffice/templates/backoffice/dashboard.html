@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}後台管理{% endblock %}
+{% block heading %}後台管理{% endblock %}
+
+{% block content %}
+  <div class="row g-3">
+    {% for group, items in groups.items %}
+      <div class="col-md-4">
+        <div class="card h-100">
+          <div class="card-header">{{ group }}</div>
+          <div class="list-group list-group-flush">
+            {% for item in items %}
+              <a class="list-group-item list-group-item-action" href="{% url item.url_name %}">{{ item.label }}</a>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}

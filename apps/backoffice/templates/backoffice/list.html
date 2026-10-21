@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}{{ menu_item.label }}{% endblock %}
+
+{% block page_header %}
+  {% include "backoffice/_breadcrumb.html" %}
+  <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <h1 class="h3 mb-0 me-auto">{{ menu_item.label }}</h1>
+    {% if search_enabled %}
+      <form method="get" class="d-flex gap-2">
+        {% block filters %}{% endblock %}
+        <input type="search" name="q" value="{{ q }}" class="form-control" placeholder="{{ search_placeholder }}">
+        <button type="submit" class="btn btn-outline-secondary text-nowrap">搜尋</button>
+      </form>
+    {% endif %}
+    {% if create_url %}<a class="btn btn-primary" href="{{ create_url }}">新增</a>{% endif %}
+  </div>
+{% endblock %}
+
+{% block content %}
+  <div class="table-responsive">
+    <table class="table table-striped table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          {% for header in headers %}<th scope="col">{{ header }}</th>{% endfor %}
+          <th scope="col" class="text-end">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            {% for cell in row.cells %}<td>{{ cell }}</td>{% endfor %}
+            <td class="text-end text-nowrap">
+              {% if row.edit_url %}<a class="btn btn-sm btn-outline-primary" href="{{ row.edit_url }}">編輯</a>{% endif %}
+              {% if row.delete_url %}<a class="btn btn-sm btn-outline-danger" href="{{ row.delete_url }}">刪除</a>{% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="{{ headers|length|add:1 }}" class="text-center text-muted py-4">{% if q %}找不到符合「{{ q }}」的資料{% else %}尚無資料{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "components/_pagination.html" %}
+{% endblock %}

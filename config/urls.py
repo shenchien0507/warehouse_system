@@ -22,6 +22,9 @@ from apps.accounts import views as account_views
 
 urlpatterns = [
     path("", account_views.home, name="home"),
-    path("admin/", admin.site.urls),
+    path("admin/", admin.site.urls),  # 僅供緊急備用，平常請用 /manage/
     path("accounts/", include("apps.accounts.urls")),
+    path("manage/", include("apps.backoffice.urls")),
+    path("manage/accounts/", include("apps.accounts.manage_urls")),
+    path("manage/personnel/", include("apps.personnel.urls")),
 ]

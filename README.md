@@ -35,21 +35,37 @@ python manage.py runserver
 python manage.py createsuperuser
 ```
 
-開啟 http://127.0.0.1:8000/ 會導向登入頁；管理後台在 http://127.0.0.1:8000/admin/ 。
+開啟 http://127.0.0.1:8000/ 會導向登入頁；後台管理在 http://127.0.0.1:8000/manage/ 。
+Django 內建的 http://127.0.0.1:8000/admin/ 只留給超級使用者緊急備用，平常不使用。
 
 > 使用 PyMySQL 連線 MySQL，純 Python 實作，Windows 上不需要編譯工具。
 
 ## 帳號與權限
 
-- 登入帳號為工號，不開放自行註冊，由管理員在 admin 建立。
+- 登入帳號為工號，不開放自行註冊，由後台管理的「系統帳號」建立。
 - 職級（員工、組長、主任、經理、管理員）決定能做多少；部門決定看得到哪些頁面。
-- 頁面權限在 admin 的「頁面權限」設定（最低職級、開放部門），新功能頁用 `PageAccessMixin` 或 `page_access_required("頁面代碼")` 套用。
+- 頁面權限在後台的「頁面權限」設定（最低職級、開放部門），只有管理員能改。沒設定過的頁面只有管理員能進。
+- 非管理員管理帳號時，只看得到、也只能設定比自己低的職級。
+- 新功能頁用 `PageAccessMixin` 或 `page_access_required("頁面代碼")` 套用。
+
+## 人員資料
+
+- 人員資料和系統帳號分開：不是每個人都有帳號，需要操作系統的人才另外開帳號，並在人員資料連結。
+- 人員記錄應徵進來的「職務」；每天實際站的工位可能不同，之後在到班登記記錄。
+- 離職請取消「在職」，不要刪除。
+
+## 後台管理（自建，不依賴 Django admin）
+
+- `apps/backoffice/`：後台首頁與共用 view（`ManageListView`、`ManageCreateView`、`ManageUpdateView`、`ManageDeleteView`）與共用 template。
+- 新增後台頁面：在 `apps/backoffice/menu.py` 的 `MENU` 加一筆，再寫繼承上述類別的 view（設定 `model`、`form_class`、`page_key`、`columns`…），可參考 `apps/personnel/views.py`。
 - 執行測試（不需要 MySQL）：`$env:DB_ENGINE="sqlite"; python manage.py test`
 
 ## 專案結構
 
 - `apps/`：所有功能模組（Django app）都放在這裡，新增 app 用 `python manage.py startapp 名稱 apps/名稱`；建立後把 `apps.py` 的 `name` 改成 `apps.名稱`，並加進 `INSTALLED_APPS`
   - `apps/accounts/`：使用者、部門、工位、頁面權限
+  - `apps/backoffice/`：自建後台的首頁、選單與共用 view
+  - `apps/personnel/`：人員資料、職務
 - `config/`：Django 設定（資料庫等設定皆由 `.env` 讀取）
 - `templates/`：全站共用 template
   - `base.html`：共用骨架（導覽列、訊息、`title` / `heading` / `content` / `extra_css` / `extra_js` 區塊）

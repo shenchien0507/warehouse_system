@@ -1,3 +1,4 @@
+# 僅供緊急備用，平常請用後台管理（/manage/）
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
