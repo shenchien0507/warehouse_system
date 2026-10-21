@@ -30,12 +30,25 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-開啟 http://127.0.0.1:8000/ 看到 Django 歡迎頁即完成。
+```powershell
+# 6. 建立第一個管理員（工號即帳號）
+python manage.py createsuperuser
+```
+
+開啟 http://127.0.0.1:8000/ 會導向登入頁；管理後台在 http://127.0.0.1:8000/admin/ 。
 
 > 使用 PyMySQL 連線 MySQL，純 Python 實作，Windows 上不需要編譯工具。
 
+## 帳號與權限
+
+- 登入帳號為工號，不開放自行註冊，由管理員在 admin 建立。
+- 職級（員工、組長、主任、經理、管理員）決定能做多少；部門決定看得到哪些頁面。
+- 頁面權限在 admin 的「頁面權限」設定（最低職級、開放部門），新功能頁用 `PageAccessMixin` 或 `page_access_required("頁面代碼")` 套用。
+- 執行測試（不需要 MySQL）：`$env:DB_ENGINE="sqlite"; python manage.py test`
+
 ## 專案結構
 
+- `accounts/`：使用者、部門、工位、頁面權限
 - `config/`：Django 設定（資料庫等設定皆由 `.env` 讀取）
 - `templates/`：全站共用 template
   - `base.html`：共用骨架（導覽列、訊息、`title` / `heading` / `content` / `extra_css` / `extra_js` 區塊）
