@@ -1,0 +1,19 @@
+<form method="get" class="row g-2 align-items-end mb-3">
+  <div class="col-auto">
+    <label class="form-label" for="id_date">日期</label>
+    <input type="date" name="date" id="id_date" class="form-control" value="{{ date|date:'Y-m-d' }}" onchange="this.form.submit()">
+  </div>
+  {% if show_department %}
+    <div class="col-auto">
+      <label class="form-label" for="id_department">部門</label>
+      <select name="department" id="id_department" class="form-select" onchange="this.form.submit()">
+        {% for dept in filter.fields.department.queryset %}
+          <option value="{{ dept.pk }}"{% if dept == filter.cleaned_data.department %} selected{% endif %}>{{ dept }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  {% endif %}
+  <div class="col-auto">
+    <button type="submit" class="btn btn-outline-secondary">查詢</button>
+  </div>
+</form>

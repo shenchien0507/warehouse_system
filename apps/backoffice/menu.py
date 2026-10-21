@@ -16,6 +16,8 @@ class MenuItem:
 
 
 MENU = [
+    MenuItem("attendance-register", "到班登記", "attendance:register", "到班"),
+    MenuItem("attendance-headcount", "到班人數", "attendance:headcount", "到班"),
     MenuItem("manage-employees", "人員資料", "personnel:employee_list", "人員"),
     MenuItem("manage-job-titles", "職務", "personnel:job_title_list", "人員"),
     MenuItem("manage-departments", "部門", "accounts_manage:department_list", "組織"),

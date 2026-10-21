@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}到班人數{% endblock %}
+
+{% block page_header %}
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <h1 class="h3 mb-0 me-auto">到班人數</h1>
+    <a class="btn btn-outline-secondary" href="{% url 'attendance:register' %}?date={{ date|date:'Y-m-d' }}">去登記</a>
+  </div>
+{% endblock %}
+
+{% block content %}
+  {% include "attendance/_filter.html" with show_department=False %}
+
+  <p class="lead">{{ date|date:"Y-m-d" }} 共 {{ total_present }} 人到班</p>
+
+  <div class="table-responsive">
+    <table class="table table-striped align-middle">
+      <thead class="table-light">
+        <tr><th>部門</th><th>在職</th><th>到班</th><th>請假</th><th>缺勤</th><th>未登記</th><th>到班人員所在工位</th></tr>
+      </thead>
+      <tbody>
+        {% for row in summary %}
+          <tr>
+            <td><a href="{% url 'attendance:register' %}?date={{ date|date:'Y-m-d' }}&department={{ row.department.pk }}">{{ row.department }}</a></td>
+            <td>{{ row.active }}</td>
+            <td class="fw-bold">{{ row.present }}</td>
+            <td>{{ row.leave }}</td>
+            <td>{{ row.absent }}</td>
+            <td{% if row.unregistered %} class="text-danger"{% endif %}>{{ row.unregistered }}</td>
+            <td>{% for name, count in row.stations %}<span class="badge text-bg-light border me-1">{{ name }} {{ count }}</span>{% empty %}<span class="text-muted">—</span>{% endfor %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

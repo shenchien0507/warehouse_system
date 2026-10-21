@@ -54,6 +54,14 @@ Django 內建的 http://127.0.0.1:8000/admin/ 只留給超級使用者緊急備�
 - 人員記錄應徵進來的「職務」；每天實際站的工位可能不同，之後在到班登記記錄。
 - 離職請取消「在職」，不要刪除。
 
+## 到班登記
+
+- 網址 `/attendance/`：選日期與部門，整批登記每個人的狀態（到班／請假／缺勤）、上下班時間、當日工位。
+- 經理以上可登記所有部門；組長、主任只能登記自己的部門；員工不能使用。
+- 當天的紀錄由登記人自己修改；之前日期的紀錄要主任以上才能新增或修改；不能登記未來日期。
+- 到班人數 `/attendance/headcount/`：依日期看各部門在職、到班、請假、缺勤、未登記人數，以及到班人員所在工位。
+- 兩個頁面都要先在「頁面權限」開放（頁面代碼 `attendance-register`、`attendance-headcount`）。
+
 ## 後台管理（自建，不依賴 Django admin）
 
 - `apps/backoffice/`：後台首頁與共用 view（`ManageListView`、`ManageCreateView`、`ManageUpdateView`、`ManageDeleteView`）與共用 template。
@@ -66,6 +74,7 @@ Django 內建的 http://127.0.0.1:8000/admin/ 只留給超級使用者緊急備�
   - `apps/accounts/`：使用者、部門、工位、頁面權限
   - `apps/backoffice/`：自建後台的首頁、選單與共用 view
   - `apps/personnel/`：人員資料、職務
+  - `apps/attendance/`：每日到班登記、到班人數
 - `config/`：Django 設定（資料庫等設定皆由 `.env` 讀取）
 - `templates/`：全站共用 template
   - `base.html`：共用骨架（導覽列、訊息、`title` / `heading` / `content` / `extra_css` / `extra_js` 區塊）

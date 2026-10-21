@@ -32,7 +32,7 @@ class LevelLimitMixin:
         self.fields["username"].label = "工號"
 
 
-USER_FIELDS = ["username", "name", "phone", "email", "level", "department", "station", "is_active"]
+USER_FIELDS = ["username", "name", "phone", "email", "level", "department", "is_active"]
 
 
 class UserCreateForm(LevelLimitMixin, UserCreationForm):
