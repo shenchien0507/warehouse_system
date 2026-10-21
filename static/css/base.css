@@ -1,0 +1,12 @@
+/* 全站共用樣式；各 app 專屬樣式放在 app/static/app/ 下 */
+body { min-height: 100vh; display: flex; flex-direction: column; }
+main { flex: 1 0 auto; }
+
+/* 表單欄位：讓 Django 預設 widget 套用 Bootstrap 外觀 */
+.wh-field input:not([type=checkbox]):not([type=radio]):not([type=file]),
+.wh-field select,
+.wh-field textarea { display: block; width: 100%; padding: .375rem .75rem; border: 1px solid #ced4da; border-radius: .375rem; }
+.wh-field.has-error input,
+.wh-field.has-error select,
+.wh-field.has-error textarea { border-color: #dc3545; }
+.wh-field input[type=checkbox] { margin-right: .5rem; }
