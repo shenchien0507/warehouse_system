@@ -28,7 +28,7 @@ class AttendanceMixin:
                 messages.warning(request, "還沒有建立任何部門，請先到「部門」新增。")
             else:
                 messages.warning(request, "只有組長以上、且帳號有設定部門的人可以使用到班功能。")
-            return redirect("backoffice:dashboard")
+            return redirect("home")
         return super().dispatch(request, *args, **kwargs)
 
     def get_filter(self):

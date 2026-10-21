@@ -71,7 +71,7 @@ class RegisterTests(AttendanceTestCase):
     def test_staff_cannot_use_even_if_page_opened(self):
         PagePermission.objects.filter(page_key="attendance-register").update(min_level=Level.STAFF)
         self.login(make_user("e", Level.STAFF, self.floor))
-        self.assertRedirects(self.client.get(reverse("attendance:register")), reverse("backoffice:dashboard"))
+        self.assertRedirects(self.client.get(reverse("attendance:register")), reverse("home"))
 
     def test_leader_only_edits_own_records_today(self):
         other = make_user("lead2", Level.LEADER, self.floor)

@@ -1,4 +1,5 @@
-"""後台選單：新增後台頁面時，在 MENU 加一筆即可出現在後台首頁、導覽列與頁面權限的選項中。"""
+"""選單：新增頁面時，在 MENU 加一筆即可出現在導覽列與頁面權限的選項中。
+section="backoffice" 的頁面列在後台管理首頁（公司組織、帳號與權限這類設定）；section="feature" 的是獨立功能，在導覽列有自己的入口。"""
 
 from dataclasses import dataclass
 
@@ -13,15 +14,16 @@ class MenuItem:
     url_name: str
     group: str
     admin_only: bool = False  # 只有管理員能用，不受頁面權限設定影響
+    section: str = "backoffice"
 
 
 MENU = [
-    MenuItem("attendance-register", "到班登記", "attendance:register", "到班"),
-    MenuItem("attendance-headcount", "到班人數", "attendance:headcount", "到班"),
-    MenuItem("manage-employees", "人員資料", "personnel:employee_list", "人員"),
-    MenuItem("manage-job-titles", "職務", "personnel:job_title_list", "人員"),
+    MenuItem("attendance-register", "到班登記", "attendance:register", "到班", section="feature"),
+    MenuItem("attendance-headcount", "到班人數", "attendance:headcount", "到班", section="feature"),
+    MenuItem("manage-job-titles", "職務", "personnel:job_title_list", "組織"),
     MenuItem("manage-departments", "部門", "accounts_manage:department_list", "組織"),
     MenuItem("manage-stations", "工位", "accounts_manage:station_list", "組織"),
+    MenuItem("manage-employees", "人員資料", "personnel:employee_list", "帳號與權限"),
     MenuItem("manage-users", "系統帳號", "accounts_manage:user_list", "帳號與權限"),
     MenuItem("manage-page-permissions", "頁面權限", "accounts_manage:page_permission_list", "帳號與權限", admin_only=True),
 ]
@@ -37,5 +39,5 @@ def can_use(user, item):
     return is_admin(user) if item.admin_only else can_access(user, item.page_key)
 
 
-def accessible_menu(user):
-    return [item for item in MENU if can_use(user, item)]
+def accessible_menu(user, section=None):
+    return [item for item in MENU if (section is None or item.section == section) and can_use(user, item)]
