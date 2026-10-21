@@ -1,0 +1,28 @@
+{# 導覽列：新增 app 時，在下方 ul 加入該 app 的連結 #}
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <div class="container">
+    <a class="navbar-brand" href="{% url 'home' %}">倉儲系統</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav"
+            aria-controls="mainNav" aria-expanded="false" aria-label="切換導覽">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="mainNav">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item">
+          <a class="nav-link{% if request.resolver_match.url_name == 'home' %} active{% endif %}" href="{% url 'home' %}">首頁</a>
+        </li>
+        {# 範例：<li class="nav-item"><a class="nav-link" href="{% url 'inventory:list' %}">庫存</a></li> #}
+      </ul>
+      <ul class="navbar-nav">
+        {% if user.is_authenticated %}
+          <li class="nav-item"><span class="navbar-text me-3">{{ user.get_username }}</span></li>
+          {% if user.is_staff %}
+            <li class="nav-item"><a class="nav-link" href="{% url 'admin:index' %}">後台</a></li>
+          {% endif %}
+        {% else %}
+          <li class="nav-item"><a class="nav-link" href="{% url 'admin:login' %}">登入</a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</nav>

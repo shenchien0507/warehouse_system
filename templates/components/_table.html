@@ -1,0 +1,28 @@
+{% comment %}
+通用資料表格。
+用法：{% include "components/_table.html" with headers=headers rows=rows empty_text="尚無資料" %}
+- headers：欄位標題清單，例如 ["品號", "品名", "數量"]
+- rows：每列為一個清單，例如 [["A001", "螺絲", 120], ...]（在 view 中準備好）
+需要自訂欄位內容（按鈕、連結等）時，請在 app 的 template 自行撰寫 <table>，
+沿用相同的 class="table table-striped table-hover align-middle" 即可保持一致外觀。
+{% endcomment %}
+<div class="table-responsive">
+  <table class="table table-striped table-hover align-middle">
+    <thead class="table-light">
+      <tr>
+        {% for header in headers %}<th scope="col">{{ header }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>
+          {% for cell in row %}<td>{{ cell }}</td>{% endfor %}
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="{{ headers|length }}" class="text-center text-muted py-4">{{ empty_text|default:"尚無資料" }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

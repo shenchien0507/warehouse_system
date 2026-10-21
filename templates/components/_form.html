@@ -1,0 +1,17 @@
+{% comment %}
+整份表單：CSRF、整體錯誤、逐欄位渲染與送出按鈕。
+用法：{% include "components/_form.html" with form=form submit_text="儲存" cancel_url=request.META.HTTP_REFERER %}
+{% endcomment %}
+<form method="post" enctype="multipart/form-data" novalidate>
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <div class="alert alert-danger">
+      {% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}
+    </div>
+  {% endif %}
+  {% for field in form %}
+    {% include "components/_form_field.html" with field=field %}
+  {% endfor %}
+  <button type="submit" class="btn btn-primary">{{ submit_text|default:"送出" }}</button>
+  {% if cancel_url %}<a class="btn btn-outline-secondary ms-2" href="{{ cancel_url }}">取消</a>{% endif %}
+</form>

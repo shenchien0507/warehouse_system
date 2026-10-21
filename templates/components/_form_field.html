@@ -1,0 +1,22 @@
+{% comment %}
+單一表單欄位：標籤、輸入框、說明文字與錯誤訊息。
+用法：{% include "components/_form_field.html" with field=form.name %}
+輸入框外觀由 static/css/base.css 的 .wh-field 規則套用 Bootstrap 樣式，不需在 Form 中逐一加 class。
+{% endcomment %}
+{% if field.is_hidden %}
+  {{ field }}
+{% else %}
+  <div class="mb-3 wh-field{% if field.errors %} has-error{% endif %}{% if field.field.widget.input_type == 'checkbox' %} form-check{% endif %}">
+    {% if field.field.widget.input_type == 'checkbox' %}
+      {{ field }}
+      <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {% else %}
+      <label class="form-label" for="{{ field.id_for_label }}">
+        {{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}
+      </label>
+      {{ field }}
+    {% endif %}
+    {% if field.help_text %}<div class="form-text">{{ field.help_text|safe }}</div>{% endif %}
+    {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+  </div>
+{% endif %}

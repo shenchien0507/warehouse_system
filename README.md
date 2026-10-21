@@ -37,5 +37,17 @@ python manage.py runserver
 ## 專案結構
 
 - `config/`：Django 設定（資料庫等設定皆由 `.env` 讀取）
+- `templates/`：全站共用 template
+  - `base.html`：共用骨架（導覽列、訊息、`title` / `heading` / `content` / `extra_css` / `extra_js` 區塊）
+  - `components/`：可用 `{% include %}` 的共用元件（`_table`、`_pagination`、`_form`、`_form_field`、`_messages`、`_navbar`）
+- `static/`：全站共用靜態檔（`css/base.css`、`js/base.js`、`img/`）
 - `requirements.txt`：套件清單
 - `.env.example`：環境變數範本（`.env` 不會被提交）
+
+## 新增 app 時的 template 慣例
+
+- app 的 template 放在 `<app>/templates/<app>/`，並以 app 名稱當子資料夾避免檔名衝突，例如 `inventory/templates/inventory/item_list.html`。
+- 每個頁面開頭 `{% extends "base.html" %}`，填入 `title`、`heading`、`content` 區塊。
+- app 專屬的 CSS/JS 放在 `<app>/static/<app>/`，用 `extra_css` / `extra_js` 區塊載入。
+- 共用元件範例：`{% include "components/_pagination.html" %}`、`{% include "components/_form.html" with form=form %}`。
+- 新 app 的連結請加進 `templates/components/_navbar.html`。
