@@ -1,0 +1,7 @@
+{% extends "backoffice/form.html" %}
+
+{% block extra_actions %}
+  <hr>
+  <a class="btn btn-outline-warning" href="{% url 'accounts_manage:user_password' object.pk %}">重設密碼</a>
+  <p class="form-text">離職或不再使用的帳號請取消「啟用」，不要刪除。</p>
+{% endblock %}

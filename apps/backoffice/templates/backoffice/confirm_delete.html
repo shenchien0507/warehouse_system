@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}{{ menu_item.label }}{% endblock %}
+
+{% block page_header %}
+  {% include "backoffice/_breadcrumb.html" with current="刪除" %}
+  <h1 class="h3 mb-4">刪除{{ menu_item.label }}</h1>
+{% endblock %}
+
+{% block content %}
+  <form method="post">
+    {% csrf_token %}
+    <p>確定要刪除「{{ object }}」嗎？刪除後無法復原。</p>
+    <button type="submit" class="btn btn-danger">確定刪除</button>
+    <a class="btn btn-outline-secondary ms-2" href="{{ list_url }}">取消</a>
+  </form>
+{% endblock %}

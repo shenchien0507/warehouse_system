@@ -1,0 +1,9 @@
+{% extends "backoffice/list.html" %}
+
+{% block filters %}
+  <select name="status" class="form-select" onchange="this.form.submit()">
+    <option value="active"{% if status == "active" %} selected{% endif %}>在職</option>
+    <option value="inactive"{% if status == "inactive" %} selected{% endif %}>已離職</option>
+    <option value="all"{% if status == "all" %} selected{% endif %}>全部</option>
+  </select>
+{% endblock %}
