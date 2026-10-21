@@ -48,7 +48,8 @@ python manage.py createsuperuser
 
 ## 專案結構
 
-- `accounts/`：使用者、部門、工位、頁面權限
+- `apps/`：所有功能模組（Django app）都放在這裡，新增 app 用 `python manage.py startapp 名稱 apps/名稱`；建立後把 `apps.py` 的 `name` 改成 `apps.名稱`，並加進 `INSTALLED_APPS`
+  - `apps/accounts/`：使用者、部門、工位、頁面權限
 - `config/`：Django 設定（資料庫等設定皆由 `.env` 讀取）
 - `templates/`：全站共用 template
   - `base.html`：共用骨架（導覽列、訊息、`title` / `heading` / `content` / `extra_css` / `extra_js` 區塊）
@@ -59,8 +60,8 @@ python manage.py createsuperuser
 
 ## 新增 app 時的 template 慣例
 
-- app 的 template 放在 `<app>/templates/<app>/`，並以 app 名稱當子資料夾避免檔名衝突，例如 `inventory/templates/inventory/item_list.html`。
+- app 的 template 放在 `apps/<app>/templates/<app>/`，並以 app 名稱當子資料夾避免檔名衝突，例如 `apps/inventory/templates/inventory/item_list.html`。
 - 每個頁面開頭 `{% extends "base.html" %}`，填入 `title`、`heading`、`content` 區塊。
-- app 專屬的 CSS/JS 放在 `<app>/static/<app>/`，用 `extra_css` / `extra_js` 區塊載入。
+- app 專屬的 CSS/JS 放在 `apps/<app>/static/<app>/`，用 `extra_css` / `extra_js` 區塊載入。
 - 共用元件範例：`{% include "components/_pagination.html" %}`、`{% include "components/_form.html" with form=form %}`。
 - 新 app 的連結請加進 `templates/components/_navbar.html`。
