@@ -18,6 +18,7 @@ class BackofficeTestCase(TestCase):
 
 class AccessTests(BackofficeTestCase):
     def test_admin_sees_every_page(self):
+        Department.objects.create(name="現場部")
         self.login(make_user("boss", Level.ADMIN))
         self.assertContains(self.client.get(reverse("home")), "後台管理")
         for item in MENU:

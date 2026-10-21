@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}到班登記{% endblock %}
+
+{% block page_header %}
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <h1 class="h3 mb-0 me-auto">到班登記</h1>
+    <a class="btn btn-outline-secondary" href="{% url 'attendance:headcount' %}?date={{ date|date:'Y-m-d' }}">看到班人數</a>
+  </div>
+{% endblock %}
+
+{% block content %}
+  {% include "attendance/_filter.html" with show_department=True %}
+
+  {% if not is_today %}
+    <div class="alert alert-secondary py-2">你正在看 {{ date|date:"Y-m-d" }} 的紀錄。之前日期的紀錄只有主任以上能修改。</div>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    {% if any_editable %}
+      <div class="mb-2">
+        <button type="button" class="btn btn-sm btn-outline-success" id="mark-all-present">未登記的全部設為到班</button>
+      </div>
+    {% endif %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle attendance-table">
+        <thead class="table-light">
+          <tr>
+            <th>工號</th><th>姓名</th><th>職務</th><th>狀態</th><th>上班</th><th>下班</th><th>當日工位</th><th>備註</th><th>登記人</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            {% with form=row.form %}
+              <tr{% if form.errors %} class="table-danger"{% endif %}>
+                <td>{{ row.employee.employee_no }}</td>
+                <td>{{ row.employee.name }}{% if not row.employee.is_active %} <span class="badge text-bg-secondary">已離職</span>{% endif %}</td>
+                <td>{{ row.employee.job_title|default:"" }}</td>
+                <td>{{ form.status }}</td>
+                <td>{{ form.clock_in }}</td>
+                <td>{{ form.clock_out }}</td>
+                <td>{{ form.station }}</td>
+                <td>{{ form.note }}</td>
+                <td class="small text-muted">
+                  {% if row.record %}{{ row.record.created_by.name|default:row.record.created_by.username }}{% endif %}
+                  {% for field in form %}{% for error in field.errors %}<div class="text-danger">{{ field.label }}：{{ error }}</div>{% endfor %}{% endfor %}
+                </td>
+              </tr>
+            {% endwith %}
+          {% empty %}
+            <tr><td colspan="9" class="text-center text-muted py-4">這個部門沒有在職人員</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if any_editable %}<button type="submit" class="btn btn-primary">儲存</button>{% endif %}
+  </form>
+{% endblock %}
+
+{% block extra_css %}
+  <style>
+    .attendance-table select, .attendance-table input { width: 100%; min-width: 6rem; padding: .25rem .5rem; border: 1px solid #ced4da; border-radius: .375rem; }
+    .attendance-table select:disabled, .attendance-table input:disabled { background: #f1f3f5; }
+  </style>
+{% endblock %}
+
+{% block extra_js %}
+  <script>
+    document.getElementById("mark-all-present")?.addEventListener("click", () => {
+      document.querySelectorAll(".attendance-table select[name$='-status']:not(:disabled)").forEach((select) => {
+        if (!select.value) select.value = "present";
+      });
+    });
+  </script>
+{% endblock %}

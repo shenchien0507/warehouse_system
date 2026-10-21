@@ -52,9 +52,6 @@ class User(AbstractUser):
     department = models.ForeignKey(
         Department, verbose_name="部門", null=True, blank=True, on_delete=models.PROTECT, related_name="users"
     )
-    station = models.ForeignKey(
-        Station, verbose_name="工位", null=True, blank=True, on_delete=models.PROTECT, related_name="users"
-    )
 
     class Meta:
         verbose_name = "使用者"
