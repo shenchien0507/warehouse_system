@@ -21,16 +21,22 @@ def can_register(user, employee):
     return user.level >= Level.LEADER and bool(user.department_id) and employee.department_id == user.department_id
 
 
-def can_edit(user, date, record=None):
-    """當天的紀錄由登記人自己修改；之前的日期要主任以上才能新增或修改；不能登記未來日期。"""
+def can_add(user, date):
+    """今天：範圍內的人員任何有登記權的人都能新增紀錄；之前的日期要主任以上；不能登記未來日期。"""
     today = timezone.localdate()
     if date > today:
         return False
+    return date == today or user.level >= Level.DIRECTOR
+
+
+def can_void(user, event):
+    """今天只能作廢自己登記的紀錄；之前的日期要主任以上（主任以上也可作廢別人登記的）。"""
+    date = event.attendance.date
+    if date > timezone.localdate() or event.voided_at:
+        return False
     if user.level >= Level.DIRECTOR:
         return True
-    if date != today:
-        return False
-    return record is None or record.created_by_id == user.pk
+    return date == timezone.localdate() and event.created_by_id == user.pk
 
 
 def station_departments(user):

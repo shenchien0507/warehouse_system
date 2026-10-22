@@ -22,37 +22,99 @@
     <div class="alert alert-secondary py-2">{{ date|date:"Y-m-d" }} 的安排只能查看；之前日期要主任以上才能建立，未來日期不能安排。</div>
   {% endif %}
 
-  <h2 class="h5">{{ date|date:"Y-m-d" }} 已建立的安排</h2>
-  {% for row in batches %}
-    <details class="card mb-2">
-      <summary class="card-body py-2 d-flex flex-wrap align-items-center gap-2" style="cursor: pointer;">
-        <span class="fw-bold">{{ row.batch.created_at|date:"H:i" }}</span>
-        {% if row.current %}<span class="badge text-bg-success">目前生效</span>{% endif %}
-        <span class="text-muted small">{{ row.batch.created_by.name|default:row.batch.created_by.username }} 建立</span>
-        <span class="ms-3">共 {{ row.total }} 人</span>
-        {% for name, count in row.departments %}<span class="badge text-bg-light border">{{ name }} {{ count }}</span>{% endfor %}
-        <span class="ms-auto text-muted small">點開看詳細工位</span>
-      </summary>
-      <div class="card-body border-top">
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0">
-            <thead class="table-light"><tr><th>工號</th><th>姓名</th><th>部門</th><th>職務</th><th>工位</th></tr></thead>
-            <tbody>
-              {% for entry in row.entries %}
-                <tr>
-                  <td>{{ entry.employee.employee_no }}</td>
-                  <td>{{ entry.employee.name }}</td>
-                  <td>{{ entry.employee.department|default:"" }}</td>
-                  <td>{{ entry.employee.job_title|default:"" }}</td>
-                  <td>{{ entry.station|default:"未安排" }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+  {% if changes %}
+    <div class="alert alert-warning d-flex flex-wrap align-items-start gap-2" role="status">
+      <div class="me-auto">
+        <strong>{{ batches.0.batch.created_at|date:"H:i" }} 的安排生效後，有 {{ changes|length }} 人異動，現場目前 {{ on_site_count }} 人：</strong>
+        <ul class="mb-0 mt-1">
+          {% for item in changes %}<li>{% if item.time %}{{ item.time|time:"H:i" }} {% endif %}{{ item.text }}</li>{% endfor %}
+        </ul>
       </div>
-    </details>
-  {% empty %}
-    <p class="text-muted">這天還沒有建立安排。{% if can_create %}按右上角「建立安排」開始。{% endif %}</p>
-  {% endfor %}
+      {% if can_create %}<a class="btn btn-outline-dark" href="{% url 'attendance:station_new' %}?date={{ date|date:'Y-m-d' }}">依目前在場人員重新安排</a>{% endif %}
+    </div>
+  {% endif %}
+
+  <ul class="nav nav-tabs mb-3">
+    <li class="nav-item"><a class="nav-link{% if view == 'batches' %} active{% endif %}" href="?date={{ date|date:'Y-m-d' }}">批次</a></li>
+    <li class="nav-item"><a class="nav-link{% if view == 'timeline' %} active{% endif %}" href="?date={{ date|date:'Y-m-d' }}&view=timeline">時間軸</a></li>
+  </ul>
+
+  {% if view == "timeline" %}
+    {% for item in timeline %}
+      <div class="timeline-row d-flex gap-3">
+        <div class="timeline-time text-muted text-end">{{ item.time|time:"H:i"|default:"全天" }}</div>
+        <div class="timeline-body flex-fill timeline-{{ item.kind }}">
+          {% if item.people|length > 1 %}
+            <details><summary>{{ item.text }}</summary><div class="small mt-1">{% for p in item.people %}{{ p.name }}{% if not forloop.last %}、{% endif %}{% endfor %}</div></details>
+          {% else %}
+            <span{% if item.kind == "batch" %} class="fw-bold"{% endif %}>{{ item.text }}</span>
+            {% if item.current %}<span class="badge text-bg-success">目前生效</span>{% endif %}
+            {% if item.by %}<span class="small text-muted">· {{ item.by.name|default:item.by.username }}{% if item.kind == "batch" %} 建立{% else %} 登記{% endif %}</span>{% endif %}
+          {% endif %}
+        </div>
+        <div class="timeline-count small text-muted text-nowrap">在場 {{ item.count }}</div>
+      </div>
+    {% empty %}
+      <p class="text-muted">這天還沒有任何紀錄。</p>
+    {% endfor %}
+  {% else %}
+    <h2 class="h5">{{ date|date:"Y-m-d" }} 已建立的安排</h2>
+    {% for row in batches %}
+      <details class="card mb-2">
+        <summary class="card-body py-2" style="cursor: pointer;">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="fw-bold">{{ row.batch.created_at|date:"H:i" }}</span>
+            {% if row.current %}<span class="badge text-bg-success">目前生效</span>{% endif %}
+            <span class="text-muted small">{{ row.batch.created_by.name|default:row.batch.created_by.username }} 建立</span>
+            <span class="ms-3">共 {{ row.total }} 人</span>
+            {% for name, count in row.departments %}<span class="badge text-bg-light border">{{ name }} {{ count }}</span>{% endfor %}
+            <span class="ms-auto text-muted small">點開看詳細工位</span>
+          </div>
+          <div class="small mt-1 d-flex flex-wrap gap-3">
+            {% if row.diff %}
+              <span>和上一批比：{% if row.diff.delta > 0 %}+{{ row.diff.delta }} 人{% elif row.diff.delta < 0 %}{{ row.diff.delta }} 人{% else %}人數不變{% endif %}</span>
+              {% if row.diff.left %}<span class="text-danger">離開：{% for p in row.diff.left %}{{ p.name }}{% if not forloop.last %}、{% endif %}{% endfor %}</span>{% endif %}
+              {% if row.diff.arrived %}<span class="text-success">新到：{% for p in row.diff.arrived %}{{ p.name }}{% if not forloop.last %}、{% endif %}{% endfor %}</span>{% endif %}
+              <span>換工位 {{ row.diff.moved }} 人</span>
+            {% else %}
+              <span class="text-muted">當天第一批</span>
+            {% endif %}
+          </div>
+        </summary>
+        <div class="card-body border-top">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead class="table-light"><tr><th>工號</th><th>姓名</th><th>部門</th><th>職務</th><th>工位</th></tr></thead>
+              <tbody>
+                {% for entry in row.entries %}
+                  <tr>
+                    <td>{{ entry.employee.employee_no }}</td>
+                    <td>{{ entry.employee.name }}</td>
+                    <td>{{ entry.employee.department|default:"" }}</td>
+                    <td>{{ entry.employee.job_title|default:"" }}</td>
+                    <td>{{ entry.station|default:"未安排" }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    {% empty %}
+      <p class="text-muted">這天還沒有建立安排。{% if can_create %}按右上角「建立安排」開始。{% endif %}</p>
+    {% endfor %}
+  {% endif %}
+{% endblock %}
+
+{% block extra_css %}
+  <style>
+    .timeline-row { border-left: 2px solid #dee2e6; margin-left: 4rem; padding-left: 0; }
+    .timeline-time { width: 3.5rem; margin-left: -4.25rem; padding-top: .4rem; font-variant-numeric: tabular-nums; }
+    .timeline-body { padding: .35rem .75rem; margin: .2rem 0; border-radius: .375rem; }
+    .timeline-in { background: #d1e7dd; }
+    .timeline-out { background: #f8d7da; }
+    .timeline-leave { background: #fff3cd; }
+    .timeline-batch { background: #cfe2ff; }
+    .timeline-count { padding-top: .4rem; width: 4.5rem; font-variant-numeric: tabular-nums; }
+  </style>
 {% endblock %}
