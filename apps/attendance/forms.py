@@ -46,13 +46,8 @@ class LookupForm(forms.Form):
         return self.cleaned_data["date"] or timezone.localdate()
 
 
-class FilterForm(forms.Form):
-    date = forms.DateField(label="日期", widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
-    department = forms.ModelChoiceField(label="部門", queryset=None, empty_label=None)
-
-    def __init__(self, *args, departments, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["department"].queryset = departments
+class DateForm(forms.Form):
+    date = forms.DateField(label="日期", required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
 
 
 class StationAssignForm(forms.Form):

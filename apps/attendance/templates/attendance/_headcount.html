@@ -1,0 +1,28 @@
+<hr class="my-4">
+<h2 class="h4">到班人數</h2>
+<p class="lead">{{ date|date:"Y-m-d" }} 共 {{ total_present }} 人到班　<small class="text-muted fs-6">點數字可以看名單並進去設定</small></p>
+
+<div class="table-responsive">
+  <table class="table table-striped align-middle">
+    <thead class="table-light">
+      <tr><th>部門</th><th>在職</th><th>到班</th><th>請假</th><th>缺勤</th><th>未登記</th><th>到班人員所在工位</th></tr>
+    </thead>
+    <tbody>
+      {% for row in summary %}
+        {% with base=date|date:"Y-m-d" %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=active">{{ row.active }}</a></td>
+            <td class="fw-bold"><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=present">{{ row.present }}</a></td>
+            <td><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=leave">{{ row.leave }}</a></td>
+            <td><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=absent">{{ row.absent }}</a></td>
+            <td{% if row.unregistered %} class="text-danger"{% endif %}><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=unregistered">{{ row.unregistered }}</a></td>
+            <td>{% for st in row.stations %}<a class="badge text-bg-light border me-1 text-decoration-none" href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=station&station={{ st.key }}">{{ st.label }} {{ st.count }}</a>{% empty %}<span class="text-muted">—</span>{% endfor %}</td>
+          </tr>
+        {% endwith %}
+      {% empty %}
+        <tr><td colspan="7" class="text-center text-muted py-4">還沒有可統計的部門</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
