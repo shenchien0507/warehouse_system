@@ -260,6 +260,12 @@ class StationScopeMixin(PageMixin):
             queryset = queryset.filter(**{field: station_departments(self.request.user)})
         return queryset
 
+    def can_see(self, employee):
+        user = self.request.user
+        if not hasattr(self, "_scope_ids"):
+            self._scope_ids = set(station_departments(user).values_list("pk", flat=True))
+        return user.level >= Level.MANAGER or employee.department_id in self._scope_ids
+
 
 class StationListView(StationScopeMixin, TemplateView):
     """工位安排首頁：按「建立安排」才進入編輯。上方提示目前生效的批次之後誰離開、誰新到；
@@ -299,16 +305,11 @@ class StationListView(StationScopeMixin, TemplateView):
         )
         return context
 
-    def can_see(self, employee):
-        user = self.request.user
-        if not hasattr(self, "_scope_ids"):
-            self._scope_ids = set(station_departments(user).values_list("pk", flat=True))
-        return user.level >= Level.MANAGER or employee.department_id in self._scope_ids
-
 
 class StationCreateView(StationScopeMixin, TemplateView):
     """建立安排：今天列出目前在場的人，之前的日期列出當天上過班的人；手動安排當日工位。
-    改完先列出變更，確認後批次儲存並建立一筆批次紀錄。"""
+    改完先列出變更，確認後批次儲存並建立一筆批次紀錄。
+    工位沒改、但名單和目前生效的批次不同（有人離開或新到）也算變更，可以建立新批次。"""
 
     template_name = "attendance/station_form.html"
 
@@ -348,11 +349,14 @@ class StationCreateView(StationScopeMixin, TemplateView):
             for row in rows
             if row["form"].has_changed()
         ]
-        if not changes:
+        left, arrived = self.roster_changes(rows)
+        if not changes and not left and not arrived:
             messages.info(request, "沒有變更，沒有建立新的安排。")
             return self.redirect_back()
         if request.POST.get("action") != "confirm":
-            return self.render_to_response(self.get_context_data(rows=rows, editable=editable, changes=changes))
+            return self.render_to_response(
+                self.get_context_data(rows=rows, editable=editable, changes=changes, left=left, arrived=arrived, previewing=True)
+            )
         with transaction.atomic():
             for change in changes:
                 record = change["record"]
@@ -364,8 +368,18 @@ class StationCreateView(StationScopeMixin, TemplateView):
                 StationBatchEntry(batch=batch, employee=row["record"].employee, station=row["form"].cleaned_data["station"])
                 for row in rows
             )
-        messages.success(request, f"已建立安排，修改 {len(changes)} 人的工位。")
+        roster = "、".join(text for text in (f"離開 {len(left)} 人" if left else "", f"新到 {len(arrived)} 人" if arrived else "") if text)
+        messages.success(request, f"已建立安排，修改 {len(changes)} 人的工位{f'（名單{roster}）' if roster else ''}。")
         return self.redirect_back()
+
+    def roster_changes(self, rows):
+        """和目前生效的批次比，誰已經不在名單上、誰是新到的。當天還沒有批次時，所有人都算新到。"""
+        latest = StationBatch.objects.filter(date=self.date).prefetch_related("entries__employee").first()
+        before = {e.employee_id: e.employee for e in latest.entries.all() if self.can_see(e.employee)} if latest else {}
+        now = {row["record"].employee_id for row in rows}
+        left = [employee for pk, employee in before.items() if pk not in now]
+        arrived = [row["record"].employee for row in rows if row["record"].employee_id not in before]
+        return left, arrived
 
     def redirect_back(self):
         return redirect(f"{reverse('attendance:stations')}?{urlencode({'date': f'{self.date:%Y-%m-%d}'})}")

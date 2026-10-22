@@ -16,7 +16,15 @@
     <div class="alert alert-secondary py-2">{{ date|date:"Y-m-d" }} 的工位只能查看；之前日期要主任以上才能修改，未來日期不能安排。</div>
   {% endif %}
 
-  {% if changes %}
+  {% if previewing %}
+    {% if left or arrived %}
+      <div class="alert alert-info">
+        和目前生效的安排相比，名單有變動：
+        {% if left %}<div>離開：{% for p in left %}{{ p.name }}{% if not forloop.last %}、{% endif %}{% endfor %}（不會列在新批次）</div>{% endif %}
+        {% if arrived %}<div>新到：{% for p in arrived %}{{ p.name }}{% if not forloop.last %}、{% endif %}{% endfor %}</div>{% endif %}
+      </div>
+    {% endif %}
+    {% if changes %}
     <div class="alert alert-warning">以下 {{ changes|length }} 人的工位將被修改，請確認：</div>
     <table class="table table-sm align-middle w-auto">
       <thead class="table-light"><tr><th>工號</th><th>姓名</th><th>原工位</th><th></th><th>新工位</th></tr></thead>
@@ -32,11 +40,14 @@
         {% endfor %}
       </tbody>
     </table>
+    {% else %}
+      <p>其他人的工位都不變。</p>
+    {% endif %}
     <form method="post" class="d-flex gap-2">
       {% csrf_token %}
       <input type="hidden" name="action" value="confirm">
       {% for row in rows %}<input type="hidden" name="{{ row.form.station.html_name }}" value="{{ row.form.station.value|default_if_none:'' }}">{% endfor %}
-      <button type="submit" class="btn btn-primary">確認修改</button>
+      <button type="submit" class="btn btn-primary">確認建立安排</button>
       <a class="btn btn-outline-secondary" href="{{ request.get_full_path }}">返回繼續編輯</a>
     </form>
   {% else %}
