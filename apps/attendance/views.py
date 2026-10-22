@@ -5,6 +5,7 @@ from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.http import Http404
 from django.shortcuts import redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import urlencode
 from django.views.generic import TemplateView
@@ -14,7 +15,7 @@ from apps.backoffice.menu import MENU_BY_KEY, can_use
 from apps.personnel.models import Employee
 
 from .forms import AttendanceRowForm, DateForm, LookupForm, StationAssignForm
-from .models import Attendance, Status
+from .models import Attendance, StationBatch, StationBatchEntry, Status
 from .rules import can_arrange, can_edit, can_register, departments_in_scope, station_departments
 
 NO_DEPARTMENT = "none"  # 人員沒有設定部門時，統計與名單用的代碼（只有經理以上看得到）
@@ -261,23 +262,59 @@ class PersonListView(RegisterAccessMixin, TemplateView):
         return context
 
 
-class StationAssignView(PageMixin, TemplateView):
-    """到班登記完成後，直接列出當天到班人員，手動安排當日工位。改完先列出變更，確認後才批次儲存。"""
-
+class StationScopeMixin(PageMixin):
     page_key = "attendance-stations"
-    template_name = "attendance/stations.html"
 
     def check_scope(self, user):
         return user.level >= Level.MANAGER or bool(user.department_id)
 
+    def in_scope(self, queryset, field="employee__department__in"):
+        """經理以上看全部，其他人只看自己部門。"""
+        if self.request.user.level < Level.MANAGER:
+            queryset = queryset.filter(**{field: station_departments(self.request.user)})
+        return queryset
+
+
+class StationListView(StationScopeMixin, TemplateView):
+    """工位安排首頁：按「建立安排」才進入編輯；下方列出當天已建立的批次，顯示各部門人數，可展開看詳細工位。"""
+
+    template_name = "attendance/stations.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        date = self.get_date()
+        batches = StationBatch.objects.filter(date=date).select_related("created_by").prefetch_related(
+            "entries__employee__department", "entries__employee__job_title", "entries__station__department"
+        )
+        rows = []
+        for batch in batches:
+            entries = [e for e in batch.entries.all() if self.can_see(e.employee)]
+            if not entries:
+                continue
+            entries.sort(key=lambda e: (e.employee.department.name if e.employee.department else "", e.employee.employee_no))
+            counts = Counter(e.employee.department.name if e.employee.department else "未設定部門" for e in entries)
+            rows.append({"batch": batch, "entries": entries, "total": len(entries), "departments": sorted(counts.items())})
+        if rows:
+            rows[0]["current"] = True
+        context.update(date=date, batches=rows, can_create=can_arrange(self.request.user, date), is_today=date == timezone.localdate())
+        return context
+
+    def can_see(self, employee):
+        user = self.request.user
+        return user.level >= Level.MANAGER or employee.department_id in set(station_departments(user).values_list("pk", flat=True))
+
+
+class StationCreateView(StationScopeMixin, TemplateView):
+    """建立安排：列出當天到班人員，手動安排當日工位。改完先列出變更，確認後批次儲存並建立一筆批次紀錄。"""
+
+    template_name = "attendance/station_form.html"
+
     def build_rows(self, date, data=None):
-        records = (
+        records = self.in_scope(
             Attendance.objects.filter(date=date, status=Status.PRESENT)
             .select_related("employee__job_title", "employee__department", "station__department")
             .order_by("employee__department__name", "employee__employee_no")
         )
-        if self.request.user.level < Level.MANAGER:
-            records = records.filter(employee__department__in=station_departments(self.request.user))
         editable = can_arrange(self.request.user, date)
         rows = []
         for record in records:
@@ -290,6 +327,8 @@ class StationAssignView(PageMixin, TemplateView):
     def get(self, request, *args, **kwargs):
         self.date = self.get_date()
         rows, editable = self.build_rows(self.date)
+        if not editable:
+            raise PermissionDenied
         return self.render_to_response(self.get_context_data(rows=rows, editable=editable))
 
     def post(self, request, *args, **kwargs):
@@ -306,7 +345,7 @@ class StationAssignView(PageMixin, TemplateView):
             if row["form"].has_changed()
         ]
         if not changes:
-            messages.info(request, "沒有變更。")
+            messages.info(request, "沒有變更，沒有建立新的安排。")
             return self.redirect_back()
         if request.POST.get("action") != "confirm":
             return self.render_to_response(self.get_context_data(rows=rows, editable=editable, changes=changes))
@@ -316,14 +355,18 @@ class StationAssignView(PageMixin, TemplateView):
                 record.station = change["new"]
                 record.updated_by = request.user
                 record.save()
-        messages.success(request, f"已確認修改 {len(changes)} 人的工位。")
+            batch = StationBatch.objects.create(date=self.date, created_by=request.user)
+            StationBatchEntry.objects.bulk_create(
+                StationBatchEntry(batch=batch, employee=row["record"].employee, station=row["form"].cleaned_data["station"])
+                for row in rows
+            )
+        messages.success(request, f"已建立安排，修改 {len(changes)} 人的工位。")
         return self.redirect_back()
 
     def redirect_back(self):
-        return redirect(f"{self.request.path}?{urlencode({'date': f'{self.date:%Y-%m-%d}'})}")
+        return redirect(f"{reverse('attendance:stations')}?{urlencode({'date': f'{self.date:%Y-%m-%d}'})}")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["date"] = self.date
-        context["is_today"] = self.date == timezone.localdate()
         return context
