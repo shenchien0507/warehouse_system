@@ -351,7 +351,7 @@ class StationAssignTests(AttendanceTestCase):
     def test_change_needs_confirmation_then_creates_batch(self):
         preview = self.post(self.picking)
         self.assertEqual(preview.status_code, 200)
-        self.assertContains(preview, "確認修改")
+        self.assertContains(preview, "確認建立安排")
         self.a1.refresh_from_db()
         self.assertIsNone(self.a1.station)
         self.assertFalse(StationBatch.objects.exists())
@@ -363,9 +363,26 @@ class StationAssignTests(AttendanceTestCase):
         entry = batch.entries.get()
         self.assertEqual((entry.employee, entry.station), (self.e1, self.picking))
 
-    def test_no_change_creates_no_batch(self):
+    def test_no_change_creates_no_batch_but_first_batch_can_be_saved_as_is(self):
         self.post(None, action="confirm")
-        self.assertFalse(StationBatch.objects.exists())
+        self.assertEqual(StationBatch.objects.count(), 1)
+        self.post(None, action="confirm")
+        self.assertEqual(StationBatch.objects.count(), 1)
+
+    def test_someone_left_without_station_changes_can_still_create_batch(self):
+        self.event(self.e3, EventKind.CLOCK_IN)
+        self.login(self.mgr)
+        self.confirm_all(self.picking)
+        self.event(self.e1, EventKind.LEAVE_OUT)
+        e3 = Attendance.objects.get(employee=self.e3)
+        data = {f"a{e3.pk}-station": self.picking.pk}
+        preview = self.client.post(self.url, data)
+        self.assertContains(preview, "離開：王小明")
+        self.assertContains(preview, "其他人的工位都不變")
+        self.client.post(self.url, {**data, "action": "confirm"})
+        latest = StationBatch.objects.first()
+        self.assertEqual([e.employee for e in latest.entries.all()], [self.e3])
+        self.assertEqual(self.client.get(self.list_url).context["changes"], [])
 
     def test_index_shows_batches_with_counts_and_diff(self):
         self.event(self.e3, EventKind.CLOCK_IN)
@@ -399,7 +416,7 @@ class StationAssignTests(AttendanceTestCase):
             [(c["kind"], c["text"]) for c in response.context["changes"]],
             [("out", "王小明（現場部） 請假離開"), ("in", "陳美玲（辦公室） 上班")],
         )
-        self.assertContains(response, "有 2 人異動，現場目前 1 人")
+        self.assertContains(response, "）相比，有 2 人異動，現場目前 1 人")
         # 組長只看到自己部門的異動
         self.login(make_user("lead", Level.LEADER, self.floor))
         self.assertEqual([c["kind"] for c in self.client.get(self.list_url).context["changes"]], ["out"])

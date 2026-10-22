@@ -25,7 +25,7 @@
   {% if changes %}
     <div class="alert alert-warning d-flex flex-wrap align-items-start gap-2" role="status">
       <div class="me-auto">
-        <strong>{{ batches.0.batch.created_at|date:"H:i" }} 的安排生效後，有 {{ changes|length }} 人異動，現場目前 {{ on_site_count }} 人：</strong>
+        <strong>和目前生效的安排（{{ batches.0.batch.created_at|date:"H:i" }}）相比，有 {{ changes|length }} 人異動，現場目前 {{ on_site_count }} 人：</strong>
         <ul class="mb-0 mt-1">
           {% for item in changes %}<li>{% if item.time %}{{ item.time|time:"H:i" }} {% endif %}{{ item.text }}</li>{% endfor %}
         </ul>
