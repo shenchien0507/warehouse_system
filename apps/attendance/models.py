@@ -40,3 +40,30 @@ class Attendance(models.Model):
 
     def __str__(self):
         return f"{self.date} {self.employee} {self.get_status_display()}"
+
+
+class StationBatch(models.Model):
+    """工位安排的一個批次：每次「建立安排」確認儲存時，記下當時到班人員各自的工位。最新的一批就是目前生效的安排。"""
+
+    date = models.DateField("日期")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="建立人", on_delete=models.PROTECT, related_name="+")
+    created_at = models.DateTimeField("建立時間", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "工位安排批次"
+        verbose_name_plural = "工位安排批次"
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"{self.date} 工位安排 {self.created_at:%H:%M}"
+
+
+class StationBatchEntry(models.Model):
+    batch = models.ForeignKey(StationBatch, verbose_name="批次", on_delete=models.CASCADE, related_name="entries")
+    employee = models.ForeignKey(Employee, verbose_name="人員", on_delete=models.PROTECT, related_name="+")
+    station = models.ForeignKey(Station, verbose_name="工位", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+
+    class Meta:
+        verbose_name = "工位安排明細"
+        verbose_name_plural = "工位安排明細"
+        constraints = [models.UniqueConstraint(fields=["batch", "employee"], name="unique_employee_per_station_batch")]

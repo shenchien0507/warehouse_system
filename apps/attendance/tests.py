@@ -8,7 +8,7 @@ from django.utils import timezone
 from apps.accounts.models import Department, Level, PagePermission, Station, User
 from apps.personnel.models import Employee, JobTitle
 
-from .models import Attendance, Status
+from .models import Attendance, StationBatch, Status
 
 TODAY = timezone.localdate()
 YESTERDAY = TODAY - datetime.timedelta(days=1)
@@ -249,16 +249,24 @@ class StationAssignTests(AttendanceTestCase):
         self.desk = Station.objects.create(name="櫃台", department=self.office)
         self.a1 = Attendance.objects.create(employee=self.e1, date=TODAY, status=Status.PRESENT, created_by=self.mgr, updated_by=self.mgr)
         Attendance.objects.create(employee=self.e2, date=TODAY, status=Status.LEAVE, created_by=self.mgr, updated_by=self.mgr)
-        self.url = f"{reverse('attendance:stations')}?date={TODAY:%Y-%m-%d}"
+        self.list_url = f"{reverse('attendance:stations')}?date={TODAY:%Y-%m-%d}"
+        self.url = f"{reverse('attendance:station_new')}?date={TODAY:%Y-%m-%d}"
 
-    def post(self, station, action=None, user=None):
+    def post(self, station, action=None, user=None, url=None):
         self.login(user or self.mgr)
         data = {f"a{self.a1.pk}-station": station.pk if station else ""}
         if action:
             data["action"] = action
-        return self.client.post(self.url, data)
+        return self.client.post(url or self.url, data)
 
-    def test_lists_present_employees_without_choosing_department(self):
+    def test_index_does_not_expand_list_and_has_create_button(self):
+        self.login(self.mgr)
+        response = self.client.get(self.list_url)
+        self.assertNotContains(response, "王小明")
+        self.assertContains(response, "建立安排")
+        self.assertContains(response, "還沒有建立安排")
+
+    def test_create_page_lists_present_employees_across_departments(self):
         Attendance.objects.create(employee=self.e3, date=TODAY, status=Status.PRESENT, created_by=self.mgr, updated_by=self.mgr)
         self.login(self.mgr)
         response = self.client.get(self.url)
@@ -273,15 +281,51 @@ class StationAssignTests(AttendanceTestCase):
         self.assertContains(response, "王小明")
         self.assertNotContains(response, "陳美玲")
 
-    def test_change_needs_batch_confirmation(self):
+    def test_change_needs_confirmation_then_creates_batch(self):
         preview = self.post(self.picking)
         self.assertEqual(preview.status_code, 200)
         self.assertContains(preview, "確認修改")
         self.a1.refresh_from_db()
         self.assertIsNone(self.a1.station)
-        self.post(self.picking, action="confirm")
+        self.assertFalse(StationBatch.objects.exists())
+        self.assertRedirects(self.post(self.picking, action="confirm"), self.list_url)
         self.a1.refresh_from_db()
         self.assertEqual((self.a1.station, self.a1.updated_by), (self.picking, self.mgr))
+        batch = StationBatch.objects.get()
+        self.assertEqual((batch.date, batch.created_by), (TODAY, self.mgr))
+        entry = batch.entries.get()
+        self.assertEqual((entry.employee, entry.station), (self.e1, self.picking))
+
+    def test_no_change_creates_no_batch(self):
+        self.post(None, action="confirm")
+        self.assertFalse(StationBatch.objects.exists())
+
+    def test_index_shows_batches_with_department_counts_and_details(self):
+        Attendance.objects.create(employee=self.e3, date=TODAY, status=Status.PRESENT, created_by=self.mgr, updated_by=self.mgr)
+        self.login(self.mgr)
+        data = {f"a{a.pk}-station": self.picking.pk for a in Attendance.objects.filter(status=Status.PRESENT)}
+        self.client.post(self.url, {**data, "action": "confirm"})
+        self.client.post(self.url, {**{k: self.desk.pk for k in data}, "action": "confirm"})
+        response = self.client.get(self.list_url)
+        batches = response.context["batches"]
+        self.assertEqual(len(batches), 2)
+        self.assertTrue(batches[0]["current"])
+        self.assertEqual(batches[0]["departments"], [("現場部", 1), ("辦公室", 1)])
+        self.assertEqual({e.station for e in batches[0]["entries"]}, {self.desk})
+        self.assertEqual({e.station for e in batches[1]["entries"]}, {self.picking})
+        self.assertContains(response, "目前生效")
+        self.assertContains(response, "王小明")
+
+    def test_leader_only_sees_own_department_in_batches(self):
+        Attendance.objects.create(employee=self.e3, date=TODAY, status=Status.PRESENT, created_by=self.mgr, updated_by=self.mgr)
+        self.login(self.mgr)
+        data = {f"a{a.pk}-station": self.picking.pk for a in Attendance.objects.filter(status=Status.PRESENT)}
+        self.client.post(self.url, {**data, "action": "confirm"})
+        self.login(make_user("lead", Level.LEADER, self.floor))
+        batches = self.client.get(self.list_url).context["batches"]
+        self.assertEqual(batches[0]["departments"], [("現場部", 1)])
+        self.login(make_user("lead_office", Level.LEADER, self.office))
+        self.assertEqual(self.client.get(self.list_url).context["batches"][0]["departments"], [("辦公室", 1)])
 
     def test_any_station_can_be_assigned_and_cleared(self):
         self.post(self.desk, action="confirm")
@@ -293,19 +337,22 @@ class StationAssignTests(AttendanceTestCase):
 
     def test_page_permission_decides_access(self):
         self.login(make_user("lead", Level.LEADER, self.floor))
-        self.assertEqual(self.client.get(self.url).status_code, 200)
+        self.assertEqual(self.client.get(self.list_url).status_code, 200)
         PagePermission.objects.filter(page_key="attendance-stations").update(min_level=Level.DIRECTOR)
+        self.assertEqual(self.client.get(self.list_url).status_code, 403)
         self.assertEqual(self.client.get(self.url).status_code, 403)
 
     def test_past_needs_director_and_future_rejected(self):
         past = Attendance.objects.create(employee=self.e1, date=YESTERDAY, status=Status.PRESENT, created_by=self.mgr, updated_by=self.mgr)
-        past_url = f"{reverse('attendance:stations')}?date={YESTERDAY:%Y-%m-%d}"
+        past_url = f"{reverse('attendance:station_new')}?date={YESTERDAY:%Y-%m-%d}"
         data = {f"a{past.pk}-station": self.picking.pk, "action": "confirm"}
         self.login(make_user("lead", Level.LEADER, self.floor))
+        self.assertEqual(self.client.get(past_url).status_code, 403)
         self.assertEqual(self.client.post(past_url, data).status_code, 403)
         self.login(make_user("dir", Level.DIRECTOR, self.floor))
         self.client.post(past_url, data)
         past.refresh_from_db()
         self.assertEqual(past.station, self.picking)
-        future = f"{reverse('attendance:stations')}?date={TODAY + datetime.timedelta(days=1):%Y-%m-%d}"
+        future = f"{reverse('attendance:station_new')}?date={TODAY + datetime.timedelta(days=1):%Y-%m-%d}"
         self.assertEqual(self.client.post(future, {"action": "confirm"}).status_code, 403)
+        self.assertNotContains(self.client.get(f"{reverse('attendance:stations')}?date={TODAY + datetime.timedelta(days=1):%Y-%m-%d}"), "建立安排</a>")
