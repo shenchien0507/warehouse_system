@@ -3,33 +3,29 @@ from django.utils import timezone
 
 from apps.accounts.models import Station
 
-from .models import Status
+from .models import EventKind
 
 
-class AttendanceRowForm(forms.Form):
-    """登記表中一個人的一列。狀態留空代表未登記（已有紀錄會刪除）。"""
+class EventForm(forms.Form):
+    """補登一筆紀錄（上班、下班、請假離開、請假、缺勤），可指定時間。"""
 
-    status = forms.ChoiceField(label="狀態", choices=[("", "未登記")] + Status.choices, required=False)
-    clock_in = forms.TimeField(label="上班時間", required=False, widget=forms.TimeInput(attrs={"type": "time"}, format="%H:%M"))
-    clock_out = forms.TimeField(label="下班時間", required=False, widget=forms.TimeInput(attrs={"type": "time"}, format="%H:%M"))
-    station = forms.ModelChoiceField(
-        label="當日工位", queryset=Station.objects.select_related("department").order_by("department__name", "name"), required=False
-    )
-    note = forms.CharField(label="備註", max_length=200, required=False)
-
-    def __init__(self, *args, editable=True, **kwargs):
-        super().__init__(*args, **kwargs)
-        # 工位在「工位安排」頁設定，登記頁只顯示
-        self.fields["station"].disabled = True
-        if not editable:
-            for field in self.fields.values():
-                field.disabled = True
+    kind = forms.ChoiceField(label="類型", choices=EventKind.choices)
+    time = forms.TimeField(label="時間", required=False, widget=forms.TimeInput(attrs={"type": "time"}, format="%H:%M"))
+    end_time = forms.TimeField(label="請假到", required=False, widget=forms.TimeInput(attrs={"type": "time"}, format="%H:%M"))
+    note = forms.CharField(label="原因／備註", max_length=200, required=False)
 
     def clean(self):
         cleaned = super().clean()
-        if cleaned.get("status") not in (Status.PRESENT, Status.LEAVE):
-            # 缺勤（或未登記）就不記時間與工位；請假保留，因為可能是上午有到、中途請假離開
-            cleaned["clock_in"] = cleaned["clock_out"] = cleaned["station"] = None
+        kind, start, end = cleaned.get("kind"), cleaned.get("time"), cleaned.get("end_time")
+        if kind == EventKind.LEAVE:
+            if start and end and end <= start:
+                self.add_error("end_time", "結束時間要晚於開始時間。")
+        else:
+            cleaned["end_time"] = None
+            if kind == EventKind.ABSENT:
+                cleaned["time"] = None
+            elif kind and not start:
+                self.add_error("time", "請填時間。")
         return cleaned
 
 

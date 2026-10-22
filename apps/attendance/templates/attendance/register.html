@@ -25,7 +25,7 @@
   </form>
 
   {% if not is_today %}
-    <div class="alert alert-secondary py-2">你正在看 {{ date|date:"Y-m-d" }} 的紀錄。之前日期的紀錄只有主任以上能修改，且只能直接修改時間。</div>
+    <div class="alert alert-secondary py-2">你正在看 {{ date|date:"Y-m-d" }} 的紀錄。之前日期只有主任以上能補登或作廢，且要用「補登紀錄」填時間。</div>
   {% endif %}
 
   {% if error %}
@@ -33,60 +33,89 @@
   {% endif %}
 
   {% if employee %}
-    {% with form=form %}
-      <form method="post" class="card" style="max-width: 40rem;">
-        {% csrf_token %}
-        {# Enter 送出時預設是儲存，不會誤按上班 #}
-        <button type="submit" name="action" value="save" class="d-none" tabindex="-1" aria-hidden="true"></button>
-        <div class="card-body">
-          <h2 class="h5 mb-1">{{ employee.employee_no }} {{ employee.name }}{% if not employee.is_active %} <span class="badge text-bg-secondary">已離職</span>{% endif %}</h2>
-          <div class="text-muted small mb-3">
-            {{ employee.department|default:"未設定部門" }}{% if employee.job_title %}／{{ employee.job_title }}{% endif %}
-            {% if record %}｜登記人：{{ record.created_by.name|default:record.created_by.username }}{% endif %}
-          </div>
-
-          {% for field in form %}{% for err in field.errors %}<div class="text-danger small">{{ field.label }}：{{ err }}</div>{% endfor %}{% endfor %}
-
-          <div class="row g-3">
-            <div class="col-12 col-sm-4">
-              <label class="form-label" for="{{ form.status.id_for_label }}">狀態</label>
-              {{ form.status }}
-            </div>
-            <div class="col-6 col-sm-4">
-              <label class="form-label" for="{{ form.clock_in.id_for_label }}">上班</label>
-              {{ form.clock_in }}
-            </div>
-            <div class="col-6 col-sm-4">
-              <label class="form-label" for="{{ form.clock_out.id_for_label }}">下班</label>
-              {{ form.clock_out }}
-            </div>
-            <div class="col-12">
-              <label class="form-label" for="{{ form.note.id_for_label }}">備註</label>
-              {{ form.note }}
-            </div>
-            {% if record and record.station %}
-              <div class="col-12 small text-muted">當日工位：{{ record.station }}（到「工位安排」設定）</div>
-            {% endif %}
-          </div>
-
-          {% if can_clock %}
-            <div class="d-flex gap-2 mt-4">
-              <button type="submit" name="action" value="clock_in" class="btn btn-success btn-lg flex-fill"{% if record.clock_in %} disabled{% endif %}>
-                上班{% if record.clock_in %} {{ record.clock_in|time:"H:i" }}{% endif %}
-              </button>
-              <button type="submit" name="action" value="clock_out" class="btn btn-warning btn-lg flex-fill"{% if not record.clock_in or record.clock_out %} disabled{% endif %}>
-                下班{% if record.clock_out %} {{ record.clock_out|time:"H:i" }}{% endif %}
-              </button>
-            </div>
-          {% endif %}
-          {% if form.status.field.disabled %}
-            <div class="small text-muted mt-3">這筆紀錄你不能修改。</div>
-          {% else %}
-            <div class="mt-3"><button type="submit" name="action" value="save" class="btn btn-outline-primary">儲存修改</button></div>
-          {% endif %}
+    <div class="card" style="max-width: 44rem;">
+      <div class="card-body">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+          <h2 class="h5 mb-0">{{ employee.employee_no }} {{ employee.name }}</h2>
+          {% if not employee.is_active %}<span class="badge text-bg-secondary">已離職</span>{% endif %}
+          {% if record.status %}<span class="badge text-bg-primary">{{ record.get_status_display }}</span>{% else %}<span class="badge text-bg-light border">未登記</span>{% endif %}
+          {% if is_today and record.on_site %}<span class="badge text-bg-success">在現場</span>{% endif %}
         </div>
-      </form>
-    {% endwith %}
+        <div class="text-muted small mb-3">
+          {{ employee.department|default:"未設定部門" }}{% if employee.job_title %}／{{ employee.job_title }}{% endif %}
+          {% if record.station %}｜當日工位：{{ record.station }}（到「工位安排」設定）{% endif %}
+        </div>
+
+        {% if can_clock %}
+          <form method="post" class="mb-3">
+            {% csrf_token %}
+            {# Enter 送出時不做任何事，避免誤按上班 #}
+            <button type="submit" name="action" value="noop" class="d-none" tabindex="-1" aria-hidden="true"></button>
+            <div class="d-flex flex-wrap gap-2">
+              <button type="submit" name="action" value="clock_in" class="btn btn-success btn-lg flex-fill"{% if record.on_site %} disabled{% endif %}>上班</button>
+              <button type="submit" name="action" value="clock_out" class="btn btn-warning btn-lg flex-fill"{% if not record.on_site %} disabled{% endif %}>下班</button>
+              <button type="submit" name="action" value="leave_out" class="btn btn-outline-danger btn-lg flex-fill"{% if not record.on_site %} disabled{% endif %}>請假離開</button>
+            </div>
+            <input type="text" name="quick_note" class="form-control mt-2" maxlength="200" placeholder="原因／備註（選填，例如：看醫生）" aria-label="原因／備註">
+          </form>
+        {% endif %}
+
+        <h3 class="h6">當天紀錄</h3>
+        <ul class="list-group mb-3">
+          {% for event in events %}
+            <li class="list-group-item d-flex flex-wrap align-items-center gap-2{% if event.voided_at %} text-muted{% endif %}">
+              <span class="{% if event.voided_at %}text-decoration-line-through{% else %}fw-bold{% endif %}">{{ event.describe }}</span>
+              {% if event.note %}<span class="small">{{ event.note }}</span>{% endif %}
+              <span class="small text-muted">{{ event.created_by.name|default:event.created_by.username }} 登記 {{ event.created_at|date:"H:i" }}</span>
+              {% if event.voided_at %}
+                <span class="badge text-bg-secondary ms-auto">已作廢（{{ event.voided_by.name|default:event.voided_by.username }} {{ event.voided_at|date:"H:i" }}）</span>
+              {% elif event.can_void %}
+                <form method="post" class="ms-auto">
+                  {% csrf_token %}
+                  <input type="hidden" name="event" value="{{ event.pk }}">
+                  <button type="submit" name="action" value="void" class="btn btn-sm btn-outline-secondary">作廢</button>
+                </form>
+              {% endif %}
+            </li>
+          {% empty %}
+            <li class="list-group-item text-muted">這天還沒有紀錄。</li>
+          {% endfor %}
+        </ul>
+
+        {% if event_form %}
+          <details{% if event_form.errors or not is_today %} open{% endif %}>
+            <summary class="mb-2">補登紀錄（指定時間、請假、缺勤）</summary>
+            <form method="post">
+              {% csrf_token %}
+              {% for field in event_form %}{% for err in field.errors %}<div class="text-danger small">{{ field.label }}：{{ err }}</div>{% endfor %}{% endfor %}
+              {% for err in event_form.non_field_errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+              <div class="row g-2">
+                <div class="col-12 col-sm-4">
+                  <label class="form-label" for="{{ event_form.kind.id_for_label }}">{{ event_form.kind.label }}</label>
+                  {{ event_form.kind }}
+                </div>
+                <div class="col-6 col-sm-4">
+                  <label class="form-label" for="{{ event_form.time.id_for_label }}">時間／請假從</label>
+                  {{ event_form.time }}
+                </div>
+                <div class="col-6 col-sm-4">
+                  <label class="form-label" for="{{ event_form.end_time.id_for_label }}">{{ event_form.end_time.label }}</label>
+                  {{ event_form.end_time }}
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="{{ event_form.note.id_for_label }}">{{ event_form.note.label }}</label>
+                  {{ event_form.note }}
+                </div>
+              </div>
+              <div class="form-text">請假：兩個時間都空白是全天，只填開始是請到下班。缺勤不用填時間。</div>
+              <button type="submit" name="action" value="add" class="btn btn-outline-primary mt-2">新增紀錄</button>
+            </form>
+          </details>
+        {% elif not editable %}
+          <div class="small text-muted">這天的紀錄你不能修改。</div>
+        {% endif %}
+      </div>
+    </div>
   {% elif not error %}
     <p class="text-muted">輸入工號後按查詢（或 Enter）。</p>
   {% endif %}
@@ -96,7 +125,7 @@
 
 {% block extra_css %}
   <style>
-    .card select, .card input[type=time], .card input[type=text] { width: 100%; padding: .375rem .5rem; border: 1px solid #ced4da; border-radius: .375rem; }
+    .card select, .card input[type=time], .card input[type=text]:not(.form-control) { width: 100%; padding: .375rem .5rem; border: 1px solid #ced4da; border-radius: .375rem; }
     .card select:disabled, .card input:disabled { background: #f1f3f5; }
   </style>
 {% endblock %}

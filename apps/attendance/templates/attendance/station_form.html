@@ -40,7 +40,7 @@
       <a class="btn btn-outline-secondary" href="{{ request.get_full_path }}">返回繼續編輯</a>
     </form>
   {% else %}
-    <p class="lead">共 {{ rows|length }} 人到班{% if not rows %}（請先到「到班登記」登記到班）{% endif %}</p>
+    <p class="lead">共 {{ rows|length }} 人{% if is_today %}在現場{% else %}當天上過班{% endif %}{% if not rows %}（請先到「到班登記」登記上班）{% endif %}</p>
     <form method="post">
       {% csrf_token %}
       <div class="table-responsive">
@@ -50,7 +50,7 @@
             {% for row in rows %}
               <tr>
                 <td>{{ row.record.employee.employee_no }}</td>
-                <td>{{ row.record.employee.name }}{% if row.record.status != "present" %} <span class="badge text-bg-warning">{{ row.record.get_status_display }}{% if row.record.clock_out %} {{ row.record.clock_out|time:"H:i" }} 離開{% endif %}</span>{% endif %}</td>
+                <td>{{ row.record.employee.name }}{% if row.record.status == "partial" %} <span class="badge text-bg-warning">部分請假</span>{% endif %}{% if row.record.clock_out %} <span class="badge text-bg-light border">{{ row.record.clock_out|time:"H:i" }} 離開</span>{% endif %}</td>
                 <td>{{ row.record.employee.department|default:"" }}</td>
                 <td>{{ row.record.employee.job_title|default:"" }}</td>
                 <td>{{ row.form.station }}</td>
