@@ -3,6 +3,7 @@ from collections import Counter
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import redirect
 from django.urls import reverse
@@ -311,7 +312,9 @@ class StationCreateView(StationScopeMixin, TemplateView):
 
     def build_rows(self, date, data=None):
         records = self.in_scope(
-            Attendance.objects.filter(date=date, status=Status.PRESENT)
+            # 上午有到、中途請假的人（有上班時間或已排工位）也要列出，才能繼續調整工位
+            Attendance.objects.filter(date=date)
+            .filter(Q(status=Status.PRESENT) | Q(status=Status.LEAVE, clock_in__isnull=False) | Q(status=Status.LEAVE, station__isnull=False))
             .select_related("employee__job_title", "employee__department", "station__department")
             .order_by("employee__department__name", "employee__employee_no")
         )

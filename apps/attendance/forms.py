@@ -27,8 +27,8 @@ class AttendanceRowForm(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
-        if cleaned.get("status") != Status.PRESENT:
-            # 沒到班就不記時間與工位
+        if cleaned.get("status") not in (Status.PRESENT, Status.LEAVE):
+            # 缺勤（或未登記）就不記時間與工位；請假保留，因為可能是上午有到、中途請假離開
             cleaned["clock_in"] = cleaned["clock_out"] = cleaned["station"] = None
         return cleaned
 
