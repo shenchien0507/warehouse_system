@@ -11,6 +11,6 @@ class JobTitleAdmin(admin.ModelAdmin):
 
 @admin.register(Employee)
 class EmployeeAdmin(admin.ModelAdmin):
-    list_display = ("employee_no", "name", "department", "job_title", "is_active")
+    list_display = ("employee_no", "name", "department", "job_title", "level", "is_active")
     list_filter = ("is_active", "department", "job_title")
     search_fields = ("employee_no", "name")

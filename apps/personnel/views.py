@@ -37,6 +37,11 @@ class EmployeeMixin:
     page_key = "manage-employees"
     list_url_name = "personnel:employee_list"
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["editor"] = self.request.user
+        return kwargs
+
 
 class EmployeeList(EmployeeMixin, ManageListView):
     template_name = "personnel/employee_list.html"
@@ -46,6 +51,7 @@ class EmployeeList(EmployeeMixin, ManageListView):
         ("姓名", "name"),
         ("部門", "department"),
         ("職務", "job_title"),
+        ("職級", "level"),
         ("在職", "is_active"),
         ("系統帳號", lambda o: o.user.username if o.user else ""),
     ]
