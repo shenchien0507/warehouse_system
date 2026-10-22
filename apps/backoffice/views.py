@@ -12,7 +12,7 @@ from .menu import MENU_BY_KEY, accessible_menu, can_use
 
 
 def dashboard(request):
-    items = accessible_menu(request.user)
+    items = accessible_menu(request.user, "backoffice")
     if not items:
         raise PermissionDenied
     groups = {}

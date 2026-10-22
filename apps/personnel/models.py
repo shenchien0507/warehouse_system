@@ -50,3 +50,14 @@ class Employee(models.Model):
 
     def __str__(self):
         return f"{self.employee_no} {self.name}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # 姓名、電話、部門以人員資料為準，有帳號時同步過去
+        if self.user_id:
+            user = self.user
+            synced = {"username": self.employee_no, "name": self.name, "phone": self.phone, "department_id": self.department_id}
+            if any(getattr(user, field) != value for field, value in synced.items()):
+                for field, value in synced.items():
+                    setattr(user, field, value)
+                user.save(update_fields=list(synced))

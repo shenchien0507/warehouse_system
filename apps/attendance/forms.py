@@ -18,6 +18,8 @@ class AttendanceRowForm(forms.Form):
 
     def __init__(self, *args, editable=True, **kwargs):
         super().__init__(*args, **kwargs)
+        # 工位在「工位安排」頁設定，登記頁只顯示
+        self.fields["station"].disabled = True
         if not editable:
             for field in self.fields.values():
                 field.disabled = True
@@ -37,3 +39,11 @@ class FilterForm(forms.Form):
     def __init__(self, *args, departments, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["department"].queryset = departments
+
+
+class StationAssignForm(forms.Form):
+    """工位安排表中一個到班人員的一列。"""
+
+    station = forms.ModelChoiceField(
+        label="當日工位", queryset=Station.objects.select_related("department").order_by("department__name", "name"), required=False
+    )

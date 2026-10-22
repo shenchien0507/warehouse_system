@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}工位安排{% endblock %}
+
+{% block page_header %}
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <h1 class="h3 mb-0 me-auto">工位安排</h1>
+    <a class="btn btn-outline-secondary" href="{% url 'attendance:register' %}?date={{ date|date:'Y-m-d' }}">去登記到班</a>
+  </div>
+{% endblock %}
+
+{% block content %}
+  {% include "attendance/_filter.html" with show_department=True %}
+
+  {% if not editable %}
+    <div class="alert alert-secondary py-2">{{ date|date:"Y-m-d" }} 的工位只能查看；之前日期要主任以上才能修改，未來日期不能安排。</div>
+  {% endif %}
+
+  {% if changes %}
+    <div class="alert alert-warning">以下 {{ changes|length }} 人的工位將被修改，請確認：</div>
+    <table class="table table-sm align-middle w-auto">
+      <thead class="table-light"><tr><th>工號</th><th>姓名</th><th>原工位</th><th></th><th>新工位</th></tr></thead>
+      <tbody>
+        {% for change in changes %}
+          <tr>
+            <td>{{ change.record.employee.employee_no }}</td>
+            <td>{{ change.record.employee.name }}</td>
+            <td>{{ change.old|default:"未安排" }}</td>
+            <td>→</td>
+            <td class="fw-bold">{{ change.new|default:"未安排" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <form method="post" class="d-flex gap-2">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="confirm">
+      {% for row in rows %}<input type="hidden" name="{{ row.form.station.html_name }}" value="{{ row.form.station.value|default_if_none:'' }}">{% endfor %}
+      <button type="submit" class="btn btn-primary">確認修改</button>
+      <a class="btn btn-outline-secondary" href="{{ request.get_full_path }}">返回繼續編輯</a>
+    </form>
+  {% else %}
+    <p class="lead">{{ date|date:"Y-m-d" }} 共 {{ rows|length }} 人到班{% if not rows %}（請先到「到班登記」登記到班）{% endif %}</p>
+    <form method="post">
+      {% csrf_token %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle station-table">
+          <thead class="table-light"><tr><th>工號</th><th>姓名</th><th>職務</th><th>當日工位</th></tr></thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td>{{ row.record.employee.employee_no }}</td>
+                <td>{{ row.record.employee.name }}</td>
+                <td>{{ row.record.employee.job_title|default:"" }}</td>
+                <td>{{ row.form.station }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if editable and rows %}<button type="submit" class="btn btn-primary">檢視變更</button>{% endif %}
+    </form>
+  {% endif %}
+{% endblock %}
+
+{% block extra_css %}
+  <style>
+    .station-table select { width: 100%; min-width: 10rem; padding: .25rem .5rem; border: 1px solid #ced4da; border-radius: .375rem; }
+  </style>
+{% endblock %}

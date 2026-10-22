@@ -72,12 +72,9 @@ class CrudTests(BackofficeTestCase):
         self.assertNotContains(self.client.get(url), "P002")
         self.assertContains(self.client.get(url, {"status": "inactive"}), "P002")
 
-    def test_account_can_link_to_one_employee_only(self):
-        account = make_user("P001")
-        Employee.objects.create(employee_no="P001", name="王小明", user=account)
-        other = Employee.objects.create(employee_no="P002", name="李大華")
-        response = self.client.get(reverse("personnel:employee_edit", args=[other.pk]))
-        self.assertNotIn(account, response.context["form"].fields["user"].queryset)
+    def test_employee_form_has_no_account_field(self):
+        response = self.client.get(reverse("personnel:employee_create"))
+        self.assertNotIn("user", response.context["form"].fields)
 
     def test_delete_protected_department_shows_error(self):
         dept = Department.objects.create(name="現場部")
@@ -91,21 +88,51 @@ class CrudTests(BackofficeTestCase):
         self.client.post(reverse("personnel:job_title_delete", args=[job.pk]))
         self.assertFalse(JobTitle.objects.exists())
 
-    def test_create_user_and_reset_password(self):
-        response = self.client.post(
-            reverse("accounts_manage:user_create"),
-            {"username": "E100", "name": "新人", "level": Level.STAFF, "is_active": "on",
-             "password1": "Wh-pass-2026", "password2": "Wh-pass-2026"},
-        )
+    def test_create_user_requires_employee_and_copies_its_data(self):
+        dept = Department.objects.create(name="現場部")
+        employee = Employee.objects.create(employee_no="E100", name="新人", phone="0912", department=dept)
+        url = reverse("accounts_manage:user_create")
+        passwords = {"password1": "Wh-pass-2026", "password2": "Wh-pass-2026"}
+        # 沒選人員、或憑空輸入工號都不能建立帳號
+        self.client.post(url, {"username": "X1", "name": "憑空", "level": Level.STAFF, **passwords})
+        self.assertFalse(User.objects.filter(username="X1").exists())
+        response = self.client.post(url, {"employee": employee.pk, "level": Level.STAFF, "is_active": "on", **passwords})
         self.assertRedirects(response, reverse("accounts_manage:user_list"))
         user = User.objects.get(username="E100")
+        self.assertEqual((user.name, user.phone, user.department), ("新人", "0912", dept))
         self.assertTrue(user.check_password("Wh-pass-2026"))
+        employee.refresh_from_db()
+        self.assertEqual(employee.user, user)
+        # 已有帳號的人員不能再建第二個帳號
+        response = self.client.get(url)
+        self.assertNotIn(employee, response.context["form"].fields["employee"].queryset)
         self.client.post(
             reverse("accounts_manage:user_password", args=[user.pk]),
             {"new_password1": "Another-pass-99", "new_password2": "Another-pass-99"},
         )
         user.refresh_from_db()
         self.assertTrue(user.check_password("Another-pass-99"))
+
+    def test_employee_changes_sync_to_account_and_account_form_locks_them(self):
+        account = make_user("E100")
+        employee = Employee.objects.create(employee_no="E100", name="新人", user=account)
+        self.client.post(reverse("personnel:employee_edit", args=[employee.pk]), {"employee_no": "E100", "name": "改名", "is_active": "on"})
+        account.refresh_from_db()
+        self.assertEqual(account.name, "改名")
+        response = self.client.get(reverse("accounts_manage:user_edit", args=[account.pk]))
+        form = response.context["form"]
+        self.assertTrue(all(form.fields[f].disabled for f in ("username", "name", "phone", "department")))
+
+    def test_inactive_employees_not_offered_for_new_account(self):
+        Employee.objects.create(employee_no="E200", name="離職", is_active=False)
+        response = self.client.get(reverse("accounts_manage:user_create"))
+        self.assertEqual(response.context["form"].fields["employee"].queryset.count(), 0)
+
+    def test_attendance_is_a_feature_not_in_backoffice(self):
+        dashboard = self.client.get(reverse("backoffice:dashboard"))
+        self.assertNotContains(dashboard, "list-group-item-action\" href=\"/attendance/")
+        self.assertNotContains(dashboard, 'card-header">到班')
+        self.assertContains(self.client.get(reverse("home")), 'href="/attendance/"')
 
     def test_page_permission_create_uses_menu_label(self):
         response = self.client.post(

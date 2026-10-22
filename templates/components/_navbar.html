@@ -11,6 +11,9 @@
         <li class="nav-item">
           <a class="nav-link{% if request.resolver_match.url_name == 'home' %} active{% endif %}" href="{% url 'home' %}">首頁</a>
         </li>
+        {% for item in feature_menu %}
+          <li class="nav-item"><a class="nav-link{% if request.resolver_match.view_name == item.url_name %} active{% endif %}" href="{% url item.url_name %}">{{ item.label }}</a></li>
+        {% endfor %}
         {# 範例：<li class="nav-item"><a class="nav-link" href="{% url 'inventory:list' %}">庫存</a></li> #}
       </ul>
       <ul class="navbar-nav">
