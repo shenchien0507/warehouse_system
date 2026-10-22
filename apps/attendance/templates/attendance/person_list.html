@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}人員名單{% endblock %}
+
+{% block page_header %}
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <h1 class="h3 mb-0 me-auto">{{ title }}</h1>
+    <a class="btn btn-outline-secondary" href="{% url 'attendance:register' %}?date={{ date|date:'Y-m-d' }}">回到班登記</a>
+  </div>
+{% endblock %}
+
+{% block content %}
+  <p class="lead">{{ date|date:"Y-m-d" }} 共 {{ rows|length }} 人</p>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr><th>工號</th><th>姓名</th><th>職務</th><th>狀態</th><th>上班</th><th>下班</th><th>當日工位</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.employee.employee_no }}</td>
+            <td>{{ row.employee.name }}{% if not row.employee.is_active %} <span class="badge text-bg-secondary">已離職</span>{% endif %}</td>
+            <td>{{ row.employee.job_title|default:"" }}</td>
+            <td>{% if row.record %}{{ row.record.get_status_display }}{% else %}<span class="text-muted">未登記</span>{% endif %}</td>
+            <td>{{ row.record.clock_in|time:"H:i"|default:"" }}</td>
+            <td>{{ row.record.clock_out|time:"H:i"|default:"" }}</td>
+            <td>{{ row.record.station|default:"" }}</td>
+            <td><a class="btn btn-sm btn-outline-primary" href="{% url 'attendance:register' %}?employee_no={{ row.employee.employee_no|urlencode }}&date={{ date|date:'Y-m-d' }}">登記</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="text-center text-muted py-4">沒有人員</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

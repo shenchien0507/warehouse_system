@@ -5,7 +5,7 @@
 {% block page_header %}
   <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
     <h1 class="h3 mb-0 me-auto">到班登記</h1>
-    <a class="btn btn-outline-secondary" href="{% url 'attendance:headcount' %}?date={{ date|date:'Y-m-d' }}">看到班人數</a>
+    <a class="btn btn-outline-secondary" href="{% url 'attendance:stations' %}?date={{ date|date:'Y-m-d' }}">去安排工位</a>
   </div>
 {% endblock %}
 
@@ -90,6 +90,8 @@
   {% elif not error %}
     <p class="text-muted">輸入工號後按查詢（或 Enter）。</p>
   {% endif %}
+
+  {% include "attendance/_headcount.html" %}
 {% endblock %}
 
 {% block extra_css %}

@@ -10,7 +10,12 @@
 {% endblock %}
 
 {% block content %}
-  {% include "attendance/_filter.html" with show_department=True %}
+  <form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-auto">
+      <label class="form-label" for="id_date">日期</label>
+      <input type="date" name="date" id="id_date" class="form-control" value="{{ date|date:'Y-m-d' }}" onchange="this.form.submit()">
+    </div>
+  </form>
 
   {% if not editable %}
     <div class="alert alert-secondary py-2">{{ date|date:"Y-m-d" }} 的工位只能查看；之前日期要主任以上才能修改，未來日期不能安排。</div>
@@ -45,12 +50,13 @@
       {% csrf_token %}
       <div class="table-responsive">
         <table class="table table-hover align-middle station-table">
-          <thead class="table-light"><tr><th>工號</th><th>姓名</th><th>職務</th><th>當日工位</th></tr></thead>
+          <thead class="table-light"><tr><th>工號</th><th>姓名</th><th>部門</th><th>職務</th><th>當日工位</th></tr></thead>
           <tbody>
             {% for row in rows %}
               <tr>
                 <td>{{ row.record.employee.employee_no }}</td>
                 <td>{{ row.record.employee.name }}</td>
+                <td>{{ row.record.employee.department|default:"" }}</td>
                 <td>{{ row.record.employee.job_title|default:"" }}</td>
                 <td>{{ row.form.station }}</td>
               </tr>

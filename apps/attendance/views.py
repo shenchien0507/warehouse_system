@@ -3,6 +3,7 @@ from collections import Counter
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.http import Http404
 from django.shortcuts import redirect
 from django.utils import timezone
 from django.utils.http import urlencode
@@ -12,37 +13,33 @@ from apps.accounts.models import Level
 from apps.backoffice.menu import MENU_BY_KEY, can_use
 from apps.personnel.models import Employee
 
-from .forms import AttendanceRowForm, FilterForm, LookupForm, StationAssignForm
+from .forms import AttendanceRowForm, DateForm, LookupForm, StationAssignForm
 from .models import Attendance, Status
 from .rules import can_arrange, can_edit, can_register, departments_in_scope, station_departments
 
+NO_DEPARTMENT = "none"  # 人員沒有設定部門時，統計與名單用的代碼（只有經理以上看得到）
 
-class AttendanceMixin:
+
+class PageMixin:
+    """頁面權限檢查；範圍不足（例如沒有部門）時提示並回首頁。"""
+
     page_key = None
 
-    def get_departments(self, user):
-        return departments_in_scope(user)
+    def check_scope(self, user):
+        return True
 
     def dispatch(self, request, *args, **kwargs):
-        self.departments = self.get_departments(request.user)
         if not can_use(request.user, MENU_BY_KEY[self.page_key]):
             raise PermissionDenied
-        if not self.departments.exists():
-            if request.user.level >= Level.MANAGER:
-                messages.warning(request, "還沒有建立任何部門，請先到「部門」新增。")
-            else:
-                messages.warning(request, "你的帳號沒有設定部門，或職級不足，不能使用這個功能。")
+        if not self.check_scope(request.user):
+            messages.warning(request, "你的帳號沒有設定部門，或職級不足，不能使用這個功能。")
             return redirect("home")
         return super().dispatch(request, *args, **kwargs)
 
-    def get_filter(self):
-        defaults = {"date": timezone.localdate(), "department": self.departments.first().pk}
-        form = FilterForm({key: self.request.GET.get(key) or value for key, value in defaults.items()}, departments=self.departments)
-        if not form.is_valid():
-            # 參數不正確（或部門不在可登記範圍）就回到今天、第一個部門
-            form = FilterForm(defaults, departments=self.departments)
-            form.is_valid()
-        return form
+    def get_date(self):
+        form = DateForm(self.request.GET)
+        form.is_valid()
+        return form.cleaned_data.get("date") or timezone.localdate()
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -50,19 +47,60 @@ class AttendanceMixin:
         return context
 
 
-class RegisterView(TemplateView):
+class RegisterAccessMixin(PageMixin):
+    page_key = "attendance-register"
+
+    def check_scope(self, user):
+        return user.level >= Level.MANAGER or (user.level >= Level.LEADER and bool(user.department_id))
+
+
+def scope_entries(user):
+    """統計與名單的範圍：可登記的部門；經理以上再加上「未設定部門」（有這類人員時）。"""
+    entries = [{"key": str(d.pk), "label": str(d), "department": d} for d in departments_in_scope(user)]
+    if user.level >= Level.MANAGER and Employee.objects.filter(department__isnull=True).exists():
+        entries.append({"key": NO_DEPARTMENT, "label": "未設定部門", "department": None})
+    return entries
+
+
+def summarize(user, date):
+    """某一天各部門、各工位的到班人數。"""
+    entries = scope_entries(user)
+    records = Attendance.objects.filter(date=date).select_related("employee", "station__department")
+    active = Employee.objects.filter(is_active=True).values_list("pk", "department_id")
+    summary = []
+    for entry in entries:
+        dept_id = entry["department"].pk if entry["department"] else None
+        dept_records = [r for r in records if r.employee.department_id == dept_id]
+        registered = {r.employee_id for r in dept_records}
+        active_ids = [pk for pk, d in active if d == dept_id]
+        status = Counter(r.status for r in dept_records)
+        # 支援其他部門工位時會顯示「部門／工位」
+        stations = Counter(
+            (
+                (str(r.station.pk), r.station.name if r.station.department_id == dept_id else str(r.station))
+                if r.station
+                else ("none", "未填工位")
+            )
+            for r in dept_records
+            if r.status == Status.PRESENT
+        )
+        summary.append({
+            **entry,
+            "active": len(active_ids),
+            "present": status[Status.PRESENT],
+            "leave": status[Status.LEAVE],
+            "absent": status[Status.ABSENT],
+            "unregistered": len([pk for pk in active_ids if pk not in registered]),
+            "stations": [{"key": key, "label": label, "count": count} for (key, label), count in sorted(stations.items(), key=lambda i: i[0][1])],
+        })
+    return summary
+
+
+class RegisterView(RegisterAccessMixin, TemplateView):
     """輸入工號查出人員，按「上班」「下班」記錄時間；按上班會自動把狀態設為到班。也可手動改狀態、時間與備註。"""
 
     page_key = "attendance-register"
     template_name = "attendance/register.html"
-
-    def dispatch(self, request, *args, **kwargs):
-        if not can_use(request.user, MENU_BY_KEY[self.page_key]):
-            raise PermissionDenied
-        if request.user.level < Level.LEADER or (request.user.level < Level.MANAGER and not request.user.department_id):
-            messages.warning(request, "你的帳號沒有設定部門，或職級不足，不能使用這個功能。")
-            return redirect("home")
-        return super().dispatch(request, *args, **kwargs)
 
     def load(self):
         """依網址的工號與日期找出人員與當天紀錄。"""
@@ -112,6 +150,7 @@ class RegisterView(TemplateView):
                 messages.error(request, "有欄位格式不正確，請檢查標紅的地方。")
                 return self.render_to_response(self.get_context_data(form=form))
             self.save_form(form)
+            return self.redirect_back(keep_employee=False)
         return self.redirect_back()
 
     def clock(self, action):
@@ -160,8 +199,12 @@ class RegisterView(TemplateView):
         record.save()
         messages.success(request, f"已儲存 {self.employee.name} 的紀錄。")
 
-    def redirect_back(self):
-        return redirect(f"{self.request.path}?{urlencode({'employee_no': self.employee_no, 'date': f'{self.date:%Y-%m-%d}'})}")
+    def redirect_back(self, keep_employee=True):
+        """按上班、下班後留在這個人；儲存修改後回到搜尋畫面。"""
+        params = {"date": f"{self.date:%Y-%m-%d}"}
+        if keep_employee:
+            params["employee_no"] = self.employee_no
+        return redirect(f"{self.request.path}?{urlencode(params)}")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -170,25 +213,71 @@ class RegisterView(TemplateView):
             menu_item=MENU_BY_KEY[self.page_key], date=self.date, employee_no=self.employee_no, employee=self.employee,
             record=self.record, error=self.error, is_today=self.date == today,
             can_clock=self.employee is not None and self.date == today and can_edit(self.request.user, self.date, self.record),
+            summary=summarize(self.request.user, self.date),
         )
+        context["total_present"] = sum(row["present"] for row in context["summary"])
         return context
 
 
-class StationAssignView(AttendanceMixin, TemplateView):
-    """到班登記完成後，依日期與部門安排到班人員的當日工位。改完先列出變更，確認後才批次儲存。"""
+class PersonListView(RegisterAccessMixin, TemplateView):
+    """從人數統計點進來的人員名單；每個人可以點「登記」去設定。"""
+
+    template_name = "attendance/person_list.html"
+    KINDS = {"active": "在職", "present": "到班", "leave": "請假", "absent": "缺勤", "unregistered": "未登記", "station": "到班（依工位）"}
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        date = self.get_date()
+        key = self.request.GET.get("department", "")
+        entry = next((e for e in scope_entries(self.request.user) if e["key"] == key), None)
+        kind = self.request.GET.get("kind", "")
+        if entry is None or kind not in self.KINDS:
+            raise Http404
+        department = entry["department"]
+        employees = Employee.objects.filter(department=department).select_related("job_title").order_by("employee_no")
+        records = Attendance.objects.filter(date=date, employee__department=department).select_related(
+            "employee__job_title", "station__department"
+        ).order_by("employee__employee_no")
+        title = f"{entry['label']}　{self.KINDS[kind]}"
+        if kind == "active":
+            by_record = {r.employee_id: r for r in records}
+            rows = [{"employee": e, "record": by_record.get(e.pk)} for e in employees.filter(is_active=True)]
+        elif kind == "unregistered":
+            registered = set(records.values_list("employee_id", flat=True))
+            rows = [{"employee": e, "record": None} for e in employees.filter(is_active=True) if e.pk not in registered]
+        elif kind == "station":
+            station = self.request.GET.get("station", "")
+            present = records.filter(status=Status.PRESENT)
+            if station == "none":
+                present, name = present.filter(station__isnull=True), "未填工位"
+            else:
+                present = present.filter(station_id=station if station.isdigit() else 0)
+                name = str(present[0].station) if present else "工位"
+            title += f"　{name}"
+            rows = [{"employee": r.employee, "record": r} for r in present]
+        else:
+            rows = [{"employee": r.employee, "record": r} for r in records.filter(status=kind)]
+        context.update(date=date, title=title, rows=rows, department_key=key)
+        return context
+
+
+class StationAssignView(PageMixin, TemplateView):
+    """到班登記完成後，直接列出當天到班人員，手動安排當日工位。改完先列出變更，確認後才批次儲存。"""
 
     page_key = "attendance-stations"
     template_name = "attendance/stations.html"
 
-    def get_departments(self, user):
-        return station_departments(user)
+    def check_scope(self, user):
+        return user.level >= Level.MANAGER or bool(user.department_id)
 
-    def build_rows(self, date, department, data=None):
+    def build_rows(self, date, data=None):
         records = (
-            Attendance.objects.filter(date=date, employee__department=department, status=Status.PRESENT)
-            .select_related("employee__job_title", "station__department")
-            .order_by("employee__employee_no")
+            Attendance.objects.filter(date=date, status=Status.PRESENT)
+            .select_related("employee__job_title", "employee__department", "station__department")
+            .order_by("employee__department__name", "employee__employee_no")
         )
+        if self.request.user.level < Level.MANAGER:
+            records = records.filter(employee__department__in=station_departments(self.request.user))
         editable = can_arrange(self.request.user, date)
         rows = []
         for record in records:
@@ -199,15 +288,13 @@ class StationAssignView(AttendanceMixin, TemplateView):
         return rows, editable
 
     def get(self, request, *args, **kwargs):
-        self.filter = self.get_filter()
-        cd = self.filter.cleaned_data
-        rows, editable = self.build_rows(cd["date"], cd["department"])
+        self.date = self.get_date()
+        rows, editable = self.build_rows(self.date)
         return self.render_to_response(self.get_context_data(rows=rows, editable=editable))
 
     def post(self, request, *args, **kwargs):
-        self.filter = self.get_filter()
-        cd = self.filter.cleaned_data
-        rows, editable = self.build_rows(cd["date"], cd["department"], data=request.POST)
+        self.date = self.get_date()
+        rows, editable = self.build_rows(self.date, data=request.POST)
         if not editable:
             raise PermissionDenied
         if not all(row["form"].is_valid() for row in rows):
@@ -220,7 +307,7 @@ class StationAssignView(AttendanceMixin, TemplateView):
         ]
         if not changes:
             messages.info(request, "沒有變更。")
-            return self.redirect_back(cd)
+            return self.redirect_back()
         if request.POST.get("action") != "confirm":
             return self.render_to_response(self.get_context_data(rows=rows, editable=editable, changes=changes))
         with transaction.atomic():
@@ -230,54 +317,13 @@ class StationAssignView(AttendanceMixin, TemplateView):
                 record.updated_by = request.user
                 record.save()
         messages.success(request, f"已確認修改 {len(changes)} 人的工位。")
-        return self.redirect_back(cd)
+        return self.redirect_back()
 
-    def redirect_back(self, cd):
-        return redirect(f"{self.request.path}?date={cd['date']:%Y-%m-%d}&department={cd['department'].pk}")
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["filter"] = self.filter
-        context["date"] = self.filter.cleaned_data["date"]
-        context["is_today"] = context["date"] == timezone.localdate()
-        return context
-
-
-class HeadcountView(AttendanceMixin, TemplateView):
-    """某一天各部門、各工位的到班人數。"""
-
-    page_key = "attendance-headcount"
-    template_name = "attendance/headcount.html"
+    def redirect_back(self):
+        return redirect(f"{self.request.path}?{urlencode({'date': f'{self.date:%Y-%m-%d}'})}")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        self.filter = self.get_filter()
-        date = self.filter.cleaned_data["date"]
-        records = Attendance.objects.filter(date=date, employee__department__in=self.departments).select_related(
-            "employee", "station__department"
-        )
-        active = Employee.objects.filter(is_active=True, department__in=self.departments).values_list("pk", "department_id")
-        summary = []
-        for department in self.departments:
-            dept_records = [r for r in records if r.employee.department_id == department.pk]
-            registered = {r.employee_id for r in dept_records}
-            active_ids = [pk for pk, dept_id in active if dept_id == department.pk]
-            status = Counter(r.status for r in dept_records)
-            # 支援其他部門工位時會顯示「部門／工位」
-            stations = Counter(
-                (r.station.name if r.station.department_id == department.pk else str(r.station)) if r.station else "未填工位"
-                for r in dept_records
-                if r.status == Status.PRESENT
-            )
-            summary.append({
-                "department": department,
-                "active": len(active_ids),
-                "present": status[Status.PRESENT],
-                "leave": status[Status.LEAVE],
-                "absent": status[Status.ABSENT],
-                "unregistered": len([pk for pk in active_ids if pk not in registered]),
-                "stations": sorted(stations.items()),
-            })
-        context.update(filter=self.filter, date=date, summary=summary,
-                       total_present=sum(s["present"] for s in summary))
+        context["date"] = self.date
+        context["is_today"] = self.date == timezone.localdate()
         return context

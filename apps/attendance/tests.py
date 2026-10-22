@@ -88,6 +88,13 @@ class RegisterTests(AttendanceTestCase):
         self.clock(self.e1, "clock_out")
         self.assertFalse(Attendance.objects.exists())
 
+    def test_save_returns_to_search_screen_but_clock_stays_on_employee(self):
+        self.login(make_user("lead", Level.LEADER, self.floor))
+        saved = self.save(self.e1, status="present")
+        self.assertRedirects(saved, f"{reverse('attendance:register')}?{urlencode({'date': f'{TODAY:%Y-%m-%d}'})}")
+        clocked = self.clock(self.e2, "clock_in")
+        self.assertIn("employee_no=P002", clocked["Location"])
+
     def test_manual_save_status_and_time(self):
         self.login(make_user("lead", Level.LEADER, self.floor))
         self.save(self.e1, status="present", clock_in="08:00", note="支援")
@@ -163,24 +170,76 @@ class RegisterTests(AttendanceTestCase):
 
 
 class HeadcountTests(AttendanceTestCase):
-    def test_counts_by_department_and_station(self):
+    def summary(self, user):
+        self.login(user)
+        return self.client.get(reverse("attendance:register")).context["summary"]
+
+    def test_counts_by_department_and_station_on_register_page(self):
         mgr = make_user("mgr", Level.MANAGER)
         office_desk = Station.objects.create(name="櫃台", department=self.office)
         Attendance.objects.create(employee=self.e1, date=TODAY, status=Status.PRESENT, station=self.picking, created_by=mgr, updated_by=mgr)
         Attendance.objects.create(employee=self.e2, date=TODAY, status=Status.PRESENT, station=office_desk, created_by=mgr, updated_by=mgr)
         self.login(mgr)
-        response = self.client.get(reverse("attendance:headcount"))
+        response = self.client.get(reverse("attendance:register"))
+        self.assertContains(response, "到班人數")
+        self.assertEqual(response.context["total_present"], 2)
         floor = next(row for row in response.context["summary"] if row["department"] == self.floor)
         self.assertEqual((floor["active"], floor["present"], floor["unregistered"]), (2, 2, 0))
-        self.assertEqual(floor["stations"], [("撿貨", 1), ("辦公室／櫃台", 1)])
+        self.assertEqual([(st["label"], st["count"]) for st in floor["stations"]], [("撿貨", 1), ("辦公室／櫃台", 1)])
         office = next(row for row in response.context["summary"] if row["department"] == self.office)
         self.assertEqual((office["present"], office["unregistered"]), (0, 1))
-        self.assertEqual(response.context["total_present"], 2)
 
     def test_leader_sees_only_own_department(self):
+        summary = self.summary(make_user("lead", Level.LEADER, self.floor))
+        self.assertEqual([row["department"] for row in summary], [self.floor])
+
+    def test_manager_sees_employees_without_department(self):
+        Employee.objects.create(employee_no="P009", name="無部門")
+        summary = self.summary(make_user("mgr", Level.MANAGER))
+        none_row = next(row for row in summary if row["department"] is None)
+        self.assertEqual((none_row["label"], none_row["active"], none_row["unregistered"]), ("未設定部門", 1, 1))
+        self.assertNotIn(None, [row["department"] for row in self.summary(make_user("lead", Level.LEADER, self.floor))])
+
+    def test_old_headcount_url_redirects(self):
         self.login(make_user("lead", Level.LEADER, self.floor))
-        response = self.client.get(reverse("attendance:headcount"))
-        self.assertEqual([row["department"] for row in response.context["summary"]], [self.floor])
+        self.assertRedirects(self.client.get(reverse("attendance:headcount")), reverse("attendance:register"))
+
+
+class PersonListTests(AttendanceTestCase):
+    def setUp(self):
+        super().setUp()
+        self.mgr = make_user("mgr", Level.MANAGER)
+        Attendance.objects.create(employee=self.e1, date=TODAY, status=Status.PRESENT, station=self.picking, created_by=self.mgr, updated_by=self.mgr)
+        Attendance.objects.create(employee=self.e2, date=TODAY, status=Status.LEAVE, created_by=self.mgr, updated_by=self.mgr)
+
+    def get(self, user, **params):
+        self.login(user)
+        params.setdefault("date", f"{TODAY:%Y-%m-%d}")
+        return self.client.get(f"{reverse('attendance:list')}?{urlencode(params)}")
+
+    def test_lists_by_kind(self):
+        for kind, names in {
+            "active": ["王小明", "李大華"],
+            "present": ["王小明"],
+            "leave": ["李大華"],
+            "absent": [],
+            "unregistered": [],
+        }.items():
+            response = self.get(self.mgr, department=self.floor.pk, kind=kind)
+            self.assertEqual([r["employee"].name for r in response.context["rows"]], names, kind)
+        self.assertEqual([r["employee"].name for r in self.get(self.mgr, department=self.office.pk, kind="unregistered").context["rows"]], ["陳美玲"])
+
+    def test_list_by_station_and_link_to_register(self):
+        response = self.get(self.mgr, department=self.floor.pk, kind="station", station=self.picking.pk)
+        self.assertEqual([r["employee"].name for r in response.context["rows"]], ["王小明"])
+        self.assertContains(response, "employee_no=P001")
+        self.assertEqual(self.get(self.mgr, department=self.floor.pk, kind="station", station="none").context["rows"], [])
+
+    def test_leader_cannot_list_other_department(self):
+        leader = make_user("lead", Level.LEADER, self.floor)
+        self.assertEqual(self.get(leader, department=self.office.pk, kind="active").status_code, 404)
+        self.assertEqual(self.get(leader, department=self.floor.pk, kind="bogus").status_code, 404)
+        self.assertEqual(self.get(leader, department=self.floor.pk, kind="active").status_code, 200)
 
 
 class StationAssignTests(AttendanceTestCase):
@@ -190,7 +249,7 @@ class StationAssignTests(AttendanceTestCase):
         self.desk = Station.objects.create(name="櫃台", department=self.office)
         self.a1 = Attendance.objects.create(employee=self.e1, date=TODAY, status=Status.PRESENT, created_by=self.mgr, updated_by=self.mgr)
         Attendance.objects.create(employee=self.e2, date=TODAY, status=Status.LEAVE, created_by=self.mgr, updated_by=self.mgr)
-        self.url = f"{reverse('attendance:stations')}?date={TODAY:%Y-%m-%d}&department={self.floor.pk}"
+        self.url = f"{reverse('attendance:stations')}?date={TODAY:%Y-%m-%d}"
 
     def post(self, station, action=None, user=None):
         self.login(user or self.mgr)
@@ -199,11 +258,20 @@ class StationAssignTests(AttendanceTestCase):
             data["action"] = action
         return self.client.post(self.url, data)
 
-    def test_lists_only_present_employees(self):
+    def test_lists_present_employees_without_choosing_department(self):
+        Attendance.objects.create(employee=self.e3, date=TODAY, status=Status.PRESENT, created_by=self.mgr, updated_by=self.mgr)
         self.login(self.mgr)
         response = self.client.get(self.url)
         self.assertContains(response, "王小明")
+        self.assertContains(response, "陳美玲")
         self.assertNotContains(response, "李大華")
+
+    def test_non_manager_only_sees_own_department(self):
+        Attendance.objects.create(employee=self.e3, date=TODAY, status=Status.PRESENT, created_by=self.mgr, updated_by=self.mgr)
+        self.login(make_user("lead", Level.LEADER, self.floor))
+        response = self.client.get(self.url)
+        self.assertContains(response, "王小明")
+        self.assertNotContains(response, "陳美玲")
 
     def test_change_needs_batch_confirmation(self):
         preview = self.post(self.picking)
@@ -224,20 +292,14 @@ class StationAssignTests(AttendanceTestCase):
         self.assertIsNone(self.a1.station)
 
     def test_page_permission_decides_access(self):
-        leader = make_user("lead", Level.LEADER, self.floor)
-        self.login(leader)
+        self.login(make_user("lead", Level.LEADER, self.floor))
         self.assertEqual(self.client.get(self.url).status_code, 200)
         PagePermission.objects.filter(page_key="attendance-stations").update(min_level=Level.DIRECTOR)
         self.assertEqual(self.client.get(self.url).status_code, 403)
 
-    def test_non_manager_limited_to_own_department(self):
-        self.login(make_user("lead", Level.LEADER, self.floor))
-        response = self.client.get(f"{reverse('attendance:stations')}?department={self.office.pk}")
-        self.assertEqual(response.context["filter"].cleaned_data["department"], self.floor)
-
     def test_past_needs_director_and_future_rejected(self):
         past = Attendance.objects.create(employee=self.e1, date=YESTERDAY, status=Status.PRESENT, created_by=self.mgr, updated_by=self.mgr)
-        past_url = f"{reverse('attendance:stations')}?date={YESTERDAY:%Y-%m-%d}&department={self.floor.pk}"
+        past_url = f"{reverse('attendance:stations')}?date={YESTERDAY:%Y-%m-%d}"
         data = {f"a{past.pk}-station": self.picking.pk, "action": "confirm"}
         self.login(make_user("lead", Level.LEADER, self.floor))
         self.assertEqual(self.client.post(past_url, data).status_code, 403)
@@ -245,5 +307,5 @@ class StationAssignTests(AttendanceTestCase):
         self.client.post(past_url, data)
         past.refresh_from_db()
         self.assertEqual(past.station, self.picking)
-        future = f"{reverse('attendance:stations')}?date={TODAY + datetime.timedelta(days=1):%Y-%m-%d}&department={self.floor.pk}"
+        future = f"{reverse('attendance:stations')}?date={TODAY + datetime.timedelta(days=1):%Y-%m-%d}"
         self.assertEqual(self.client.post(future, {"action": "confirm"}).status_code, 403)
