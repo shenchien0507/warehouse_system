@@ -100,8 +100,10 @@ class RegisterTests(AttendanceTestCase):
         self.save(self.e1, status="present", clock_in="08:00", note="支援")
         record = Attendance.objects.get(employee=self.e1)
         self.assertEqual((record.status, record.clock_in, record.note), (Status.PRESENT, datetime.time(8, 0), "支援"))
-        # 沒到班不記時間
+        # 請假保留時間（可能是上午有到、中途請假）；缺勤不記時間
         self.save(self.e2, status="leave", clock_in="08:00")
+        self.assertEqual(Attendance.objects.get(employee=self.e2).clock_in, datetime.time(8, 0))
+        self.save(self.e2, status="absent", clock_in="08:00")
         self.assertIsNone(Attendance.objects.get(employee=self.e2).clock_in)
 
     def test_leader_limited_to_own_department(self):
@@ -295,6 +297,27 @@ class StationAssignTests(AttendanceTestCase):
         self.assertEqual((batch.date, batch.created_by), (TODAY, self.mgr))
         entry = batch.entries.get()
         self.assertEqual((entry.employee, entry.station), (self.e1, self.picking))
+
+    def test_mid_day_leave_keeps_station_and_stays_listed(self):
+        self.a1.station = self.picking
+        self.a1.save()
+        self.login(self.mgr)
+        # 上午到班、排了撿貨，下午請假離開
+        self.client.post(
+            f"{reverse('attendance:register')}?employee_no=P001&date={TODAY:%Y-%m-%d}",
+            {"action": "save", "r-status": "leave", "r-clock_in": "08:00", "r-clock_out": "12:00"},
+        )
+        self.a1.refresh_from_db()
+        self.assertEqual((self.a1.status, self.a1.station, self.a1.clock_out), (Status.LEAVE, self.picking, datetime.time(12, 0)))
+        response = self.client.get(self.url)
+        self.assertContains(response, "王小明")
+        self.assertContains(response, "12:00 離開")
+        # 全天請假、沒上班也沒排工位的人不列出
+        self.assertNotContains(response, "李大華")
+        self.client.post(self.url, {f"a{self.a1.pk}-station": self.desk.pk, "action": "confirm"})
+        self.a1.refresh_from_db()
+        self.assertEqual(self.a1.station, self.desk)
+        self.assertEqual(StationBatch.objects.get().entries.get().employee, self.e1)
 
     def test_no_change_creates_no_batch(self):
         self.post(None, action="confirm")
