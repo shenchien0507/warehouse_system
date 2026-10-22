@@ -33,21 +33,32 @@ class LevelLimitMixin:
         self.fields["level"].choices = allowed_levels(editor)
 
 
-class UserCreateForm(LevelLimitMixin, UserCreationForm):
-    """帳號一定要先有人員資料：工號、姓名、電話、部門都取自人員資料，不在這裡另外填。"""
+class EmployeeChoiceField(forms.ModelChoiceField):
+    def label_from_instance(self, obj):
+        return f"{obj}（{obj.get_level_display()}）"
 
-    employee = forms.ModelChoiceField(
-        Employee.objects.none(), label="人員", help_text="只列出在職、還沒有帳號的人員；找不到請先到「人員資料」新增"
+
+class UserCreateForm(UserCreationForm):
+    """帳號一定要先有人員資料：工號、姓名、電話、部門、職級都取自人員資料，不在這裡另外填。
+    要設成管理員，建立後再到帳號編輯修改。"""
+
+    employee = EmployeeChoiceField(
+        Employee.objects.none(),
+        label="人員",
+        help_text="職級依人員資料帶入。只列出在職、還沒有帳號、職級比你低的人員；找不到請先到「人員資料」新增或調整",
     )
+    field_order = ["employee", "email", "is_active", "password1", "password2"]
 
     class Meta:
         model = User
-        fields = ["level", "email", "is_active"]
-        field_order = ["employee", "level", "email", "is_active", "password1", "password2"]
+        fields = ["email", "is_active"]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, editor, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["employee"].queryset = Employee.objects.filter(is_active=True, user=None).order_by("employee_no")
+        queryset = Employee.objects.filter(is_active=True, user=None).order_by("employee_no")
+        if editor.level != Level.ADMIN:
+            queryset = queryset.filter(level__lt=editor.level)
+        self.fields["employee"].queryset = queryset
 
     def clean_employee(self):
         employee = self.cleaned_data["employee"]
@@ -58,8 +69,8 @@ class UserCreateForm(LevelLimitMixin, UserCreationForm):
     def save(self, commit=True):
         employee = self.cleaned_data["employee"]
         user = super().save(commit=False)
-        user.username, user.name, user.phone, user.department = (
-            employee.employee_no, employee.name, employee.phone, employee.department,
+        user.username, user.name, user.phone, user.department, user.level = (
+            employee.employee_no, employee.name, employee.phone, employee.department, employee.level,
         )
         if commit:
             with transaction.atomic():
@@ -70,20 +81,30 @@ class UserCreateForm(LevelLimitMixin, UserCreationForm):
 
 
 class UserUpdateForm(LevelLimitMixin, forms.ModelForm):
-    """有人員資料的帳號，工號、姓名、電話、部門要到人員資料修改；沒有人員資料的舊帳號（如管理員）可直接改。"""
+    """有人員資料的帳號，工號、姓名、電話、部門、職級要到人員資料修改；沒有人員資料的舊帳號（如管理員）可直接改。
+    有人員資料的帳號，管理員可以在這裡改成「管理員」或改回人員資料的職級。"""
 
     class Meta:
         model = User
         fields = ["username", "name", "phone", "email", "level", "department", "is_active"]
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, editor, **kwargs):
+        super().__init__(*args, editor=editor, **kwargs)
         self.fields["username"].label = "工號"
         self.fields["username"].disabled = True
         if hasattr(self.instance, "employee"):
             for field in ("name", "phone", "department"):
                 self.fields[field].disabled = True
                 self.fields[field].help_text = "請到「人員資料」修改"
+            level = self.fields["level"]
+            if editor.level == Level.ADMIN:
+                # 只能在人員資料的職級和管理員之間切換
+                employee_level = self.instance.employee.level
+                level.choices = [(value, label) for value, label in Level.choices if value in (employee_level, Level.ADMIN)]
+                level.help_text = "職級請到「人員資料」修改；這裡只能設為管理員，或改回人員資料的職級"
+            else:
+                level.disabled = True
+                level.help_text = "請到「人員資料」修改"
 
 
 class UserPasswordForm(SetPasswordForm):

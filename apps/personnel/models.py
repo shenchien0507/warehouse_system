@@ -1,7 +1,10 @@
 from django.conf import settings
 from django.db import models
 
-from apps.accounts.models import Department
+from apps.accounts.models import Department, Level
+
+# 管理員是系統帳號的身分，不是人員的實際職級，只在帳號上設定
+EMPLOYEE_LEVEL_CHOICES = [(value, label) for value, label in Level.choices if value != Level.ADMIN]
 
 
 class JobTitle(models.Model):
@@ -29,6 +32,7 @@ class Employee(models.Model):
     job_title = models.ForeignKey(
         JobTitle, verbose_name="職務", null=True, blank=True, on_delete=models.PROTECT, related_name="employees"
     )
+    level = models.PositiveSmallIntegerField("職級", choices=EMPLOYEE_LEVEL_CHOICES, default=Level.STAFF)
     phone = models.CharField("聯絡電話", max_length=30, blank=True)
     hire_date = models.DateField("到職日", null=True, blank=True)
     is_active = models.BooleanField("在職", default=True)
@@ -53,10 +57,12 @@ class Employee(models.Model):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        # 姓名、電話、部門以人員資料為準，有帳號時同步過去
+        # 姓名、電話、部門、職級以人員資料為準，有帳號時同步過去（管理員帳號的職級不動）
         if self.user_id:
             user = self.user
             synced = {"username": self.employee_no, "name": self.name, "phone": self.phone, "department_id": self.department_id}
+            if user.level != Level.ADMIN:
+                synced["level"] = self.level
             if any(getattr(user, field) != value for field, value in synced.items()):
                 for field, value in synced.items():
                     setattr(user, field, value)
