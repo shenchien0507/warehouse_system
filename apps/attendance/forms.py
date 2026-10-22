@@ -1,4 +1,5 @@
 from django import forms
+from django.utils import timezone
 
 from apps.accounts.models import Station
 
@@ -30,6 +31,19 @@ class AttendanceRowForm(forms.Form):
             # 沒到班就不記時間與工位
             cleaned["clock_in"] = cleaned["clock_out"] = cleaned["station"] = None
         return cleaned
+
+
+class LookupForm(forms.Form):
+    """到班登記：輸入工號查詢人員；日期預設今天。"""
+
+    employee_no = forms.CharField(label="工號", max_length=30, required=False)
+    date = forms.DateField(label="日期", required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
+
+    def clean_employee_no(self):
+        return self.cleaned_data["employee_no"].strip()
+
+    def clean_date(self):
+        return self.cleaned_data["date"] or timezone.localdate()
 
 
 class FilterForm(forms.Form):

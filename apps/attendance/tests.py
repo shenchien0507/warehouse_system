@@ -2,6 +2,7 @@ import datetime
 
 from django.test import TestCase
 from django.urls import reverse
+from django.utils.http import urlencode
 from django.utils import timezone
 
 from apps.accounts.models import Department, Level, PagePermission, Station, User
@@ -32,40 +33,79 @@ class AttendanceTestCase(TestCase):
     def login(self, user):
         self.client.login(username=user.username, password="pw12345!")
 
-    def post_rows(self, date, department, rows):
-        data = {}
-        for employee, values in rows.items():
-            for field, value in values.items():
-                data[f"e{employee.pk}-{field}"] = value
-        url = f"{reverse('attendance:register')}?date={date:%Y-%m-%d}&department={department.pk}"
-        return self.client.post(url, data)
+    def register_url(self, employee, date=TODAY):
+        return f"{reverse('attendance:register')}?{urlencode({'employee_no': employee.employee_no, 'date': f'{date:%Y-%m-%d}'})}"
+
+    def clock(self, employee, action, date=TODAY):
+        return self.client.post(self.register_url(employee, date), {"action": action})
+
+    def save(self, employee, date=TODAY, **values):
+        data = {f"r-{key}": value for key, value in values.items()}
+        return self.client.post(self.register_url(employee, date), {"action": "save", **data})
 
 
 class RegisterTests(AttendanceTestCase):
-    def test_leader_registers_own_department(self):
+    def test_lookup_by_employee_no_shows_info(self):
+        self.login(make_user("lead", Level.LEADER, self.floor))
+        response = self.client.get(self.register_url(self.e1))
+        self.assertContains(response, "王小明")
+        self.assertContains(response, "倉管")
+        self.assertNotContains(self.client.get(reverse("attendance:register")), "王小明")
+
+    def test_unknown_employee_no(self):
+        self.login(make_user("lead", Level.LEADER, self.floor))
+        self.assertContains(self.client.get(f"{reverse('attendance:register')}?employee_no=NOPE"), "找不到工號")
+
+    def test_clock_in_sets_status_present_then_clock_out(self):
         leader = make_user("lead", Level.LEADER, self.floor)
         self.login(leader)
-        response = self.client.get(reverse("attendance:register"))
-        self.assertContains(response, "王小明")
-        self.assertNotContains(response, "陳美玲")
-        self.post_rows(TODAY, self.floor, {
-            self.e1: {"status": "present", "clock_in": "08:00", "station": self.picking.pk},  # 登記頁不能設工位
-            self.e2: {"status": "leave", "clock_in": "08:00"},
-        })
-        r1 = Attendance.objects.get(employee=self.e1)
-        self.assertEqual((r1.status, r1.station, r1.created_by), (Status.PRESENT, None, leader))
-        self.assertEqual(r1.clock_in, datetime.time(8, 0))
+        self.clock(self.e1, "clock_in")
+        record = Attendance.objects.get(employee=self.e1)
+        self.assertEqual((record.status, record.created_by), (Status.PRESENT, leader))
+        self.assertIsNotNone(record.clock_in)
+        self.assertIsNone(record.clock_out)
+        self.clock(self.e1, "clock_out")
+        record.refresh_from_db()
+        self.assertIsNotNone(record.clock_out)
+
+    def test_clock_in_overrides_leave_status_but_keeps_station(self):
+        leader = make_user("lead", Level.LEADER, self.floor)
+        Attendance.objects.create(employee=self.e1, date=TODAY, status=Status.LEAVE, station=self.picking, created_by=leader, updated_by=leader)
+        self.login(leader)
+        self.clock(self.e1, "clock_in")
+        record = Attendance.objects.get()
+        self.assertEqual((record.status, record.station), (Status.PRESENT, self.picking))
+
+    def test_second_clock_in_does_not_overwrite(self):
+        self.login(make_user("lead", Level.LEADER, self.floor))
+        self.clock(self.e1, "clock_in")
+        Attendance.objects.update(clock_in=datetime.time(7, 0))
+        self.clock(self.e1, "clock_in")
+        self.assertEqual(Attendance.objects.get().clock_in, datetime.time(7, 0))
+
+    def test_clock_out_needs_clock_in(self):
+        self.login(make_user("lead", Level.LEADER, self.floor))
+        self.clock(self.e1, "clock_out")
+        self.assertFalse(Attendance.objects.exists())
+
+    def test_manual_save_status_and_time(self):
+        self.login(make_user("lead", Level.LEADER, self.floor))
+        self.save(self.e1, status="present", clock_in="08:00", note="支援")
+        record = Attendance.objects.get(employee=self.e1)
+        self.assertEqual((record.status, record.clock_in, record.note), (Status.PRESENT, datetime.time(8, 0), "支援"))
         # 沒到班不記時間
+        self.save(self.e2, status="leave", clock_in="08:00")
         self.assertIsNone(Attendance.objects.get(employee=self.e2).clock_in)
 
-    def test_leader_cannot_switch_to_other_department(self):
+    def test_leader_limited_to_own_department(self):
         self.login(make_user("lead", Level.LEADER, self.floor))
-        self.post_rows(TODAY, self.office, {self.e3: {"status": "present"}})
-        self.assertFalse(Attendance.objects.filter(employee=self.e3).exists())
+        self.assertContains(self.client.get(self.register_url(self.e3)), "不在你可以登記的範圍")
+        self.clock(self.e3, "clock_in")
+        self.assertFalse(Attendance.objects.exists())
 
     def test_manager_can_register_any_department(self):
         self.login(make_user("mgr", Level.MANAGER))
-        self.post_rows(TODAY, self.office, {self.e3: {"status": "present"}})
+        self.clock(self.e3, "clock_in")
         self.assertTrue(Attendance.objects.filter(employee=self.e3).exists())
 
     def test_staff_cannot_use_even_if_page_opened(self):
@@ -77,24 +117,27 @@ class RegisterTests(AttendanceTestCase):
         other = make_user("lead2", Level.LEADER, self.floor)
         Attendance.objects.create(employee=self.e1, date=TODAY, status=Status.PRESENT, created_by=other, updated_by=other)
         self.login(make_user("lead", Level.LEADER, self.floor))
-        self.post_rows(TODAY, self.floor, {self.e1: {"status": "absent"}, self.e2: {"status": "present"}})
+        self.assertEqual(self.clock(self.e1, "clock_in").status_code, 403)
+        self.assertEqual(self.save(self.e1, status="absent").status_code, 403)
         self.assertEqual(Attendance.objects.get(employee=self.e1).status, Status.PRESENT)
-        self.assertEqual(Attendance.objects.get(employee=self.e2).status, Status.PRESENT)
 
-    def test_past_dates_need_director(self):
+    def test_past_dates_need_director_and_no_clock_buttons(self):
         self.login(make_user("lead", Level.LEADER, self.floor))
-        self.post_rows(YESTERDAY, self.floor, {self.e1: {"status": "present"}})
+        self.assertEqual(self.save(self.e1, YESTERDAY, status="present").status_code, 403)
         self.assertFalse(Attendance.objects.exists())
 
         director = make_user("dir", Level.DIRECTOR, self.floor)
         self.login(director)
-        self.post_rows(YESTERDAY, self.floor, {self.e1: {"status": "present"}})
+        self.clock(self.e1, "clock_in", YESTERDAY)
+        self.assertFalse(Attendance.objects.exists())
+        self.save(self.e1, YESTERDAY, status="present", clock_in="08:30")
         record = Attendance.objects.get()
-        self.assertEqual(record.updated_by, director)
+        self.assertEqual((record.updated_by, record.clock_in), (director, datetime.time(8, 30)))
 
     def test_future_dates_rejected(self):
         self.login(make_user("mgr", Level.MANAGER))
-        self.post_rows(TODAY + datetime.timedelta(days=1), self.floor, {self.e1: {"status": "present"}})
+        tomorrow = TODAY + datetime.timedelta(days=1)
+        self.assertEqual(self.save(self.e1, tomorrow, status="present").status_code, 403)
         self.assertFalse(Attendance.objects.exists())
 
     def test_clearing_status_deletes_record_and_edit_tracks_updater(self):
@@ -102,25 +145,21 @@ class RegisterTests(AttendanceTestCase):
         Attendance.objects.create(employee=self.e1, date=TODAY, status=Status.PRESENT, created_by=leader, updated_by=leader)
         director = make_user("dir", Level.DIRECTOR, self.floor)
         self.login(director)
-        self.post_rows(TODAY, self.floor, {self.e1: {"status": "absent"}})
+        self.save(self.e1, status="absent")
         self.assertEqual(Attendance.objects.get().updated_by, director)
-        self.post_rows(TODAY, self.floor, {self.e1: {"status": ""}})
+        self.save(self.e1, status="")
         self.assertFalse(Attendance.objects.exists())
 
-    def test_unchanged_rows_not_saved(self):
-        self.login(make_user("lead", Level.LEADER, self.floor))
-        self.post_rows(TODAY, self.floor, {self.e1: {"status": ""}})
-        self.assertFalse(Attendance.objects.exists())
-
-    def test_inactive_employee_hidden_unless_has_record(self):
+    def test_inactive_employee_only_with_existing_record(self):
         self.e2.is_active = False
         self.e2.save()
         mgr = make_user("mgr", Level.MANAGER)
         self.login(mgr)
-        url = f"{reverse('attendance:register')}?department={self.floor.pk}"
-        self.assertNotContains(self.client.get(url), "李大華")
+        self.assertContains(self.client.get(self.register_url(self.e2)), "已離職，不能登記")
+        self.clock(self.e2, "clock_in")
+        self.assertFalse(Attendance.objects.exists())
         Attendance.objects.create(employee=self.e2, date=TODAY, status=Status.PRESENT, created_by=mgr, updated_by=mgr)
-        self.assertContains(self.client.get(url), "李大華")
+        self.assertContains(self.client.get(self.register_url(self.e2)), "李大華")
 
 
 class HeadcountTests(AttendanceTestCase):
