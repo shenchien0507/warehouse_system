@@ -10,67 +10,91 @@
 {% endblock %}
 
 {% block content %}
-  {% include "attendance/_filter.html" with show_department=True %}
+  <form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-auto">
+      <label class="form-label" for="id_employee_no">工號</label>
+      <input type="text" name="employee_no" id="id_employee_no" class="form-control" value="{{ employee_no }}" autocomplete="off" autofocus>
+    </div>
+    <div class="col-auto">
+      <label class="form-label" for="id_date">日期</label>
+      <input type="date" name="date" id="id_date" class="form-control" value="{{ date|date:'Y-m-d' }}">
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-primary">查詢</button>
+    </div>
+  </form>
 
   {% if not is_today %}
-    <div class="alert alert-secondary py-2">你正在看 {{ date|date:"Y-m-d" }} 的紀錄。之前日期的紀錄只有主任以上能修改。</div>
+    <div class="alert alert-secondary py-2">你正在看 {{ date|date:"Y-m-d" }} 的紀錄。之前日期的紀錄只有主任以上能修改，且只能直接修改時間。</div>
   {% endif %}
 
-  <form method="post">
-    {% csrf_token %}
-    {% if any_editable %}
-      <div class="mb-2">
-        <button type="button" class="btn btn-sm btn-outline-success" id="mark-all-present">未登記的全部設為到班</button>
-      </div>
-    {% endif %}
-    <div class="table-responsive">
-      <table class="table table-hover align-middle attendance-table">
-        <thead class="table-light">
-          <tr>
-            <th>工號</th><th>姓名</th><th>職務</th><th>狀態</th><th>上班</th><th>下班</th><th>當日工位<br><small class="fw-normal text-muted">到「工位安排」設定</small></th><th>備註</th><th>登記人</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in rows %}
-            {% with form=row.form %}
-              <tr{% if form.errors %} class="table-danger"{% endif %}>
-                <td>{{ row.employee.employee_no }}</td>
-                <td>{{ row.employee.name }}{% if not row.employee.is_active %} <span class="badge text-bg-secondary">已離職</span>{% endif %}</td>
-                <td>{{ row.employee.job_title|default:"" }}</td>
-                <td>{{ form.status }}</td>
-                <td>{{ form.clock_in }}</td>
-                <td>{{ form.clock_out }}</td>
-                <td>{{ form.station }}</td>
-                <td>{{ form.note }}</td>
-                <td class="small text-muted">
-                  {% if row.record %}{{ row.record.created_by.name|default:row.record.created_by.username }}{% endif %}
-                  {% for field in form %}{% for error in field.errors %}<div class="text-danger">{{ field.label }}：{{ error }}</div>{% endfor %}{% endfor %}
-                </td>
-              </tr>
-            {% endwith %}
-          {% empty %}
-            <tr><td colspan="9" class="text-center text-muted py-4">這個部門沒有在職人員</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% if any_editable %}<button type="submit" class="btn btn-primary">儲存</button>{% endif %}
-  </form>
+  {% if error %}
+    <div class="alert alert-warning">{{ error }}</div>
+  {% endif %}
+
+  {% if employee %}
+    {% with form=form %}
+      <form method="post" class="card" style="max-width: 40rem;">
+        {% csrf_token %}
+        {# Enter 送出時預設是儲存，不會誤按上班 #}
+        <button type="submit" name="action" value="save" class="d-none" tabindex="-1" aria-hidden="true"></button>
+        <div class="card-body">
+          <h2 class="h5 mb-1">{{ employee.employee_no }} {{ employee.name }}{% if not employee.is_active %} <span class="badge text-bg-secondary">已離職</span>{% endif %}</h2>
+          <div class="text-muted small mb-3">
+            {{ employee.department|default:"未設定部門" }}{% if employee.job_title %}／{{ employee.job_title }}{% endif %}
+            {% if record %}｜登記人：{{ record.created_by.name|default:record.created_by.username }}{% endif %}
+          </div>
+
+          {% for field in form %}{% for err in field.errors %}<div class="text-danger small">{{ field.label }}：{{ err }}</div>{% endfor %}{% endfor %}
+
+          <div class="row g-3">
+            <div class="col-12 col-sm-4">
+              <label class="form-label" for="{{ form.status.id_for_label }}">狀態</label>
+              {{ form.status }}
+            </div>
+            <div class="col-6 col-sm-4">
+              <label class="form-label" for="{{ form.clock_in.id_for_label }}">上班</label>
+              {{ form.clock_in }}
+            </div>
+            <div class="col-6 col-sm-4">
+              <label class="form-label" for="{{ form.clock_out.id_for_label }}">下班</label>
+              {{ form.clock_out }}
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="{{ form.note.id_for_label }}">備註</label>
+              {{ form.note }}
+            </div>
+            {% if record and record.station %}
+              <div class="col-12 small text-muted">當日工位：{{ record.station }}（到「工位安排」設定）</div>
+            {% endif %}
+          </div>
+
+          {% if can_clock %}
+            <div class="d-flex gap-2 mt-4">
+              <button type="submit" name="action" value="clock_in" class="btn btn-success btn-lg flex-fill"{% if record.clock_in %} disabled{% endif %}>
+                上班{% if record.clock_in %} {{ record.clock_in|time:"H:i" }}{% endif %}
+              </button>
+              <button type="submit" name="action" value="clock_out" class="btn btn-warning btn-lg flex-fill"{% if not record.clock_in or record.clock_out %} disabled{% endif %}>
+                下班{% if record.clock_out %} {{ record.clock_out|time:"H:i" }}{% endif %}
+              </button>
+            </div>
+          {% endif %}
+          {% if form.status.field.disabled %}
+            <div class="small text-muted mt-3">這筆紀錄你不能修改。</div>
+          {% else %}
+            <div class="mt-3"><button type="submit" name="action" value="save" class="btn btn-outline-primary">儲存修改</button></div>
+          {% endif %}
+        </div>
+      </form>
+    {% endwith %}
+  {% elif not error %}
+    <p class="text-muted">輸入工號後按查詢（或 Enter）。</p>
+  {% endif %}
 {% endblock %}
 
 {% block extra_css %}
   <style>
-    .attendance-table select, .attendance-table input { width: 100%; min-width: 6rem; padding: .25rem .5rem; border: 1px solid #ced4da; border-radius: .375rem; }
-    .attendance-table select:disabled, .attendance-table input:disabled { background: #f1f3f5; }
+    .card select, .card input[type=time], .card input[type=text] { width: 100%; padding: .375rem .5rem; border: 1px solid #ced4da; border-radius: .375rem; }
+    .card select:disabled, .card input:disabled { background: #f1f3f5; }
   </style>
-{% endblock %}
-
-{% block extra_js %}
-  <script>
-    document.getElementById("mark-all-present")?.addEventListener("click", () => {
-      document.querySelectorAll(".attendance-table select[name$='-status']:not(:disabled)").forEach((select) => {
-        if (!select.value) select.value = "present";
-      });
-    });
-  </script>
 {% endblock %}

@@ -14,6 +14,13 @@ def departments_in_scope(user):
     return Department.objects.none()
 
 
+def can_register(user, employee):
+    """經理以上可登記所有人員；組長、主任只能登記自己部門的人員；員工不能登記。"""
+    if user.level >= Level.MANAGER:
+        return True
+    return user.level >= Level.LEADER and bool(user.department_id) and employee.department_id == user.department_id
+
+
 def can_edit(user, date, record=None):
     """當天的紀錄由登記人自己修改；之前的日期要主任以上才能新增或修改；不能登記未來日期。"""
     today = timezone.localdate()
