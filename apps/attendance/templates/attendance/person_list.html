@@ -14,14 +14,14 @@
   <div class="table-responsive">
     <table class="table table-hover align-middle">
       <thead class="table-light">
-        <tr><th>工號</th><th>姓名</th><th>職務</th><th>狀態</th><th>第一次上班</th><th>最後離開</th><th>當日工位</th><th></th></tr>
+        <tr><th>工號</th><th>姓名</th><th>職級</th><th>狀態</th><th>第一次上班</th><th>最後離開</th><th>當日工位</th><th></th></tr>
       </thead>
       <tbody>
         {% for row in rows %}
           <tr>
             <td>{{ row.employee.employee_no }}</td>
             <td>{{ row.employee.name }}{% if not row.employee.is_active %} <span class="badge text-bg-secondary">已離職</span>{% endif %}</td>
-            <td>{{ row.employee.job_title|default:"" }}</td>
+            <td>{{ row.employee.get_level_display }}</td>
             <td>{% if row.record.status %}{{ row.record.get_status_display }}{% if row.record.on_site %} <span class="badge text-bg-success">在場</span>{% endif %}{% else %}<span class="text-muted">未登記</span>{% endif %}</td>
             <td>{{ row.record.clock_in|time:"H:i"|default:"" }}</td>
             <td>{{ row.record.clock_out|time:"H:i"|default:"" }}</td>

@@ -67,7 +67,7 @@ def scope_entries(user):
 def summarize(user, date):
     """某一天各部門的到班人數：到班（含部分請假）、部分請假、請假、缺勤、未登記、目前在場，以及到班人員所在工位。"""
     entries = scope_entries(user)
-    records = Attendance.objects.filter(date=date).exclude(status="").select_related("employee", "station__department")
+    records = Attendance.objects.filter(date=date).exclude(status="").select_related("employee", "station")
     active = Employee.objects.filter(is_active=True).values_list("pk", "department_id")
     summary = []
     for entry in entries:
@@ -76,13 +76,8 @@ def summarize(user, date):
         registered = {r.employee_id for r in dept_records}
         active_ids = [pk for pk, d in active if d == dept_id]
         status = Counter(r.status for r in dept_records)
-        # 支援其他部門工位時會顯示「部門／工位」
         stations = Counter(
-            (
-                (str(r.station.pk), r.station.name if r.station.department_id == dept_id else str(r.station))
-                if r.station
-                else ("none", "未填工位")
-            )
+            (str(r.station.pk), r.station.name) if r.station else ("none", "未填工位")
             for r in dept_records
             if r.status in PRESENT_STATUSES
         )
@@ -118,7 +113,7 @@ class RegisterView(RegisterAccessMixin, TemplateView):
         self.error = ""
         if not self.employee_no:
             return
-        self.employee = Employee.objects.select_related("department", "job_title").filter(employee_no__iexact=self.employee_no).first()
+        self.employee = Employee.objects.select_related("department").filter(employee_no__iexact=self.employee_no).first()
         if not self.employee:
             self.error = f"找不到工號「{self.employee_no}」的人員。"
         elif not can_register(self.request.user, self.employee):
@@ -220,9 +215,9 @@ class PersonListView(RegisterAccessMixin, TemplateView):
         if entry is None or kind not in self.KINDS:
             raise Http404
         department = entry["department"]
-        employees = Employee.objects.filter(department=department).select_related("job_title").order_by("employee_no")
+        employees = Employee.objects.filter(department=department).order_by("employee_no")
         records = Attendance.objects.filter(date=date, employee__department=department).select_related(
-            "employee__job_title", "station__department"
+            "station"
         ).order_by("employee__employee_no")
         title = f"{entry['label']}　{self.KINDS[kind]}"
         if kind == "active":
@@ -279,7 +274,7 @@ class StationListView(StationScopeMixin, TemplateView):
         is_today = date == timezone.localdate()
         view = "timeline" if self.request.GET.get("view") == "timeline" else "batches"
         batches = StationBatch.objects.filter(date=date).select_related("created_by").prefetch_related(
-            "entries__employee__department", "entries__employee__job_title", "entries__station__department"
+            "entries__employee__department", "entries__station"
         )
         rows = []
         for batch in batches:
@@ -317,7 +312,7 @@ class StationCreateView(StationScopeMixin, TemplateView):
         here = {"on_site": True} if date == timezone.localdate() else {"clock_in__isnull": False}
         records = self.in_scope(
             Attendance.objects.filter(date=date, **here)
-            .select_related("employee__job_title", "employee__department", "station__department")
+            .select_related("employee__department", "station")
             .order_by("employee__department__name", "employee__employee_no")
         )
         editable = can_arrange(self.request.user, date)

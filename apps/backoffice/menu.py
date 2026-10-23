@@ -20,7 +20,7 @@ class MenuItem:
 MENU = [
     MenuItem("attendance-register", "到班登記", "attendance:register", "到班", section="feature"),
     MenuItem("attendance-stations", "工位安排", "attendance:stations", "到班", section="feature"),
-    MenuItem("manage-job-titles", "職務", "personnel:job_title_list", "組織"),
+    MenuItem("manage-levels", "職級", "accounts_manage:level_list", "組織"),
     MenuItem("manage-departments", "部門", "accounts_manage:department_list", "組織"),
     MenuItem("manage-stations", "工位", "accounts_manage:station_list", "組織"),
     MenuItem("manage-employees", "人員資料", "personnel:employee_list", "帳號與權限"),

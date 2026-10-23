@@ -84,14 +84,14 @@
         <div class="card-body border-top">
           <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
-              <thead class="table-light"><tr><th>工號</th><th>姓名</th><th>部門</th><th>職務</th><th>工位</th></tr></thead>
+              <thead class="table-light"><tr><th>工號</th><th>姓名</th><th>部門</th><th>職級</th><th>工位</th></tr></thead>
               <tbody>
                 {% for entry in row.entries %}
                   <tr>
                     <td>{{ entry.employee.employee_no }}</td>
                     <td>{{ entry.employee.name }}</td>
                     <td>{{ entry.employee.department|default:"" }}</td>
-                    <td>{{ entry.employee.job_title|default:"" }}</td>
+                    <td>{{ entry.employee.get_level_display }}</td>
                     <td>{{ entry.station|default:"未安排" }}</td>
                   </tr>
                 {% endfor %}

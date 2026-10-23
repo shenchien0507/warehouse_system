@@ -7,20 +7,6 @@ from apps.accounts.models import Department, Level
 EMPLOYEE_LEVEL_CHOICES = [(value, label) for value, label in Level.choices if value != Level.ADMIN]
 
 
-class JobTitle(models.Model):
-    """應徵進來的職務（倉管、撿貨員…）。每天實際站的工位另外記，可能和職務不同。"""
-
-    name = models.CharField("職務名稱", max_length=50, unique=True)
-
-    class Meta:
-        verbose_name = "職務"
-        verbose_name_plural = "職務"
-        ordering = ["name"]
-
-    def __str__(self):
-        return self.name
-
-
 class Employee(models.Model):
     """人員資料。不是每個人都有系統帳號；需要操作系統的人才另外開帳號並連結。離職請改為停用，不要刪除。"""
 
@@ -29,11 +15,8 @@ class Employee(models.Model):
     department = models.ForeignKey(
         Department, verbose_name="部門", null=True, blank=True, on_delete=models.PROTECT, related_name="employees"
     )
-    job_title = models.ForeignKey(
-        JobTitle, verbose_name="職務", null=True, blank=True, on_delete=models.PROTECT, related_name="employees"
-    )
     level = models.PositiveSmallIntegerField("職級", choices=EMPLOYEE_LEVEL_CHOICES, default=Level.STAFF)
-    phone = models.CharField("聯絡電話", max_length=30, blank=True)
+    phone = models.CharField("聯絡資料", max_length=100, blank=True)
     hire_date = models.DateField("到職日", null=True, blank=True)
     is_active = models.BooleanField("在職", default=True)
     user = models.OneToOneField(
@@ -57,12 +40,15 @@ class Employee(models.Model):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        # 姓名、電話、部門、職級以人員資料為準，有帳號時同步過去（管理員帳號的職級不動）
+        # 姓名、聯絡資料、部門、職級以人員資料為準，有帳號時同步過去（管理員帳號的職級不動）
+        # 離職時帳號一併停用（管理員帳號除外）；復職不會自動啟用，要到系統帳號手動打開
         if self.user_id:
             user = self.user
             synced = {"username": self.employee_no, "name": self.name, "phone": self.phone, "department_id": self.department_id}
             if user.level != Level.ADMIN:
                 synced["level"] = self.level
+                if not self.is_active:
+                    synced["is_active"] = False
             if any(getattr(user, field) != value for field, value in synced.items()):
                 for field, value in synced.items():
                     setattr(user, field, value)

@@ -2,7 +2,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from apps.accounts.models import Department, Level, PagePermission, Station, User
-from apps.personnel.models import Employee, JobTitle
+from apps.personnel.models import Employee
 
 from .menu import MENU
 
@@ -38,6 +38,8 @@ class AccessTests(BackofficeTestCase):
         dashboard = self.client.get(reverse("backoffice:dashboard"))
         self.assertContains(dashboard, "人員資料")
         self.assertNotContains(dashboard, "部門</a>")
+        # 進到某一頁也看得到左側選單，目前頁面標示為 active
+        self.assertContains(self.client.get(reverse("personnel:employee_list")), 'active" href="/manage/personnel/employees/"')
 
     def test_page_permissions_admin_only_even_if_configured(self):
         PagePermission.objects.create(page_key="manage-page-permissions", label="頁面權限", min_level=Level.STAFF)
@@ -51,10 +53,9 @@ class CrudTests(BackofficeTestCase):
 
     def test_create_and_edit_employee(self):
         dept = Department.objects.create(name="現場部")
-        job = JobTitle.objects.create(name="倉管")
         response = self.client.post(
             reverse("personnel:employee_create"),
-            {"employee_no": "P001", "name": "王小明", "department": dept.pk, "job_title": job.pk, "level": Level.STAFF, "is_active": "on"},
+            {"employee_no": "P001", "name": "王小明", "department": dept.pk, "level": Level.STAFF, "phone": "0912-345678 / line: wang", "is_active": "on"},
         )
         self.assertRedirects(response, reverse("personnel:employee_list"))
         employee = Employee.objects.get(employee_no="P001")
@@ -72,21 +73,64 @@ class CrudTests(BackofficeTestCase):
         self.assertNotContains(self.client.get(url), "P002")
         self.assertContains(self.client.get(url, {"status": "inactive"}), "P002")
 
-    def test_employee_form_has_no_account_field(self):
+    def test_employee_form_fields(self):
         response = self.client.get(reverse("personnel:employee_create"))
-        self.assertNotIn("user", response.context["form"].fields)
+        self.assertEqual(
+            list(response.context["form"].fields),
+            ["employee_no", "name", "level", "department", "phone", "hire_date", "note", "is_active"],
+        )
 
     def test_delete_protected_department_shows_error(self):
         dept = Department.objects.create(name="現場部")
-        Station.objects.create(name="撿貨", department=dept)
+        Employee.objects.create(employee_no="P001", name="王小明", department=dept)
         response = self.client.post(reverse("accounts_manage:department_delete", args=[dept.pk]), follow=True)
         self.assertContains(response, "不能刪除")
         self.assertTrue(Department.objects.filter(pk=dept.pk).exists())
 
-    def test_delete_unused_job_title(self):
-        job = JobTitle.objects.create(name="倉管")
-        self.client.post(reverse("personnel:job_title_delete", args=[job.pk]))
-        self.assertFalse(JobTitle.objects.exists())
+    def test_station_is_independent_of_department(self):
+        self.client.post(reverse("accounts_manage:station_create"), {"name": "撿貨"})
+        self.assertEqual(Station.objects.get().name, "撿貨")
+        response = self.client.post(reverse("accounts_manage:station_create"), {"name": "撿貨"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Station.objects.count(), 1)
+
+    def test_level_page_lists_levels_with_headcount(self):
+        Employee.objects.create(employee_no="P001", name="王小明", level=Level.LEADER)
+        Employee.objects.create(employee_no="P002", name="李大華", level=Level.LEADER)
+        Employee.objects.create(employee_no="P003", name="離職", level=Level.LEADER, is_active=False)
+        rows = self.client.get(reverse("accounts_manage:level_list")).context["rows"]
+        self.assertEqual([row["cells"][0] for row in rows], ["管理員", "經理", "主任", "組長", "員工"])
+        self.assertEqual(rows[3]["cells"][1], 2)
+
+    def test_deactivating_employee_disables_account(self):
+        account = make_user("E100")
+        employee = Employee.objects.create(employee_no="E100", name="新人", user=account)
+        self.client.post(reverse("personnel:employee_edit", args=[employee.pk]), {"employee_no": "E100", "name": "新人", "level": Level.STAFF})
+        account.refresh_from_db()
+        self.assertFalse(account.is_active)
+        # 復職不會自動啟用帳號
+        self.client.post(
+            reverse("personnel:employee_edit", args=[employee.pk]), {"employee_no": "E100", "name": "新人", "level": Level.STAFF, "is_active": "on"}
+        )
+        account.refresh_from_db()
+        self.assertFalse(account.is_active)
+
+    def test_deactivating_admin_employee_keeps_account(self):
+        account = make_user("E100", Level.ADMIN)
+        employee = Employee.objects.create(employee_no="E100", name="老闆", user=account)
+        employee.is_active = False
+        employee.save()
+        account.refresh_from_db()
+        self.assertTrue(account.is_active)
+
+    def test_open_account_button_preselects_employee(self):
+        employee = Employee.objects.create(employee_no="E100", name="新人")
+        Employee.objects.create(employee_no="E200", name="離職", is_active=False)
+        response = self.client.get(reverse("personnel:employee_list"), {"status": "all"})
+        url = f"{reverse('accounts_manage:user_create')}?employee={employee.pk}"
+        self.assertContains(response, url)
+        self.assertContains(response, "開帳號", count=1)
+        self.assertEqual(self.client.get(url).context["form"]["employee"].value(), str(employee.pk))
 
     def test_create_user_requires_employee_and_copies_its_data(self):
         dept = Department.objects.create(name="現場部")
@@ -169,6 +213,17 @@ class CrudTests(BackofficeTestCase):
         self.assertNotContains(dashboard, "list-group-item-action\" href=\"/attendance/")
         self.assertNotContains(dashboard, 'card-header">到班')
         self.assertContains(self.client.get(reverse("home")), 'href="/attendance/"')
+
+    def test_page_permission_list_shows_unconfigured_pages(self):
+        PagePermission.objects.create(page_key="manage-employees", label="人員資料", min_level=Level.LEADER)
+        rows = self.client.get(reverse("accounts_manage:page_permission_list")).context["rows"]
+        by_label = {row["cells"][1]: row for row in rows}
+        self.assertEqual(by_label["人員資料"]["cells"][2], "組長以上")
+        self.assertEqual(by_label["部門"]["cells"][2], "未開放（只有管理員）")
+        self.assertNotIn("頁面權限", by_label)
+        form = self.client.get(reverse("accounts_manage:page_permission_create"), {"page": "manage-departments"}).context["form"]
+        self.assertEqual(form["page_key"].value(), "manage-departments")
+        self.assertNotIn(Level.ADMIN, [value for value, _ in form.fields["min_level"].choices])
 
     def test_page_permission_create_uses_menu_label(self):
         response = self.client.post(

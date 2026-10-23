@@ -24,20 +24,16 @@ class Department(models.Model):
 
 
 class Station(models.Model):
-    name = models.CharField("工位名稱", max_length=50)
-    department = models.ForeignKey(
-        Department, verbose_name="所屬部門", on_delete=models.PROTECT, related_name="stations"
-    )
+    """工位和部門、職級各自獨立，任何部門的人都可以排到任何工位。"""
+
+    name = models.CharField("工位名稱", max_length=50, unique=True)
 
     class Meta:
         verbose_name = "工位"
         verbose_name_plural = "工位"
-        constraints = [
-            models.UniqueConstraint(fields=["department", "name"], name="unique_station_per_department")
-        ]
 
     def __str__(self):
-        return f"{self.department}／{self.name}"
+        return self.name
 
 
 class User(AbstractUser):
@@ -47,7 +43,7 @@ class User(AbstractUser):
     last_name = None
 
     name = models.CharField("姓名", max_length=50)
-    phone = models.CharField("聯絡電話", max_length=30, blank=True)
+    phone = models.CharField("聯絡資料", max_length=100, blank=True)
     level = models.PositiveSmallIntegerField("職級", choices=Level.choices, default=Level.STAFF)
     department = models.ForeignKey(
         Department, verbose_name="部門", null=True, blank=True, on_delete=models.PROTECT, related_name="users"
@@ -73,7 +69,7 @@ class User(AbstractUser):
 
 
 class PagePermission(models.Model):
-    """某個頁面開放給哪些部門、最低職級。由管理員在 admin 調整，新增功能不必改程式。"""
+    """某個頁面開放給哪些部門、最低職級。由管理員在後台「頁面權限」調整，新增功能不必改程式。"""
 
     page_key = models.SlugField("頁面代碼", max_length=50, unique=True)
     label = models.CharField("頁面名稱", max_length=50)

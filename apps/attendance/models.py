@@ -31,7 +31,7 @@ OUT_KINDS = (EventKind.CLOCK_OUT, EventKind.LEAVE_OUT)
 
 class Attendance(models.Model):
     """每人每天一筆，底下是當天的紀錄（上班、下班、請假…），只累加不覆蓋。
-    狀態、上下班時間、是否在場都由紀錄算出來存在這裡，方便統計。當日工位可能和人員的職務不同（例如倉管支援撿貨）。"""
+    狀態、上下班時間、是否在場都由紀錄算出來存在這裡，方便統計。當日工位每天可能不同。"""
 
     employee = models.ForeignKey(Employee, verbose_name="人員", on_delete=models.PROTECT, related_name="attendances")
     date = models.DateField("日期")
