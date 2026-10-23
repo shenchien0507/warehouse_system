@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.utils.http import urlencode
 from django.views.generic import TemplateView
 
-from apps.accounts.models import Level
+from apps.accounts.levels import allows
 from apps.backoffice.menu import MENU_BY_KEY, can_use
 from apps.personnel.models import Employee
 
@@ -53,13 +53,13 @@ class RegisterAccessMixin(PageMixin):
     page_key = "attendance-register"
 
     def check_scope(self, user):
-        return user.level >= Level.MANAGER or (user.level >= Level.LEADER and bool(user.department_id))
+        return allows(user, "attendance-register-all") or (allows(user, "attendance-register-own") and bool(user.department_id))
 
 
 def scope_entries(user):
     """統計與名單的範圍：可登記的部門；經理以上再加上「未設定部門」（有這類人員時）。"""
     entries = [{"key": str(d.pk), "label": str(d), "department": d} for d in departments_in_scope(user)]
-    if user.level >= Level.MANAGER and Employee.objects.filter(department__isnull=True).exists():
+    if allows(user, "attendance-register-all") and Employee.objects.filter(department__isnull=True).exists():
         entries.append({"key": NO_DEPARTMENT, "label": "未設定部門", "department": None})
     return entries
 
@@ -247,11 +247,11 @@ class StationScopeMixin(PageMixin):
     page_key = "attendance-stations"
 
     def check_scope(self, user):
-        return user.level >= Level.MANAGER or bool(user.department_id)
+        return allows(user, "attendance-stations-all") or bool(user.department_id)
 
     def in_scope(self, queryset, field="employee__department__in"):
-        """經理以上看全部，其他人只看自己部門。"""
-        if self.request.user.level < Level.MANAGER:
+        """可安排全部部門的人看全部，其他人只看自己部門。"""
+        if not allows(self.request.user, "attendance-stations-all"):
             queryset = queryset.filter(**{field: station_departments(self.request.user)})
         return queryset
 
@@ -259,7 +259,7 @@ class StationScopeMixin(PageMixin):
         user = self.request.user
         if not hasattr(self, "_scope_ids"):
             self._scope_ids = set(station_departments(user).values_list("pk", flat=True))
-        return user.level >= Level.MANAGER or employee.department_id in self._scope_ids
+        return allows(user, "attendance-stations-all") or employee.department_id in self._scope_ids
 
 
 class StationListView(StationScopeMixin, TemplateView):

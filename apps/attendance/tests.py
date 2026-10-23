@@ -5,7 +5,8 @@ from django.urls import reverse
 from django.utils.http import urlencode
 from django.utils import timezone
 
-from apps.accounts.models import Department, Level, PagePermission, Station, User
+from apps.accounts.models import Department, PagePermission, Station, User
+from apps.accounts.testing import Level, make_user
 from apps.personnel.models import Employee
 
 from .models import Attendance, AttendanceEvent, EventKind, StationBatch, Status
@@ -19,9 +20,6 @@ MIDNIGHT = datetime.time(0, 0)  # 今天一定已經過了的時間，測試今�
 def t(value):
     return datetime.time.fromisoformat(value)
 
-
-def make_user(username, level, department=None):
-    return User.objects.create_user(username, password="pw12345!", name=username, level=level, department=department)
 
 
 class AttendanceTestCase(TestCase):

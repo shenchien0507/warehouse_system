@@ -63,7 +63,7 @@
                 <td>{{ row.record.employee.employee_no }}</td>
                 <td>{{ row.record.employee.name }}{% if row.record.status == "partial" %} <span class="badge text-bg-warning">部分請假</span>{% endif %}{% if row.record.clock_out %} <span class="badge text-bg-light border">{{ row.record.clock_out|time:"H:i" }} 離開</span>{% endif %}</td>
                 <td>{{ row.record.employee.department|default:"" }}</td>
-                <td>{{ row.record.employee.get_level_display }}</td>
+                <td>{{ row.record.employee.level|default:"" }}</td>
                 <td>{{ row.form.station }}</td>
               </tr>
             {% endfor %}

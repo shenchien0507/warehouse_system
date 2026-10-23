@@ -1,10 +1,7 @@
 from django.conf import settings
 from django.db import models
 
-from apps.accounts.models import Department, Level
-
-# 管理員是系統帳號的身分，不是人員的實際職級，只在帳號上設定
-EMPLOYEE_LEVEL_CHOICES = [(value, label) for value, label in Level.choices if value != Level.ADMIN]
+from apps.accounts.models import Department, Level, lowest_level_id
 
 
 class Employee(models.Model):
@@ -15,7 +12,9 @@ class Employee(models.Model):
     department = models.ForeignKey(
         Department, verbose_name="部門", null=True, blank=True, on_delete=models.PROTECT, related_name="employees"
     )
-    level = models.PositiveSmallIntegerField("職級", choices=EMPLOYEE_LEVEL_CHOICES, default=Level.STAFF)
+    level = models.ForeignKey(
+        Level, verbose_name="職級", null=True, blank=True, default=lowest_level_id, on_delete=models.PROTECT, related_name="employees"
+    )
     phone = models.CharField("聯絡資料", max_length=100, blank=True)
     hire_date = models.DateField("到職日", null=True, blank=True)
     is_active = models.BooleanField("在職", default=True)
@@ -40,13 +39,15 @@ class Employee(models.Model):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        # 姓名、聯絡資料、部門、職級以人員資料為準，有帳號時同步過去（管理員帳號的職級不動）
+        # 工號、姓名、聯絡資料、部門、職級以人員資料為準，有帳號時同步過去（管理員是帳號身分，不受影響）
         # 離職時帳號一併停用（管理員帳號除外）；復職不會自動啟用，要到系統帳號手動打開
         if self.user_id:
             user = self.user
-            synced = {"username": self.employee_no, "name": self.name, "phone": self.phone, "department_id": self.department_id}
-            if user.level != Level.ADMIN:
-                synced["level"] = self.level
+            synced = {
+                "username": self.employee_no, "name": self.name, "phone": self.phone,
+                "department_id": self.department_id, "level_id": self.level_id,
+            }
+            if not user.is_admin:
                 if not self.is_active:
                     synced["is_active"] = False
             if any(getattr(user, field) != value for field, value in synced.items()):

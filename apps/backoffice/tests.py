@@ -1,14 +1,13 @@
 from django.test import TestCase
 from django.urls import reverse
 
-from apps.accounts.models import Department, Level, PagePermission, Station, User
+from apps.accounts.levels import allows
+from apps.accounts.models import Department, Level as LevelModel, PagePermission, Station, User
+from apps.accounts.testing import Level, make_user
 from apps.personnel.models import Employee
 
 from .menu import MENU
 
-
-def make_user(username, level=Level.STAFF, department=None, **extra):
-    return User.objects.create_user(username, password="pw12345!", name=username, level=level, department=department, **extra)
 
 
 class BackofficeTestCase(TestCase):
@@ -55,12 +54,12 @@ class CrudTests(BackofficeTestCase):
         dept = Department.objects.create(name="現場部")
         response = self.client.post(
             reverse("personnel:employee_create"),
-            {"employee_no": "P001", "name": "王小明", "department": dept.pk, "level": Level.STAFF, "phone": "0912-345678 / line: wang", "is_active": "on"},
+            {"employee_no": "P001", "name": "王小明", "department": dept.pk, "level": Level.STAFF.pk, "phone": "0912-345678 / line: wang", "is_active": "on"},
         )
         self.assertRedirects(response, reverse("personnel:employee_list"))
         employee = Employee.objects.get(employee_no="P001")
         self.assertIsNone(employee.user)
-        self.client.post(reverse("personnel:employee_edit", args=[employee.pk]), {"employee_no": "P001", "name": "王小明", "level": Level.STAFF})
+        self.client.post(reverse("personnel:employee_edit", args=[employee.pk]), {"employee_no": "P001", "name": "王小明", "level": Level.STAFF.pk})
         employee.refresh_from_db()
         self.assertFalse(employee.is_active)
 
@@ -99,18 +98,45 @@ class CrudTests(BackofficeTestCase):
         Employee.objects.create(employee_no="P002", name="李大華", level=Level.LEADER)
         Employee.objects.create(employee_no="P003", name="離職", level=Level.LEADER, is_active=False)
         rows = self.client.get(reverse("accounts_manage:level_list")).context["rows"]
-        self.assertEqual([row["cells"][0] for row in rows], ["管理員", "經理", "主任", "組長", "員工"])
-        self.assertEqual(rows[3]["cells"][1], 2)
+        self.assertEqual([row["cells"][0] for row in rows], ["經理", "主任", "組長", "員工"])
+        self.assertEqual(rows[2]["cells"][2], 2)
+
+    def test_admin_can_add_rename_and_reorder_levels(self):
+        self.client.post(reverse("accounts_manage:level_create"), {"name": "副理", "rank": 35})
+        deputy = LevelModel.objects.get(name="副理")
+        self.assertEqual(
+            [row["cells"][0] for row in self.client.get(reverse("accounts_manage:level_list")).context["rows"]],
+            ["經理", "副理", "主任", "組長", "員工"],
+        )
+        self.client.post(reverse("accounts_manage:level_edit", args=[Level.DIRECTOR.pk]), {"name": "課長", "rank": 30})
+        self.assertEqual(Level.DIRECTOR.name, "課長")
+        # 排序不能重複
+        response = self.client.post(reverse("accounts_manage:level_edit", args=[deputy.pk]), {"name": "副理", "rank": 40})
+        self.assertEqual(response.status_code, 200)
+        # 還有人在用的職級不能刪
+        Employee.objects.create(employee_no="P001", name="王小明", level=deputy)
+        self.client.post(reverse("accounts_manage:level_delete", args=[deputy.pk]))
+        self.assertTrue(LevelModel.objects.filter(pk=deputy.pk).exists())
+
+    def test_level_rules_are_configurable(self):
+        rows = self.client.get(reverse("accounts_manage:level_rule_list")).context["rows"]
+        self.assertIn("經理以上", [row["cells"][1] for row in rows])
+        url = reverse("accounts_manage:level_rule_edit", args=["attendance-register-all"])
+        self.client.post(url, {"min_level": Level.LEADER.pk})
+        self.assertTrue(allows(make_user("lead", Level.LEADER), "attendance-register-all"))
+        self.client.post(url, {"min_level": ""})
+        self.assertFalse(allows(make_user("mgr", Level.MANAGER), "attendance-register-all"))
+        self.assertEqual(self.client.get(reverse("accounts_manage:level_rule_edit", args=["no-such-rule"])).status_code, 404)
 
     def test_deactivating_employee_disables_account(self):
         account = make_user("E100")
         employee = Employee.objects.create(employee_no="E100", name="新人", user=account)
-        self.client.post(reverse("personnel:employee_edit", args=[employee.pk]), {"employee_no": "E100", "name": "新人", "level": Level.STAFF})
+        self.client.post(reverse("personnel:employee_edit", args=[employee.pk]), {"employee_no": "E100", "name": "新人", "level": Level.STAFF.pk})
         account.refresh_from_db()
         self.assertFalse(account.is_active)
         # 復職不會自動啟用帳號
         self.client.post(
-            reverse("personnel:employee_edit", args=[employee.pk]), {"employee_no": "E100", "name": "新人", "level": Level.STAFF, "is_active": "on"}
+            reverse("personnel:employee_edit", args=[employee.pk]), {"employee_no": "E100", "name": "新人", "level": Level.STAFF.pk, "is_active": "on"}
         )
         account.refresh_from_db()
         self.assertFalse(account.is_active)
@@ -138,7 +164,7 @@ class CrudTests(BackofficeTestCase):
         url = reverse("accounts_manage:user_create")
         passwords = {"password1": "Wh-pass-2026", "password2": "Wh-pass-2026"}
         # 沒選人員、或憑空輸入工號都不能建立帳號
-        self.client.post(url, {"username": "X1", "name": "憑空", "level": Level.STAFF, **passwords})
+        self.client.post(url, {"username": "X1", "name": "憑空", "level": Level.STAFF.pk, **passwords})
         self.assertFalse(User.objects.filter(username="X1").exists())
         response = self.client.post(url, {"employee": employee.pk, "is_active": "on", **passwords})
         self.assertRedirects(response, reverse("accounts_manage:user_list"))
@@ -162,23 +188,23 @@ class CrudTests(BackofficeTestCase):
         employee = Employee.objects.create(employee_no="E100", name="新人", user=account)
         self.client.post(
             reverse("personnel:employee_edit", args=[employee.pk]),
-            {"employee_no": "E100", "name": "改名", "level": Level.DIRECTOR, "is_active": "on"},
+            {"employee_no": "E100", "name": "改名", "level": Level.DIRECTOR.pk, "is_active": "on"},
         )
         account.refresh_from_db()
         self.assertEqual((account.name, account.level), ("改名", Level.DIRECTOR))
         response = self.client.get(reverse("accounts_manage:user_edit", args=[account.pk]))
         form = response.context["form"]
-        self.assertTrue(all(form.fields[f].disabled for f in ("username", "name", "phone", "department")))
-        # 管理員只能在人員資料的職級和管理員之間切換
-        self.assertEqual([value for value, _ in form.fields["level"].choices], [Level.DIRECTOR, Level.ADMIN])
+        self.assertTrue(all(form.fields[f].disabled for f in ("username", "name", "phone", "department", "level")))
+        # 管理員可以把帳號設成管理員
+        self.assertFalse(form.fields["is_admin"].disabled)
 
-    def test_admin_account_level_not_overwritten_by_employee(self):
+    def test_admin_flag_not_affected_by_employee_level(self):
         account = make_user("E100", Level.ADMIN)
         employee = Employee.objects.create(employee_no="E100", name="新人", level=Level.MANAGER, user=account)
         employee.level = Level.LEADER
         employee.save()
         account.refresh_from_db()
-        self.assertEqual(account.level, Level.ADMIN)
+        self.assertEqual((account.is_admin, account.level), (True, Level.LEADER))
 
     def test_non_admin_limited_to_lower_levels(self):
         director = make_user("D1", Level.DIRECTOR)
@@ -190,9 +216,9 @@ class CrudTests(BackofficeTestCase):
         self.login(director)
         # 人員資料：只能設比自己低的職級，不能升自己
         form = self.client.get(reverse("personnel:employee_create")).context["form"]
-        self.assertEqual([value for value, _ in form.fields["level"].choices], [Level.STAFF, Level.LEADER])
+        self.assertEqual(set(form.fields["level"].queryset), {Level.STAFF, Level.LEADER})
         self.client.post(
-            reverse("personnel:employee_edit", args=[leader.pk]), {"employee_no": "L1", "name": "組長", "level": Level.MANAGER, "is_active": "on"}
+            reverse("personnel:employee_edit", args=[leader.pk]), {"employee_no": "L1", "name": "組長", "level": Level.MANAGER.pk, "is_active": "on"}
         )
         leader.refresh_from_db()
         self.assertEqual(leader.level, Level.LEADER)
@@ -223,11 +249,11 @@ class CrudTests(BackofficeTestCase):
         self.assertNotIn("頁面權限", by_label)
         form = self.client.get(reverse("accounts_manage:page_permission_create"), {"page": "manage-departments"}).context["form"]
         self.assertEqual(form["page_key"].value(), "manage-departments")
-        self.assertNotIn(Level.ADMIN, [value for value, _ in form.fields["min_level"].choices])
+
 
     def test_page_permission_create_uses_menu_label(self):
         response = self.client.post(
-            reverse("accounts_manage:page_permission_create"), {"page_key": "manage-employees", "min_level": Level.LEADER}
+            reverse("accounts_manage:page_permission_create"), {"page_key": "manage-employees", "min_level": Level.LEADER.pk}
         )
         self.assertRedirects(response, reverse("accounts_manage:page_permission_list"))
         self.assertEqual(PagePermission.objects.get().label, "人員資料")
@@ -254,11 +280,24 @@ class UserLevelLimitTests(BackofficeTestCase):
         self.assertEqual(self.client.get(reverse("accounts_manage:user_password", args=[manager.pk])).status_code, 404)
         self.assertEqual(self.client.get(reverse("accounts_manage:user_edit", args=[leader.pk])).status_code, 200)
 
+    def test_cannot_make_admin_or_open_level_pages(self):
+        leader = make_user("lead", Level.LEADER)
+        form = self.client.get(reverse("accounts_manage:user_edit", args=[leader.pk])).context["form"]
+        self.assertTrue(form.fields["is_admin"].disabled)
+        self.client.post(
+            reverse("accounts_manage:user_edit", args=[leader.pk]),
+            {"username": "lead", "name": "lead", "level": Level.LEADER.pk, "is_admin": "on", "is_active": "on"},
+        )
+        leader.refresh_from_db()
+        self.assertFalse(leader.is_admin)
+        self.assertEqual(self.client.get(reverse("accounts_manage:level_list")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("accounts_manage:level_rule_list")).status_code, 403)
+
     def test_cannot_promote_to_own_level(self):
         leader = make_user("lead", Level.LEADER)
         response = self.client.post(
             reverse("accounts_manage:user_edit", args=[leader.pk]),
-            {"username": "lead", "name": "lead", "level": Level.DIRECTOR, "is_active": "on"},
+            {"username": "lead", "name": "lead", "level": Level.DIRECTOR.pk, "is_active": "on"},
         )
         self.assertEqual(response.status_code, 200)
         leader.refresh_from_db()

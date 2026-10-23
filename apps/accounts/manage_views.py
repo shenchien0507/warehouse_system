@@ -1,40 +1,113 @@
 """帳號與組織的後台管理頁。"""
 
 from django.contrib import messages
+from django.db.models import Count, Q
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
-from django.db.models import Count
-from django.views.generic import FormView, TemplateView
+from django.views.generic import FormView, TemplateView, UpdateView
 
 from apps.backoffice.menu import MENU
 from apps.backoffice.views import ManageCreateView, ManageDeleteView, ManageListView, ManageMixin, ManageUpdateView
 
-from .forms import DepartmentForm, PagePermissionForm, StationForm, UserCreateForm, UserPasswordForm, UserUpdateForm
-from apps.personnel.models import Employee
+from .forms import (
+    DepartmentForm, LevelForm, LevelRuleForm, PagePermissionForm, StationForm, UserCreateForm, UserPasswordForm, UserUpdateForm,
+)
+from .levels import RULES, RULES_BY_CODE, is_admin, levels_below
+from .models import Department, Level, LevelRule, PagePermission, Station, User
 
-from .models import Department, Level, PagePermission, Station, User
 
-
-class LevelList(ManageMixin, TemplateView):
-    """職級是固定的五級（權限依職級高低判斷），這裡只列出各職級的人數，職級要到人員資料設定。"""
-
-    template_name = "backoffice/list.html"
+class LevelMixin:
+    model = Level
+    form_class = LevelForm
     page_key = "manage-levels"
     list_url_name = "accounts_manage:level_list"
 
+
+class LevelList(LevelMixin, ManageListView):
+    """職級由管理員自訂：名稱、排序（數字越大越高）。權限依高低判斷，管理員是帳號身分不在這裡。"""
+
+    columns = [
+        ("職級", "name"),
+        ("排序", "rank"),
+        ("在職人員", lambda o: o.employee_count),
+        ("啟用中的系統帳號", lambda o: o.user_count),
+    ]
+    create_url_name = "accounts_manage:level_create"
+    edit_url_name = "accounts_manage:level_edit"
+    delete_url_name = "accounts_manage:level_delete"
+
+    def get_queryset(self):
+        return Level.objects.annotate(
+            employee_count=Count("employees", filter=Q(employees__is_active=True), distinct=True),
+            user_count=Count("users", filter=Q(users__is_active=True), distinct=True),
+        ).order_by("-rank")
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        employees = dict(
-            Employee.objects.filter(is_active=True).values_list("level").annotate(n=Count("pk")).values_list("level", "n")
+        context["note"] = (
+            "排序數字越大職級越高。頁面權限、職級規則都依高低判斷，非管理員只能管理比自己低的職級。"
+            "還有人員、帳號或設定在用的職級不能刪除。管理員是系統帳號上的身分，不在這裡。"
         )
-        users = dict(User.objects.filter(is_active=True).values_list("level").annotate(n=Count("pk")).values_list("level", "n"))
-        context["headers"] = ["職級", "在職人員", "啟用中的系統帳號"]
-        context["rows"] = [
-            {"cells": [label, "—" if value == Level.ADMIN else employees.get(value, 0), users.get(value, 0)], "actions": []}
-            for value, label in sorted(Level.choices, reverse=True)
-        ]
-        context["note"] = "職級固定為以上五級，頁面權限依職級高低判斷。人員的職級請到「人員資料」設定；管理員只在系統帳號設定。"
         return context
+
+
+class LevelCreate(LevelMixin, ManageCreateView):
+    pass
+
+
+class LevelUpdate(LevelMixin, ManageUpdateView):
+    pass
+
+
+class LevelDelete(LevelMixin, ManageDeleteView):
+    pass
+
+
+class LevelRuleList(ManageMixin, TemplateView):
+    """列出 levels.RULES 的每條規則與目前門檻。"""
+
+    template_name = "backoffice/list.html"
+    page_key = "manage-level-rules"
+    list_url_name = "accounts_manage:level_rule_list"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        configured = {r.code: r for r in LevelRule.objects.select_related("min_level")}
+        rows = []
+        for rule in RULES:
+            setting = configured.get(rule.code)
+            level = setting.min_level if setting else None
+            rows.append({
+                "cells": [rule.label, f"{level}以上" if level else "只有管理員"],
+                "actions": [("編輯", reverse("accounts_manage:level_rule_edit", args=[rule.code]), "primary")],
+            })
+        context["headers"] = ["規則", "可以的職級"]
+        context["rows"] = rows
+        context["note"] = "系統裡依職級判斷的操作，門檻在這裡設定。管理員不受限制。"
+        return context
+
+
+class LevelRuleUpdate(ManageMixin, UpdateView):
+    template_name = "backoffice/form.html"
+    form_class = LevelRuleForm
+    page_key = "manage-level-rules"
+    list_url_name = "accounts_manage:level_rule_list"
+
+    def get_object(self, queryset=None):
+        if self.kwargs["code"] not in RULES_BY_CODE:
+            raise Http404
+        return LevelRule.objects.get_or_create(code=self.kwargs["code"])[0]
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["object"] = RULES_BY_CODE[self.object.code].label
+        return context
+
+    def form_valid(self, form):
+        form.save()
+        messages.success(self.request, "已儲存。")
+        return redirect(self.get_success_url())
 
 
 class DepartmentMixin:
@@ -101,9 +174,13 @@ class UserMixin:
     list_url_name = "accounts_manage:user_list"
 
     def get_queryset(self):
-        queryset = User.objects.select_related("department").order_by("username")
-        if self.request.user.level != Level.ADMIN:
-            queryset = queryset.filter(level__lt=self.request.user.level, is_superuser=False)
+        queryset = User.objects.select_related("department", "level").order_by("username")
+        editor = self.request.user
+        if not is_admin(editor):
+            below = Q(level__in=levels_below(editor))
+            if editor.level_id:
+                below |= Q(level=None)
+            queryset = queryset.filter(below, is_admin=False, is_superuser=False)
         return queryset
 
     def get_form_kwargs(self):
@@ -116,7 +193,7 @@ class UserList(UserMixin, ManageListView):
     columns = [
         ("工號", "username"),
         ("姓名", "name"),
-        ("職級", "level"),
+        ("職級", "level_display"),
         ("部門", "department"),
         ("啟用", "is_active"),
         ("最後登入", lambda o: o.last_login.strftime("%Y-%m-%d %H:%M") if o.last_login else ""),
@@ -183,7 +260,7 @@ class PagePermissionList(PagePermissionMixin, ManageMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        configured = {p.page_key: p for p in PagePermission.objects.prefetch_related("departments")}
+        configured = {p.page_key: p for p in PagePermission.objects.select_related("min_level").prefetch_related("departments")}
         rows = []
         for item in MENU:
             if item.admin_only:
@@ -194,7 +271,7 @@ class PagePermissionList(PagePermissionMixin, ManageMixin, TemplateView):
                     "cells": [
                         item.group,
                         item.label,
-                        permission.get_min_level_display() + "以上",
+                        f"{permission.min_level}以上",
                         "、".join(d.name for d in permission.departments.all()) or "全部部門",
                     ],
                     "actions": [

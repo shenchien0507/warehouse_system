@@ -21,7 +21,7 @@
           <tr>
             <td>{{ row.employee.employee_no }}</td>
             <td>{{ row.employee.name }}{% if not row.employee.is_active %} <span class="badge text-bg-secondary">已離職</span>{% endif %}</td>
-            <td>{{ row.employee.get_level_display }}</td>
+            <td>{{ row.employee.level|default:"" }}</td>
             <td>{% if row.record.status %}{{ row.record.get_status_display }}{% if row.record.on_site %} <span class="badge text-bg-success">在場</span>{% endif %}{% else %}<span class="text-muted">未登記</span>{% endif %}</td>
             <td>{{ row.record.clock_in|time:"H:i"|default:"" }}</td>
             <td>{{ row.record.clock_out|time:"H:i"|default:"" }}</td>

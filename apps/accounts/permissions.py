@@ -1,20 +1,19 @@
 from django.core.exceptions import PermissionDenied
 
+from .levels import is_admin
 from .models import PagePermission
 
 
 def can_access(user, page_key):
     """沒有設定過的頁面一律拒絕（管理員除外）。"""
-    from .models import Level
-
-    if user.is_authenticated and user.is_active and user.level == Level.ADMIN:
+    if is_admin(user):
         return True
-    page = PagePermission.objects.filter(page_key=page_key).first()
+    page = PagePermission.objects.select_related("min_level").filter(page_key=page_key).first()
     return page is not None and page.allows(user)
 
 
 def accessible_pages(user):
-    return [p for p in PagePermission.objects.order_by("label") if p.allows(user)]
+    return [p for p in PagePermission.objects.select_related("min_level").order_by("label") if p.allows(user)]
 
 
 class PageAccessMixin:

@@ -1,6 +1,6 @@
 from django.urls import reverse
 
-from apps.accounts.models import Level
+from apps.accounts.levels import outranks
 from apps.backoffice.menu import MENU_BY_KEY, can_use
 from apps.backoffice.views import ManageCreateView, ManageListView, ManageUpdateView
 
@@ -22,7 +22,7 @@ class EmployeeMixin:
 
 class EmployeeList(EmployeeMixin, ManageListView):
     template_name = "personnel/employee_list.html"
-    queryset = Employee.objects.select_related("department", "user")
+    queryset = Employee.objects.select_related("department", "level", "user")
     columns = [
         ("工號", "employee_no"),
         ("姓名", "name"),
@@ -57,7 +57,7 @@ class EmployeeList(EmployeeMixin, ManageListView):
             self._can_create_account
             and obj.is_active
             and not obj.user_id
-            and (user.level == Level.ADMIN or obj.level < user.level)
+            and outranks(user, obj.level)
         ):
             actions.append(("開帳號", f"{reverse('accounts_manage:user_create')}?employee={obj.pk}", "success"))
         return actions

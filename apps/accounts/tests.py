@@ -2,12 +2,10 @@ from django.core.exceptions import PermissionDenied
 from django.test import RequestFactory, TestCase
 from django.urls import reverse
 
-from .models import Department, Level, PagePermission, User
+from .models import Department, PagePermission, User
+from .testing import Level, make_user
 from .permissions import PageAccessMixin, can_access, page_access_required
 
-
-def make_user(username, level=Level.STAFF, department=None, **extra):
-    return User.objects.create_user(username, password="pw12345!", name=username, level=level, department=department, **extra)
 
 
 class LoginTests(TestCase):
@@ -40,7 +38,7 @@ class LoginTests(TestCase):
 
     def test_superuser_is_admin_level(self):
         user = User.objects.create_superuser("root", password="pw12345!", name="root")
-        self.assertEqual(user.level, Level.ADMIN)
+        self.assertTrue(user.is_admin)
 
 
 class PagePermissionTests(TestCase):
@@ -89,7 +87,7 @@ class PagePermissionTests(TestCase):
             V().dispatch(request)
 
     def test_home_lists_only_accessible_pages(self):
-        PagePermission.objects.create(page_key="punch", label="上下班打卡")
+        PagePermission.objects.create(page_key="punch", label="上下班打卡", min_level=Level.STAFF)
         make_user("c", Level.STAFF, self.orders)
         self.client.login(username="c", password="pw12345!")
         content = self.client.get(reverse("home")).content.decode()
