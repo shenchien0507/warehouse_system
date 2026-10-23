@@ -50,5 +50,5 @@ class StationAssignForm(forms.Form):
     """工位安排表中一個到班人員的一列。"""
 
     station = forms.ModelChoiceField(
-        label="當日工位", queryset=Station.objects.select_related("department").order_by("department__name", "name"), required=False
+        label="當日工位", queryset=Station.objects.order_by("name"), required=False
     )

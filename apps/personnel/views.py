@@ -1,34 +1,11 @@
-from apps.backoffice.views import ManageCreateView, ManageDeleteView, ManageListView, ManageUpdateView
+from django.urls import reverse
 
-from .forms import EmployeeForm, JobTitleForm
-from .models import Employee, JobTitle
+from apps.accounts.models import Level
+from apps.backoffice.menu import MENU_BY_KEY, can_use
+from apps.backoffice.views import ManageCreateView, ManageListView, ManageUpdateView
 
-
-class JobTitleMixin:
-    model = JobTitle
-    form_class = JobTitleForm
-    page_key = "manage-job-titles"
-    list_url_name = "personnel:job_title_list"
-
-
-class JobTitleList(JobTitleMixin, ManageListView):
-    columns = [("職務名稱", "name"), ("人數", lambda o: o.employees.filter(is_active=True).count())]
-    search_fields = ["name"]
-    create_url_name = "personnel:job_title_create"
-    edit_url_name = "personnel:job_title_edit"
-    delete_url_name = "personnel:job_title_delete"
-
-
-class JobTitleCreate(JobTitleMixin, ManageCreateView):
-    pass
-
-
-class JobTitleUpdate(JobTitleMixin, ManageUpdateView):
-    pass
-
-
-class JobTitleDelete(JobTitleMixin, ManageDeleteView):
-    pass
+from .forms import EmployeeForm
+from .models import Employee
 
 
 class EmployeeMixin:
@@ -45,13 +22,14 @@ class EmployeeMixin:
 
 class EmployeeList(EmployeeMixin, ManageListView):
     template_name = "personnel/employee_list.html"
-    queryset = Employee.objects.select_related("department", "job_title", "user")
+    queryset = Employee.objects.select_related("department", "user")
     columns = [
         ("工號", "employee_no"),
         ("姓名", "name"),
-        ("部門", "department"),
-        ("職務", "job_title"),
         ("職級", "level"),
+        ("部門", "department"),
+        ("聯絡資料", "phone"),
+        ("到職日", "hire_date"),
         ("在職", "is_active"),
         ("系統帳號", lambda o: o.user.username if o.user else ""),
     ]
@@ -68,6 +46,21 @@ class EmployeeList(EmployeeMixin, ManageListView):
         elif status == "inactive":
             queryset = queryset.filter(is_active=False)
         return queryset
+
+    def row_actions(self, obj):
+        # 在職、還沒有帳號、職級比自己低（管理員不限）的人，可以直接開帳號
+        actions = super().row_actions(obj)
+        user = self.request.user
+        if not hasattr(self, "_can_create_account"):
+            self._can_create_account = can_use(user, MENU_BY_KEY["manage-users"])
+        if (
+            self._can_create_account
+            and obj.is_active
+            and not obj.user_id
+            and (user.level == Level.ADMIN or obj.level < user.level)
+        ):
+            actions.append(("開帳號", f"{reverse('accounts_manage:user_create')}?employee={obj.pk}", "success"))
+        return actions
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

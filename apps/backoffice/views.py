@@ -11,14 +11,19 @@ from django.views.generic import CreateView, DeleteView, ListView, UpdateView
 from .menu import MENU_BY_KEY, accessible_menu, can_use
 
 
-def dashboard(request):
-    items = accessible_menu(request.user, "backoffice")
-    if not items:
-        raise PermissionDenied
+def menu_groups(user):
+    """後台首頁與左側選單用：{群組: [頁面]}。"""
     groups = {}
-    for item in items:
+    for item in accessible_menu(user, "backoffice"):
         groups.setdefault(item.group, []).append(item)
-    return render(request, "backoffice/dashboard.html", {"groups": groups})
+    return groups
+
+
+def dashboard(request):
+    groups = menu_groups(request.user)
+    if not groups:
+        raise PermissionDenied
+    return render(request, "backoffice/dashboard.html", {"groups": groups, "menu_groups": groups})
 
 
 class ManageMixin:
@@ -45,6 +50,7 @@ class ManageMixin:
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["menu_item"] = self.menu_item
+        context["menu_groups"] = menu_groups(self.request.user)
         context["list_url"] = reverse(self.list_url_name)
         return context
 
@@ -78,15 +84,20 @@ class ManageListView(ManageMixin, ListView):
             return "是" if value else "否"
         return "" if value is None else value
 
+    def row_actions(self, obj):
+        """每列右側的按鈕：[(文字, 網址, 樣式)]，樣式為 Bootstrap 的 btn-outline-* 顏色。"""
+        actions = []
+        if self.edit_url_name:
+            actions.append(("編輯", reverse(self.edit_url_name, args=[obj.pk]), "primary"))
+        if self.delete_url_name:
+            actions.append(("刪除", reverse(self.delete_url_name, args=[obj.pk]), "danger"))
+        return actions
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["headers"] = [label for label, _ in self.columns]
         context["rows"] = [
-            {
-                "cells": [self.cell(obj, column) for _, column in self.columns],
-                "edit_url": reverse(self.edit_url_name, args=[obj.pk]) if self.edit_url_name else None,
-                "delete_url": reverse(self.delete_url_name, args=[obj.pk]) if self.delete_url_name else None,
-            }
+            {"cells": [self.cell(obj, column) for _, column in self.columns], "actions": self.row_actions(obj)}
             for obj in context["object_list"]
         ]
         context["create_url"] = reverse(self.create_url_name) if self.create_url_name else None

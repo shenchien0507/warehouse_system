@@ -5,6 +5,7 @@ from . import manage_views as views
 app_name = "accounts_manage"
 
 urlpatterns = [
+    path("levels/", views.LevelList.as_view(), name="level_list"),
     path("departments/", views.DepartmentList.as_view(), name="department_list"),
     path("departments/new/", views.DepartmentCreate.as_view(), name="department_create"),
     path("departments/<int:pk>/", views.DepartmentUpdate.as_view(), name="department_edit"),

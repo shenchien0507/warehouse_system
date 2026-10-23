@@ -5,7 +5,7 @@ from django.test import TestCase
 
 from apps.accounts.models import Department, Station, User
 
-from .models import Employee, JobTitle
+from .models import Employee
 
 
 class SeedPersonnelTests(TestCase):
@@ -18,9 +18,7 @@ class SeedPersonnelTests(TestCase):
             self.assertTrue(len(e.phone) == 10 and e.phone.startswith("09"))
             self.assertIsNotNone(e.hire_date)
             self.assertIsNone(e.department_id)
-            self.assertIsNone(e.job_title_id)
         self.assertFalse(Department.objects.exists())
-        self.assertFalse(JobTitle.objects.exists())
         self.assertFalse(Station.objects.exists())
         self.assertFalse(User.objects.exists())
 

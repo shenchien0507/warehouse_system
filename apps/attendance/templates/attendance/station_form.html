@@ -56,14 +56,14 @@
       {% csrf_token %}
       <div class="table-responsive">
         <table class="table table-hover align-middle station-table">
-          <thead class="table-light"><tr><th>工號</th><th>姓名</th><th>部門</th><th>職務</th><th>當日工位</th></tr></thead>
+          <thead class="table-light"><tr><th>工號</th><th>姓名</th><th>部門</th><th>職級</th><th>當日工位</th></tr></thead>
           <tbody>
             {% for row in rows %}
               <tr>
                 <td>{{ row.record.employee.employee_no }}</td>
                 <td>{{ row.record.employee.name }}{% if row.record.status == "partial" %} <span class="badge text-bg-warning">部分請假</span>{% endif %}{% if row.record.clock_out %} <span class="badge text-bg-light border">{{ row.record.clock_out|time:"H:i" }} 離開</span>{% endif %}</td>
                 <td>{{ row.record.employee.department|default:"" }}</td>
-                <td>{{ row.record.employee.job_title|default:"" }}</td>
+                <td>{{ row.record.employee.get_level_display }}</td>
                 <td>{{ row.form.station }}</td>
               </tr>
             {% endfor %}

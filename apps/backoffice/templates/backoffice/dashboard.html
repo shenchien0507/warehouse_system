@@ -1,12 +1,14 @@
-{% extends "base.html" %}
+{% extends "backoffice/base.html" %}
 
 {% block title %}後台管理{% endblock %}
-{% block heading %}後台管理{% endblock %}
 
-{% block content %}
+
+{% block manage_header %}<h1 class="h3 mb-4">後台管理</h1>{% endblock %}
+
+{% block manage_content %}
   <div class="row g-3">
     {% for group, items in groups.items %}
-      <div class="col-md-4">
+      <div class="col-md-6 col-xl-4">
         <div class="card h-100">
           <div class="card-header">{{ group }}</div>
           <div class="list-group list-group-flush">

@@ -6,7 +6,7 @@ from django.utils.http import urlencode
 from django.utils import timezone
 
 from apps.accounts.models import Department, Level, PagePermission, Station, User
-from apps.personnel.models import Employee, JobTitle
+from apps.personnel.models import Employee
 
 from .models import Attendance, AttendanceEvent, EventKind, StationBatch, Status
 from .records import add_event
@@ -28,9 +28,8 @@ class AttendanceTestCase(TestCase):
     def setUp(self):
         self.floor = Department.objects.create(name="現場部")
         self.office = Department.objects.create(name="辦公室")
-        self.picking = Station.objects.create(name="撿貨", department=self.floor)
-        keeper = JobTitle.objects.create(name="倉管")
-        self.e1 = Employee.objects.create(employee_no="P001", name="王小明", department=self.floor, job_title=keeper)
+        self.picking = Station.objects.create(name="撿貨")
+        self.e1 = Employee.objects.create(employee_no="P001", name="王小明", department=self.floor)
         self.e2 = Employee.objects.create(employee_no="P002", name="李大華", department=self.floor)
         self.e3 = Employee.objects.create(employee_no="P003", name="陳美玲", department=self.office)
         for key in ("attendance-register", "attendance-headcount", "attendance-stations"):
@@ -64,7 +63,7 @@ class RegisterTests(AttendanceTestCase):
         self.login(make_user("lead", Level.LEADER, self.floor))
         response = self.client.get(self.register_url(self.e1))
         self.assertContains(response, "王小明")
-        self.assertContains(response, "倉管")
+        self.assertContains(response, "現場部／員工")
         self.assertNotContains(self.client.get(reverse("attendance:register")), "王小明")
 
     def test_unknown_employee_no(self):
@@ -216,7 +215,7 @@ class HeadcountTests(AttendanceTestCase):
         return self.client.get(reverse("attendance:register")).context["summary"]
 
     def test_counts_by_department_status_and_station(self):
-        office_desk = Station.objects.create(name="櫃台", department=self.office)
+        office_desk = Station.objects.create(name="櫃台")
         Attendance.objects.filter(pk=self.event(self.e1, EventKind.CLOCK_IN).pk).update(station=self.picking)
         self.event(self.e2, EventKind.LEAVE, time=None, end_time=t("00:00"))
         record = self.event(self.e2, EventKind.CLOCK_IN)
@@ -230,7 +229,7 @@ class HeadcountTests(AttendanceTestCase):
         self.assertEqual(
             (floor["active"], floor["present"], floor["partial"], floor["leave"], floor["on_site"], floor["unregistered"]), (2, 2, 1, 0, 1, 0)
         )
-        self.assertEqual([(st["label"], st["count"]) for st in floor["stations"]], [("撿貨", 1), ("辦公室／櫃台", 1)])
+        self.assertEqual([(st["label"], st["count"]) for st in floor["stations"]], [("撿貨", 1), ("櫃台", 1)])
         office = next(row for row in response.context["summary"] if row["department"] == self.office)
         self.assertEqual((office["present"], office["unregistered"]), (0, 1))
 
@@ -299,7 +298,7 @@ class PersonListTests(AttendanceTestCase):
 class StationAssignTests(AttendanceTestCase):
     def setUp(self):
         super().setUp()
-        self.desk = Station.objects.create(name="櫃台", department=self.office)
+        self.desk = Station.objects.create(name="櫃台")
         self.a1 = self.event(self.e1, EventKind.CLOCK_IN)
         self.event(self.e2, EventKind.LEAVE, time=None)
         self.list_url = f"{reverse('attendance:stations')}?date={TODAY:%Y-%m-%d}"

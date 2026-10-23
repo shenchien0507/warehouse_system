@@ -29,8 +29,7 @@ class DepartmentAdmin(admin.ModelAdmin):
 
 @admin.register(Station)
 class StationAdmin(admin.ModelAdmin):
-    list_display = ("name", "department")
-    list_filter = ("department",)
+    search_fields = ("name",)
 
 
 @admin.register(PagePermission)

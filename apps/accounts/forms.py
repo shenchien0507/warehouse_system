@@ -17,7 +17,7 @@ class DepartmentForm(forms.ModelForm):
 class StationForm(forms.ModelForm):
     class Meta:
         model = Station
-        fields = ["department", "name"]
+        fields = ["name"]
 
 
 def allowed_levels(editor):
@@ -121,6 +121,8 @@ class PagePermissionForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # 管理員本來就能用所有頁面，最低職級設成管理員沒有意義
+        self.fields["min_level"].choices = [(value, label) for value, label in Level.choices if value != Level.ADMIN]
         if self.instance.pk:
             self.fields["page_key"].choices = [(self.instance.page_key, self.instance.label)]
             self.fields["page_key"].disabled = True

@@ -3,13 +3,7 @@ from django import forms
 from apps.accounts.forms import allowed_levels
 from apps.accounts.models import Level
 
-from .models import EMPLOYEE_LEVEL_CHOICES, Employee, JobTitle
-
-
-class JobTitleForm(forms.ModelForm):
-    class Meta:
-        model = JobTitle
-        fields = ["name"]
+from .models import EMPLOYEE_LEVEL_CHOICES, Employee
 
 
 class EmployeeForm(forms.ModelForm):
@@ -19,7 +13,7 @@ class EmployeeForm(forms.ModelForm):
 
     class Meta:
         model = Employee
-        fields = ["employee_no", "name", "department", "job_title", "level", "phone", "hire_date", "is_active", "note"]
+        fields = ["employee_no", "name", "level", "department", "phone", "hire_date", "note", "is_active"]
         widgets = {
             "hire_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "note": forms.Textarea(attrs={"rows": 3}),
@@ -29,6 +23,7 @@ class EmployeeForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         field = self.fields["level"]
         field.help_text = "有系統帳號時，帳號職級會跟著這裡"
+        self.fields["is_active"].help_text = "取消勾選（離職）時，系統帳號會一併停用"
         if editor.level == Level.ADMIN:
             return
         current = self.instance.level if self.instance.pk else Level.STAFF

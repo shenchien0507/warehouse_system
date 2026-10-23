@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{# 後台頁面共用版型：左側為後台選單，右側為各頁內容 #}
+
+{% block page_header %}{% endblock %}
+
+{% block content %}
+  <div class="row g-4">
+    <aside class="col-md-3 col-lg-2">
+      <nav aria-label="後台選單">
+        <a class="d-block fw-bold text-decoration-none mb-3{% if not menu_item %} text-primary{% else %} text-body{% endif %}" href="{% url 'backoffice:dashboard' %}">後台管理</a>
+        {% for group, items in menu_groups.items %}
+          <div class="small text-muted mb-1">{{ group }}</div>
+          <div class="list-group mb-3">
+            {% for item in items %}
+              <a class="list-group-item list-group-item-action py-2{% if menu_item.page_key == item.page_key %} active{% endif %}" href="{% url item.url_name %}"{% if menu_item.page_key == item.page_key %} aria-current="page"{% endif %}>{{ item.label }}</a>
+            {% endfor %}
+          </div>
+        {% endfor %}
+      </nav>
+    </aside>
+    <div class="col-md-9 col-lg-10">
+      {% block manage_header %}{% endblock %}
+      {% block manage_content %}{% endblock %}
+    </div>
+  </div>
+{% endblock %}
