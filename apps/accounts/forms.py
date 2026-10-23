@@ -5,7 +5,8 @@ from django.db import transaction
 from apps.backoffice.menu import MENU, MENU_BY_KEY
 from apps.personnel.models import Employee
 
-from .models import Department, Level, PagePermission, Station, User
+from .levels import is_admin, levels_below
+from .models import Department, Level, LevelRule, PagePermission, Station, User
 
 
 class DepartmentForm(forms.ModelForm):
@@ -20,22 +21,21 @@ class StationForm(forms.ModelForm):
         fields = ["name"]
 
 
-def allowed_levels(editor):
-    """管理員可設任何職級；其他人只能設比自己低的職級，避免把自己或別人升上來。"""
-    if editor.level == Level.ADMIN:
-        return Level.choices
-    return [(value, label) for value, label in Level.choices if value < editor.level]
+class LevelForm(forms.ModelForm):
+    class Meta:
+        model = Level
+        fields = ["name", "rank"]
 
 
-class LevelLimitMixin:
-    def __init__(self, *args, editor, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["level"].choices = allowed_levels(editor)
+class LevelRuleForm(forms.ModelForm):
+    class Meta:
+        model = LevelRule
+        fields = ["min_level"]
 
 
 class EmployeeChoiceField(forms.ModelChoiceField):
     def label_from_instance(self, obj):
-        return f"{obj}（{obj.get_level_display()}）"
+        return f"{obj}（{obj.level or '未設定職級'}）"
 
 
 class UserCreateForm(UserCreationForm):
@@ -55,9 +55,9 @@ class UserCreateForm(UserCreationForm):
 
     def __init__(self, *args, editor, **kwargs):
         super().__init__(*args, **kwargs)
-        queryset = Employee.objects.filter(is_active=True, user=None).order_by("employee_no")
-        if editor.level != Level.ADMIN:
-            queryset = queryset.filter(level__lt=editor.level)
+        queryset = Employee.objects.filter(is_active=True, user=None).select_related("level").order_by("employee_no")
+        if not is_admin(editor):
+            queryset = queryset.filter(level__in=levels_below(editor))
         self.fields["employee"].queryset = queryset
 
     def clean_employee(self):
@@ -80,31 +80,25 @@ class UserCreateForm(UserCreationForm):
         return user
 
 
-class UserUpdateForm(LevelLimitMixin, forms.ModelForm):
-    """有人員資料的帳號，工號、姓名、電話、部門、職級要到人員資料修改；沒有人員資料的舊帳號（如管理員）可直接改。
-    有人員資料的帳號，管理員可以在這裡改成「管理員」或改回人員資料的職級。"""
+class UserUpdateForm(forms.ModelForm):
+    """有人員資料的帳號，工號、姓名、電話、部門、職級要到人員資料修改；沒有人員資料的舊帳號可直接改。
+    「管理員」是帳號身分，只有管理員能設定，也不能取消自己的管理員。非管理員只能設比自己低的職級。"""
 
     class Meta:
         model = User
-        fields = ["username", "name", "phone", "email", "level", "department", "is_active"]
+        fields = ["username", "name", "phone", "email", "level", "department", "is_admin", "is_active"]
 
     def __init__(self, *args, editor, **kwargs):
-        super().__init__(*args, editor=editor, **kwargs)
+        super().__init__(*args, **kwargs)
         self.fields["username"].label = "工號"
         self.fields["username"].disabled = True
+        self.fields["level"].queryset = levels_below(editor)
+        if not is_admin(editor) or self.instance.pk == editor.pk or self.instance.is_superuser:
+            self.fields["is_admin"].disabled = True
         if hasattr(self.instance, "employee"):
-            for field in ("name", "phone", "department"):
+            for field in ("name", "phone", "department", "level"):
                 self.fields[field].disabled = True
                 self.fields[field].help_text = "請到「人員資料」修改"
-            level = self.fields["level"]
-            if editor.level == Level.ADMIN:
-                # 只能在人員資料的職級和管理員之間切換
-                employee_level = self.instance.employee.level
-                level.choices = [(value, label) for value, label in Level.choices if value in (employee_level, Level.ADMIN)]
-                level.help_text = "職級請到「人員資料」修改；這裡只能設為管理員，或改回人員資料的職級"
-            else:
-                level.disabled = True
-                level.help_text = "請到「人員資料」修改"
 
 
 class UserPasswordForm(SetPasswordForm):
@@ -121,8 +115,7 @@ class PagePermissionForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # 管理員本來就能用所有頁面，最低職級設成管理員沒有意義
-        self.fields["min_level"].choices = [(value, label) for value, label in Level.choices if value != Level.ADMIN]
+        self.fields["min_level"].help_text = "這個職級以上可以使用；管理員不受限制"
         if self.instance.pk:
             self.fields["page_key"].choices = [(self.instance.page_key, self.instance.label)]
             self.fields["page_key"].disabled = True

@@ -91,7 +91,7 @@
                     <td>{{ entry.employee.employee_no }}</td>
                     <td>{{ entry.employee.name }}</td>
                     <td>{{ entry.employee.department|default:"" }}</td>
-                    <td>{{ entry.employee.get_level_display }}</td>
+                    <td>{{ entry.employee.level|default:"" }}</td>
                     <td>{{ entry.station|default:"未安排" }}</td>
                   </tr>
                 {% endfor %}

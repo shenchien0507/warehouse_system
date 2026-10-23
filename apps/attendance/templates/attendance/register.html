@@ -42,7 +42,7 @@
           {% if is_today and record.on_site %}<span class="badge text-bg-success">在現場</span>{% endif %}
         </div>
         <div class="text-muted small mb-3">
-          {{ employee.department|default:"未設定部門" }}／{{ employee.get_level_display }}
+          {{ employee.department|default:"未設定部門" }}{% if employee.level %}／{{ employee.level }}{% endif %}
           {% if record.station %}｜當日工位：{{ record.station }}（到「工位安排」設定）{% endif %}
         </div>
 
