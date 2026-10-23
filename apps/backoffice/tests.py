@@ -113,6 +113,11 @@ class CrudTests(BackofficeTestCase):
         # 排序不能重複
         response = self.client.post(reverse("accounts_manage:level_edit", args=[deputy.pk]), {"name": "副理", "rank": 40})
         self.assertEqual(response.status_code, 200)
+        # 排序只能 1–100
+        for rank in (0, 101):
+            response = self.client.post(reverse("accounts_manage:level_create"), {"name": f"超出{rank}", "rank": rank})
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(LevelModel.objects.filter(name=f"超出{rank}").exists())
         # 還有人在用的職級不能刪
         Employee.objects.create(employee_no="P001", name="王小明", level=deputy)
         self.client.post(reverse("accounts_manage:level_delete", args=[deputy.pk]))

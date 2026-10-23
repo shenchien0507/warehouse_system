@@ -6,7 +6,7 @@ from apps.backoffice.menu import MENU, MENU_BY_KEY
 from apps.personnel.models import Employee
 
 from .levels import is_admin, levels_below
-from .models import Department, Level, LevelRule, PagePermission, Station, User
+from .models import RANK_MAX, RANK_MIN, Department, Level, LevelRule, PagePermission, Station, User
 
 
 class DepartmentForm(forms.ModelForm):
@@ -25,6 +25,7 @@ class LevelForm(forms.ModelForm):
     class Meta:
         model = Level
         fields = ["name", "rank"]
+        widgets = {"rank": forms.NumberInput(attrs={"min": RANK_MIN, "max": RANK_MAX})}
 
 
 class LevelRuleForm(forms.ModelForm):
