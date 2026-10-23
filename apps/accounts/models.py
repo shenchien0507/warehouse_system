@@ -1,5 +1,10 @@
 from django.contrib.auth.models import AbstractUser
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+
+
+# 職級排序的範圍；不用 0，因為沒設定職級的人在比較時當成 0
+RANK_MIN, RANK_MAX = 1, 100
 
 
 class Level(models.Model):
@@ -7,12 +12,20 @@ class Level(models.Model):
     「管理員」不是職級，是系統帳號上的身分（User.is_admin）。"""
 
     name = models.CharField("職級名稱", max_length=50, unique=True)
-    rank = models.PositiveSmallIntegerField("排序", unique=True, help_text="數字越大職級越高，例如員工 10、組長 20")
+    rank = models.PositiveSmallIntegerField(
+        "排序",
+        unique=True,
+        validators=[MinValueValidator(RANK_MIN), MaxValueValidator(RANK_MAX)],
+        help_text=f"{RANK_MIN}–{RANK_MAX}，數字越大職級越高，例如員工 10、組長 20",
+    )
 
     class Meta:
         verbose_name = "職級"
         verbose_name_plural = "職級"
         ordering = ["-rank"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(rank__gte=RANK_MIN, rank__lte=RANK_MAX), name="level_rank_range")
+        ]
 
     def __str__(self):
         return self.name
