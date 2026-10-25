@@ -9,7 +9,7 @@ from apps.accounts.models import Department, PagePermission, Station, User
 from apps.accounts.testing import Level, make_user
 from apps.personnel.models import Employee
 
-from .models import Attendance, AttendanceEvent, ClockSetting, EventKind, StationBatch, Status
+from .models import Attendance, AttendanceEvent, ClockSetting, EventKind, StationBatch, StationEditLock, Status
 from .records import add_event, now_minute
 
 FLEX_FIELDS = ("clock_in_early", "clock_in_late", "clock_out_early", "clock_out_late")
@@ -353,7 +353,7 @@ class PersonListTests(AttendanceTestCase):
         self.assertEqual(self.client.post(url, {"do": "clock_in", "employee": [self.e1.pk]}).status_code, 403)
 
 
-class StationAssignTests(AttendanceTestCase):
+class StationTestCase(AttendanceTestCase):
     def setUp(self):
         super().setUp()
         self.desk = Station.objects.create(name="櫃台")
@@ -373,6 +373,8 @@ class StationAssignTests(AttendanceTestCase):
         data = {f"a{a.pk}-station": station.pk for a in Attendance.objects.filter(on_site=True)}
         self.client.post(self.url, {**data, "action": "confirm"})
 
+
+class StationAssignTests(StationTestCase):
     def test_index_does_not_expand_list_and_has_create_button(self):
         self.login(self.mgr)
         response = self.client.get(self.list_url)
@@ -545,6 +547,109 @@ class StationAssignTests(AttendanceTestCase):
         future = f"{reverse('attendance:station_new')}?date={TODAY + datetime.timedelta(days=1):%Y-%m-%d}"
         self.assertEqual(self.client.post(future, {"action": "confirm"}).status_code, 403)
         self.assertNotContains(self.client.get(f"{reverse('attendance:stations')}?date={TODAY + datetime.timedelta(days=1):%Y-%m-%d}"), "建立安排</a>")
+
+
+class StationBoardTests(StationTestCase):
+    """各工位人數、編輯鎖、各部門分開排、已離開標灰。"""
+
+    def setUp(self):
+        super().setUp()
+        self.lead_floor = make_user("lead", Level.LEADER, self.floor)
+        self.lead_office = make_user("lead_office", Level.LEADER, self.office)
+
+    def test_station_counts_for_people_on_site(self):
+        self.event(self.e3, EventKind.CLOCK_IN)
+        e4 = Employee.objects.create(employee_no="P004", name="張志強", department=self.floor)
+        self.event(e4, EventKind.CLOCK_IN)
+        self.login(self.mgr)
+        data = {f"a{a.pk}-station": "" for a in Attendance.objects.filter(on_site=True)}
+        data[f"a{self.a1.pk}-station"] = self.picking.pk
+        data[f"a{Attendance.objects.get(employee=self.e3).pk}-station"] = self.picking.pk
+        self.client.post(self.url, {**data, "action": "confirm"})
+        response = self.client.get(self.list_url)
+        self.assertEqual(response.context["stations"], [("撿貨", 2), ("未安排", 1)])
+        self.assertEqual(response.context["batches"][0]["stations"], [("撿貨", 2), ("未安排", 1)])
+        self.assertContains(response, "目前在場各工位")
+        # 有人離開後，目前在場的工位人數跟著變
+        self.event(self.e1, EventKind.CLOCK_OUT)
+        self.assertEqual(self.client.get(self.list_url).context["stations"], [("撿貨", 1), ("未安排", 1)])
+
+    def test_people_who_left_are_greyed_in_current_batch(self):
+        self.login(self.mgr)
+        self.confirm_all(self.picking)
+        self.event(self.e1, EventKind.CLOCK_OUT, now_minute())
+        response = self.client.get(self.list_url)
+        entry = response.context["batches"][0]["entries"][0]
+        self.assertTrue(entry.gone)
+        self.assertContains(response, f"已離開 {now_minute():%H:%M}")
+
+    def test_only_one_account_can_edit_at_a_time(self):
+        self.login(self.mgr)
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+        self.login(self.lead_floor)
+        response = self.client.get(self.url, follow=True)
+        self.assertRedirects(response, self.list_url)
+        self.assertContains(response, "正在編輯工位安排")
+        self.assertContains(response, "編輯中</button>")
+        self.assertFalse(response.context["can_create"])
+        self.post(self.picking, action="confirm", user=self.lead_floor)
+        self.assertFalse(StationBatch.objects.exists())
+        # 同一個帳號可以重新進入；確認後放開，別人就能編輯
+        self.post(self.desk, action="confirm", user=self.mgr)
+        self.assertEqual(StationBatch.objects.count(), 1)
+        self.login(self.lead_floor)
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+
+    def test_leaving_without_saving_releases_lock(self):
+        self.login(self.mgr)
+        self.client.get(self.url)
+        self.client.post(self.url, {"action": "release"})
+        self.login(self.lead_floor)
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+        self.client.post(reverse("attendance:station_lock"), {"action": "release"})
+        self.login(self.mgr)
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+
+    def test_lock_expires_and_touch_keeps_it(self):
+        self.login(self.mgr)
+        self.client.get(self.url)
+        touch = self.client.post(reverse("attendance:station_lock"), {"action": "touch", "date": f"{TODAY:%Y-%m-%d}"})
+        self.assertEqual(touch.json(), {"ok": True})
+        StationEditLock.objects.update(touched_at=timezone.now() - datetime.timedelta(minutes=StationEditLock.LOCK_MINUTES + 1))
+        self.login(self.lead_floor)
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+        self.login(self.mgr)
+        touch = self.client.post(reverse("attendance:station_lock"), {"action": "touch", "date": f"{TODAY:%Y-%m-%d}"})
+        self.assertEqual(touch.json(), {"ok": False})
+
+    def test_force_unlock_needs_all_departments_rule(self):
+        self.login(self.lead_floor)
+        self.client.get(self.url)
+        self.login(self.lead_office)
+        self.assertEqual(self.client.post(reverse("attendance:station_lock"), {"action": "force"}).status_code, 403)
+        self.login(self.mgr)
+        self.assertContains(self.client.get(self.list_url), "強制解除")
+        self.client.post(reverse("attendance:station_lock"), {"action": "force", "date": f"{TODAY:%Y-%m-%d}"})
+        self.assertFalse(StationEditLock.objects.exists())
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+
+    def test_departments_arranged_separately_do_not_overwrite_each_other(self):
+        self.event(self.e3, EventKind.CLOCK_IN)
+        e3 = Attendance.objects.get(employee=self.e3)
+        self.post(self.picking, action="confirm", user=self.lead_floor)
+        self.login(self.lead_office)
+        self.client.post(self.url, {f"a{e3.pk}-station": self.desk.pk, "action": "confirm"})
+        latest = StationBatch.objects.first()
+        self.assertEqual({(e.employee, e.station) for e in latest.entries.all()}, {(self.e1, self.picking), (self.e3, self.desk)})
+        self.login(self.mgr)
+        response = self.client.get(self.list_url)
+        self.assertEqual(response.context["changes"], [])
+        self.assertEqual(response.context["batches"][0]["total"], 2)
+        # 組長看不到別的部門建立、但自己部門沒變的批次
+        self.login(self.lead_floor)
+        self.assertEqual(len(self.client.get(self.list_url).context["batches"]), 1)
+        items = self.client.get(f"{self.list_url}&view=timeline").context["timeline"]
+        self.assertEqual(len([i for i in items if i["kind"] == "batch"]), 1)
 
 
 class ClockWindowTests(AttendanceTestCase):

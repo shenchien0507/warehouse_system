@@ -1,6 +1,7 @@
 """到班紀錄的新增、作廢，以及工位安排頁用的異動與時間軸。"""
 
 import datetime
+from collections import Counter
 
 from django.db import transaction
 from django.utils import timezone
@@ -86,6 +87,18 @@ def batch_diff(entries, previous):
     }
 
 
+def same_entries(entries, other):
+    """兩批的人和工位完全相同。"""
+    return {(e.employee_id, e.station_id) for e in entries} == {(e.employee_id, e.station_id) for e in other}
+
+
+def station_counts(stations):
+    """各工位人數，依工位名稱排，「未安排」放最後：[(名稱, 人數)]。"""
+    counts = Counter(s.name if s else None for s in stations)
+    named = sorted((name, n) for name, n in counts.items() if name)
+    return named + ([("未安排", counts[None])] if counts[None] else [])
+
+
 def changes_since(date, batch_entries, on_site_records):
     """目前生效的批次之後，誰離開、誰新到；依時間排列，例如「11:00 王小華（出貨）請假」。"""
     in_batch = {e.employee_id: e.employee for e in batch_entries}
@@ -116,10 +129,13 @@ def timeline(date, can_see):
     ]
     rows = [((e.time or datetime.time.min), 0, e.created_at, e) for e in events]
     batches = StationBatch.objects.filter(date=date).select_related("created_by").prefetch_related("entries__employee")
-    for batch in batches:
+    previous = None
+    for batch in reversed(list(batches)):
         entries = [x for x in batch.entries.all() if can_see(x.employee)]
-        if entries:
+        # 別人的批次裡，自己範圍內的人和工位都沒變的不列出
+        if entries and not (previous and same_entries(entries, previous)):
             rows.append((timezone.localtime(batch.created_at).time(), 1, batch.created_at, (batch, entries)))
+        previous = entries or previous
     rows.sort(key=lambda r: r[:3])
     latest = max((r[3][0] for r in rows if r[1] == 1), key=lambda b: (b.created_at, b.pk), default=None)
 
