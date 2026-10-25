@@ -15,7 +15,7 @@ def time_input():
 
 
 class EventForm(forms.Form):
-    """補登一筆紀錄（上班、下班、請假離開、請假、缺勤），可指定時間。"""
+    """補登一筆紀錄（上班、下班、請假、缺勤），可指定時間。"""
 
     kind = forms.ChoiceField(label="類型", choices=EventKind.choices)
     time = forms.TimeField(label="時間", required=False, input_formats=["%H:%M"], widget=time_input())

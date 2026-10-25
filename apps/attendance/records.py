@@ -5,7 +5,7 @@ import datetime
 from django.db import transaction
 from django.utils import timezone
 
-from .models import IN_KINDS, OUT_KINDS, Attendance, AttendanceEvent, EventKind, StationBatch
+from .models import Attendance, AttendanceEvent, EventKind, StationBatch, leaves_site, movements
 
 
 def now_minute():
@@ -15,9 +15,9 @@ def now_minute():
 def check_event(events, date, kind, time):
     """新紀錄和當天已有的紀錄是否衝突；沒問題回傳空字串。"""
     kinds = {e.kind for e in events}
-    presence = [e for e in events if e.kind in IN_KINDS + OUT_KINDS]
-    last = presence[-1] if presence else None
-    on_site = last is not None and last.kind in IN_KINDS
+    moves = movements(events)
+    last = moves[-1][0] if moves else None
+    on_site = bool(moves) and moves[-1][1]
     if kind == EventKind.ABSENT:
         if EventKind.ABSENT in kinds:
             return "這天已經標記缺勤。"
@@ -26,11 +26,15 @@ def check_event(events, date, kind, time):
         return ""
     if EventKind.ABSENT in kinds:
         return "這天已標記缺勤，要先作廢「缺勤」才能登記其他紀錄。"
-    if kind in IN_KINDS and on_site:
+    if kind == EventKind.CLOCK_IN and on_site:
         return f"已在 {last.time:%H:%M} 上班，還沒離開。"
-    if kind in OUT_KINDS and not on_site:
+    if kind == EventKind.CLOCK_OUT and not on_site:
         return "還沒有上班，請先登記上班。"
-    if kind in IN_KINDS + OUT_KINDS:
+    if kind == EventKind.LEAVE and on_site and time and time >= last.time:
+        # 人在現場時請假：等於在請假開始的時間離開，所以不能先登記還沒到的時間
+        if date == timezone.localdate() and time > now_minute():
+            return "這個人還在現場，請在他離開時再登記請假。"
+    if kind in (EventKind.CLOCK_IN, EventKind.CLOCK_OUT):
         if last and time < last.time:
             return f"時間不能早於上一筆進出紀錄（{last.describe()}）。"
         if date == timezone.localdate() and time > now_minute():
@@ -83,7 +87,7 @@ def batch_diff(entries, previous):
 
 
 def changes_since(date, batch_entries, on_site_records):
-    """目前生效的批次之後，誰離開、誰新到；依時間排列，例如「11:00 王小華（出貨）請假離開」。"""
+    """目前生效的批次之後，誰離開、誰新到；依時間排列，例如「11:00 王小華（出貨）請假」。"""
     in_batch = {e.employee_id: e.employee for e in batch_entries}
     here = {r.employee_id: r.employee for r in on_site_records}
     moved = {k: v for k, v in in_batch.items() if k not in here} | {k: v for k, v in here.items() if k not in in_batch}
@@ -92,8 +96,8 @@ def changes_since(date, batch_entries, on_site_records):
     }
     items = []
     for pk, employee in moved.items():
-        kinds = OUT_KINDS if pk in in_batch else IN_KINDS
-        found = [e for e in records[pk].active_events() if e.kind in kinds] if pk in records else []
+        entering = pk not in in_batch
+        found = [e for e, is_in in movements(records[pk].active_events()) if is_in == entering] if pk in records else []
         time, label = (found[-1].time, found[-1].get_kind_display()) if found else (None, "已不在現場")
         items.append({"time": time, "text": f"{person(employee)} {label}", "kind": "out" if pk in in_batch else "in"})
     items.sort(key=lambda i: i["time"] or datetime.time.min)
@@ -129,11 +133,14 @@ def timeline(date, can_see):
             })
             continue
         event, employee = obj, obj.attendance.employee
-        if event.kind in IN_KINDS:
+        if event.kind == EventKind.CLOCK_IN:
             here.add(employee.pk)
-        elif event.kind in OUT_KINDS:
+            kind = "in"
+        elif leaves_site(event, employee.pk in here):
             here.discard(employee.pk)
-        kind = "in" if event.kind in IN_KINDS else "out" if event.kind in OUT_KINDS else "leave"
+            kind = "out"
+        else:
+            kind = "out" if event.kind == EventKind.CLOCK_OUT else "leave"
         previous = items[-1] if items else None
         if (
             event.kind in (EventKind.CLOCK_IN, EventKind.CLOCK_OUT)

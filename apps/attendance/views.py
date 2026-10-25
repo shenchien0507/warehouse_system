@@ -126,7 +126,7 @@ def summarize(user, date):
 
 
 class RegisterView(RegisterAccessMixin, TemplateView):
-    """輸入工號查出人員，按「上班」「下班」記錄現在的時間（只在後台設定的時段內可按）；其他時間、請假離開、請假、缺勤用補登。
+    """輸入工號查出人員，按「上班」「下班」記錄現在的時間（只在後台設定的時段內可按）；其他時間、請假、缺勤用補登。
     紀錄只累加不覆蓋，登記錯了用作廢；當天狀態由紀錄算出來。"""
 
     page_key = "attendance-register"
