@@ -242,7 +242,7 @@ class CrudTests(BackofficeTestCase):
     def test_attendance_is_a_feature_not_in_backoffice(self):
         dashboard = self.client.get(reverse("backoffice:dashboard"))
         self.assertNotContains(dashboard, "list-group-item-action\" href=\"/attendance/")
-        self.assertNotContains(dashboard, 'card-header">到班')
+        self.assertNotContains(dashboard, 'card-header">到班<')  # 「到班設定」群組是後台設定，可以出現
         self.assertContains(self.client.get(reverse("home")), 'href="/attendance/"')
 
     def test_page_permission_list_shows_unconfigured_pages(self):

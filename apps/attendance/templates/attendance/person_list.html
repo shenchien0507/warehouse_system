@@ -22,6 +22,7 @@
         <span class="small text-muted">記錄現在的時間；請假、補登時間請按「登記」。</span>
       </div>
     {% endif %}
+    {% if can_clock %}<p class="small text-muted">上班按鈕 {{ clock.clock_in.window }}、下班按鈕 {{ clock.clock_out.window }} 可以按，其他時間請按「登記」補登。</p>{% endif %}
     <div class="table-responsive">
       <table class="table table-hover align-middle">
         <thead class="table-light">
@@ -48,8 +49,8 @@
               <td class="text-nowrap text-end">
                 {% if can_clock %}
                   {% if row.record.on_site %}
-                    <button type="submit" name="do" value="clock_out:{{ row.employee.pk }}" class="btn btn-sm btn-warning">下班</button>
-                  {% else %}
+                    {% if clock.clock_out.open %}<button type="submit" name="do" value="clock_out:{{ row.employee.pk }}" class="btn btn-sm btn-warning">下班</button>{% endif %}
+                  {% elif clock.clock_in.open %}
                     <button type="submit" name="do" value="clock_in:{{ row.employee.pk }}" class="btn btn-sm btn-success">上班</button>
                   {% endif %}
                 {% endif %}

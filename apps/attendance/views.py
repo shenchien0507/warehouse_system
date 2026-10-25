@@ -17,21 +17,35 @@ from apps.backoffice.menu import MENU_BY_KEY, can_use
 from apps.personnel.models import Employee
 
 from .forms import DateForm, EventForm, LookupForm, StationAssignForm
-from .models import Attendance, AttendanceEvent, EventKind, StationBatch, StationBatchEntry
+from .models import Attendance, AttendanceEvent, ClockSetting, EventKind, StationBatch, StationBatchEntry
 from .records import add_event, batch_diff, changes_since, now_minute, timeline, void_event
 from .rules import (
     can_add, can_arrange, can_register, can_void, employees_in_scope, station_departments,
 )
 
-QUICK = {"clock_in": EventKind.CLOCK_IN, "clock_out": EventKind.CLOCK_OUT, "leave_out": EventKind.LEAVE_OUT}
+QUICK = {"clock_in": EventKind.CLOCK_IN, "clock_out": EventKind.CLOCK_OUT}
 MISSING_CLOCK_OUT_DAYS = 7  # 提醒最近幾天沒有下班紀錄的人
 
 
-def quick_event(user, employee, kind, date, note=""):
-    """按上班、下班、請假離開：記下現在的時間；回傳 (到班紀錄, 錯誤訊息)。"""
+def clock_windows():
+    """上班、下班按鈕現在能不能按，以及可按的時段（後台「上下班時間」設定）。"""
+    setting, now = ClockSetting.load(), now_minute()
+    return {action: {"open": setting.allows(kind, now), "window": setting.describe(kind)} for action, kind in QUICK.items()}
+
+
+def window_error(action):
+    """不在按鈕可按的時段時回傳提示，否則回傳空字串。"""
+    window = clock_windows()[action]
+    if window["open"]:
+        return ""
+    return f"{EventKind(QUICK[action]).label}按鈕只在 {window['window']} 可以按，其他時間請用「補登紀錄」。"
+
+
+def quick_event(user, employee, kind, date):
+    """按上班、下班：記下現在的時間；回傳 (到班紀錄, 錯誤訊息)。"""
     if not employee.is_active and not Attendance.objects.filter(employee=employee, date=date).exists():
         return None, f"{employee} 已離職，不能登記到班。"
-    return add_event(employee, date, user, kind, now_minute(), note=note)
+    return add_event(employee, date, user, kind, now_minute())
 
 
 def missing_clock_out(user):
@@ -112,7 +126,7 @@ def summarize(user, date):
 
 
 class RegisterView(RegisterAccessMixin, TemplateView):
-    """輸入工號查出人員，按「上班」「下班」「請假離開」記錄現在的時間；也可補登指定時間的紀錄或請假。
+    """輸入工號查出人員，按「上班」「下班」記錄現在的時間（只在後台設定的時段內可按）；其他時間、請假離開、請假、缺勤用補登。
     紀錄只累加不覆蓋，登記錯了用作廢；當天狀態由紀錄算出來。"""
 
     page_key = "attendance-register"
@@ -179,7 +193,9 @@ class RegisterView(RegisterAccessMixin, TemplateView):
         if action in QUICK:
             if self.date != timezone.localdate():
                 messages.error(request, "只有今天可以直接按上班、下班；其他日期請用「補登紀錄」填時間。")
-            elif self.save_event(QUICK[action], now_minute(), note=request.POST.get("quick_note", "").strip()[:200]):
+            elif window_error(action):
+                messages.error(request, window_error(action))
+            elif self.save_event(QUICK[action], now_minute()):
                 return self.redirect_back(keep_employee=False)
         elif action == "add":
             form = EventForm(request.POST, prefix="e")
@@ -228,7 +244,7 @@ class RegisterView(RegisterAccessMixin, TemplateView):
         context.update(
             menu_item=MENU_BY_KEY[self.page_key], date=self.date, employee_no=self.employee_no, employee=self.employee,
             record=self.record, events=events, error=self.error, is_today=self.date == today, editable=editable,
-            can_clock=editable and self.date == today, candidates=self.candidates[: self.MAX_CANDIDATES],
+            can_clock=editable and self.date == today, clock=clock_windows(), candidates=self.candidates[: self.MAX_CANDIDATES],
             more_candidates=len(self.candidates) > self.MAX_CANDIDATES,
             options=employees_in_scope(user).filter(is_active=True).order_by("employee_no"),
             missing_clock_out=missing_clock_out(user), can_fix_past=allows(user, "attendance-past-dates"),
@@ -248,8 +264,11 @@ class PersonListView(RegisterAccessMixin, TemplateView):
         if not context["can_clock"]:
             raise PermissionDenied
         action, _, one = request.POST.get("do", "").partition(":")
-        if action not in ("clock_in", "clock_out"):
+        if action not in QUICK:
             raise Http404
+        if window_error(action):
+            messages.error(request, window_error(action))
+            return redirect(request.get_full_path())
         listed = {str(row["employee"].pk): row["employee"] for row in context["rows"]}
         employees = [listed[pk] for pk in dict.fromkeys([one] if one else request.POST.getlist("employee")) if pk in listed]
         if not employees:
@@ -279,10 +298,11 @@ class PersonListView(RegisterAccessMixin, TemplateView):
         rows = [row for row in day_rows(self.request.user, date) if test(row)]
         is_today = date == timezone.localdate()
         can_clock = is_today and can_add(self.request.user, date)
+        clock = clock_windows()
         context.update(
-            date=date, title=title, rows=rows, is_today=is_today, can_clock=can_clock,
-            can_clock_in=can_clock and any(not (r["record"] and r["record"].on_site) for r in rows),
-            can_clock_out=can_clock and any(r["record"] and r["record"].on_site for r in rows),
+            date=date, title=title, rows=rows, is_today=is_today, can_clock=can_clock, clock=clock,
+            can_clock_in=can_clock and clock["clock_in"]["open"] and any(not (r["record"] and r["record"].on_site) for r in rows),
+            can_clock_out=can_clock and clock["clock_out"]["open"] and any(r["record"] and r["record"].on_site for r in rows),
         )
         return context
 
