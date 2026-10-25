@@ -23,13 +23,26 @@ PRESENT_STATUSES = (Status.PRESENT, Status.PARTIAL)  # 今天有來過現場
 class EventKind(models.TextChoices):
     CLOCK_IN = "clock_in", "上班"
     CLOCK_OUT = "clock_out", "下班"
-    LEAVE_OUT = "leave_out", "請假離開"
     LEAVE = "leave", "請假"
     ABSENT = "absent", "缺勤"
 
 
-IN_KINDS = (EventKind.CLOCK_IN,)
-OUT_KINDS = (EventKind.CLOCK_OUT, EventKind.LEAVE_OUT)
+def leaves_site(event, here):
+    """這筆紀錄是不是離開現場：下班；或請假開始時人還在現場（有開始時間的請假）。"""
+    return here and (event.kind == EventKind.CLOCK_OUT or (event.kind == EventKind.LEAVE and event.time is not None))
+
+
+def movements(events):
+    """依時間順序走過當天紀錄，回傳進出現場的紀錄 [(紀錄, 是否進場)]。"""
+    moves, here = [], False
+    for event in events:
+        if event.kind == EventKind.CLOCK_IN:
+            moves.append((event, True))
+            here = True
+        elif leaves_site(event, here):
+            moves.append((event, False))
+            here = False
+    return moves
 
 
 class Attendance(models.Model):
@@ -75,18 +88,18 @@ class Attendance(models.Model):
         """依未作廢的紀錄重算狀態、上下班時間與是否在場。"""
         events = self.active_events()
         kinds = {e.kind for e in events}
-        presence = [e for e in events if e.kind in IN_KINDS + OUT_KINDS]
+        moves = movements(events)
         if EventKind.CLOCK_IN in kinds:
-            self.status = Status.PARTIAL if kinds & {EventKind.LEAVE, EventKind.LEAVE_OUT} else Status.PRESENT
+            self.status = Status.PARTIAL if EventKind.LEAVE in kinds else Status.PRESENT
         elif EventKind.LEAVE in kinds:
             self.status = Status.LEAVE
         elif EventKind.ABSENT in kinds:
             self.status = Status.ABSENT
         else:
             self.status = ""
-        self.clock_in = next((e.time for e in presence if e.kind in IN_KINDS), None)
-        self.on_site = bool(presence) and presence[-1].kind in IN_KINDS
-        self.clock_out = presence[-1].time if presence and not self.on_site else None
+        self.clock_in = next((e.time for e, entering in moves if entering), None)
+        self.on_site = bool(moves) and moves[-1][1]
+        self.clock_out = moves[-1][0].time if moves and not self.on_site else None
 
 
 class AttendanceEvent(models.Model):

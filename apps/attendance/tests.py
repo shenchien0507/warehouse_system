@@ -111,20 +111,35 @@ class RegisterTests(AttendanceTestCase):
         self.assertEqual((record.status, record.on_site), (Status.PARTIAL, True))
         self.assertEqual(self.kinds(self.e1), [(EventKind.LEAVE, False), (EventKind.CLOCK_IN, False)])
 
-    def test_leave_out_with_reason_then_back(self):
+    def test_leave_while_on_site_means_leaving_then_back(self):
         self.login(make_user("lead", Level.LEADER, self.floor))
         self.press(self.e1, "clock_in")
-        self.assertNotContains(self.client.get(self.register_url(self.e1)), 'value="leave_out" class="btn')  # 沒有請假離開按鈕
         self.assertEqual(self.press(self.e1, "leave_out").status_code, 302)
-        self.assertEqual(len(self.kinds(self.e1)), 1)  # 按鈕拿掉了，送來也不處理
-        self.add(self.e1, kind="leave_out", time=f"{now_minute():%H:%M}", note="看醫生")
+        self.assertEqual(len(self.kinds(self.e1)), 1)  # 沒有請假離開按鈕，送來也不處理
+        self.add(self.e1, kind="leave", time=f"{now_minute():%H:%M}", note="看醫生")
         record = Attendance.objects.get()
-        self.assertEqual((record.status, record.on_site), (Status.PARTIAL, False))
-        self.assertEqual(AttendanceEvent.objects.get(kind=EventKind.LEAVE_OUT).note, "看醫生")
+        self.assertEqual((record.status, record.on_site, record.clock_out), (Status.PARTIAL, False, now_minute()))
+        self.assertEqual(AttendanceEvent.objects.get(kind=EventKind.LEAVE).note, "看醫生")
         self.press(self.e1, "clock_in")
         record.refresh_from_db()
         self.assertTrue(record.on_site)
         self.assertEqual(len(self.kinds(self.e1)), 3)
+
+    def test_leave_rules_depend_on_being_on_site(self):
+        self.event(self.e1, EventKind.CLOCK_IN, t("08:00"), YESTERDAY)
+        # 上班前的請假（例如上午請假、下午才來）不算離開
+        self.assertTrue(self.event(self.e1, EventKind.LEAVE, t("06:00"), YESTERDAY, end_time=t("07:00")).on_site)
+        # 全天請假沒有開始時間，也不算離開
+        self.assertTrue(self.event(self.e1, EventKind.LEAVE, None, YESTERDAY).on_site)
+        # 今天在現場的人，不能先登記還沒到的請假
+        self.event(self.e2, EventKind.CLOCK_IN)
+        later = (datetime.datetime.combine(TODAY, now_minute()) + datetime.timedelta(minutes=1)).time()
+        if later > now_minute():  # 23:59 時跳過
+            _, error = add_event(self.e2, TODAY, self.mgr, EventKind.LEAVE, later)
+            self.assertIn("還在現場", error)
+        # 還沒上班的人可以先登記之後的請假
+        _, error = add_event(self.e3, TODAY, self.mgr, EventKind.LEAVE, t("23:59"))
+        self.assertEqual(error, "")
 
     def test_second_clock_in_and_clock_out_without_clock_in_rejected(self):
         self.login(make_user("lead", Level.LEADER, self.floor))
@@ -144,8 +159,8 @@ class RegisterTests(AttendanceTestCase):
         self.assertContains(self.add(self.e1, YESTERDAY, kind="clock_out", time="07:00"), "不能早於上一筆")
         self.assertContains(self.add(self.e1, YESTERDAY, kind="leave", time="13:00", end_time="12:00"), "結束時間要晚於開始時間")
         self.assertContains(self.add(self.e2, YESTERDAY, kind="clock_in"), "請填時間")
-        self.add(self.e1, YESTERDAY, kind="leave_out", time="12:00", note="家裡有事")
-        self.add(self.e1, YESTERDAY, kind="leave", time="12:00")
+        self.add(self.e1, YESTERDAY, kind="leave", time="12:00", note="家裡有事")
+        self.assertContains(self.add(self.e1, YESTERDAY, kind="clock_out", time="13:00"), "還沒有上班")  # 請假時已經離開
         record = Attendance.objects.get(employee=self.e1)
         self.assertEqual((record.status, record.clock_in, record.clock_out), (Status.PARTIAL, t("08:00"), t("12:00")))
 
@@ -374,11 +389,11 @@ class StationAssignTests(AttendanceTestCase):
         self.assertNotContains(response, "李大華")
 
     def test_people_who_left_are_not_listed_today_but_are_for_past_dates(self):
-        self.event(self.e1, EventKind.LEAVE_OUT)
+        self.event(self.e1, EventKind.LEAVE)
         self.login(self.mgr)
         self.assertNotContains(self.client.get(self.url), "王小明")
         self.event(self.e3, EventKind.CLOCK_IN, t("08:00"), YESTERDAY)
-        self.event(self.e3, EventKind.LEAVE_OUT, t("12:00"), YESTERDAY)
+        self.event(self.e3, EventKind.LEAVE, t("12:00"), YESTERDAY)
         response = self.client.get(f"{reverse('attendance:station_new')}?date={YESTERDAY:%Y-%m-%d}")
         self.assertContains(response, "陳美玲")
         self.assertContains(response, "12:00 離開")
@@ -415,7 +430,7 @@ class StationAssignTests(AttendanceTestCase):
         self.event(self.e3, EventKind.CLOCK_IN)
         self.login(self.mgr)
         self.confirm_all(self.picking)
-        self.event(self.e1, EventKind.LEAVE_OUT)
+        self.event(self.e1, EventKind.LEAVE)
         e3 = Attendance.objects.get(employee=self.e3)
         data = {f"a{e3.pk}-station": self.picking.pk}
         preview = self.client.post(self.url, data)
@@ -442,7 +457,7 @@ class StationAssignTests(AttendanceTestCase):
         self.assertContains(response, "目前生效")
         self.assertContains(response, "當天第一批")
         # 王小明離開後再排一批：差別顯示離開一人
-        self.event(self.e1, EventKind.LEAVE_OUT)
+        self.event(self.e1, EventKind.LEAVE)
         self.client.post(self.url, {f"a{Attendance.objects.get(employee=self.e3).pk}-station": self.picking.pk, "action": "confirm"})
         diff = self.client.get(self.list_url).context["batches"][0]["diff"]
         self.assertEqual((diff["delta"], diff["left"], diff["moved"]), (-1, [self.e1], 1))
@@ -451,12 +466,12 @@ class StationAssignTests(AttendanceTestCase):
         self.login(self.mgr)
         self.confirm_all(self.picking)
         self.assertEqual(self.client.get(self.list_url).context["changes"], [])
-        self.event(self.e1, EventKind.LEAVE_OUT)
+        self.event(self.e1, EventKind.LEAVE)
         self.event(self.e3, EventKind.CLOCK_IN)
         response = self.client.get(self.list_url)
         self.assertEqual(
             [(c["kind"], c["text"]) for c in response.context["changes"]],
-            [("out", "王小明（現場部） 請假離開"), ("in", "陳美玲（辦公室） 上班")],
+            [("out", "王小明（現場部） 請假"), ("in", "陳美玲（辦公室） 上班")],
         )
         self.assertContains(response, "）相比，有 2 人異動，現場目前 1 人")
         # 組長只看到自己部門的異動
@@ -469,7 +484,7 @@ class StationAssignTests(AttendanceTestCase):
         self.event(self.e1, EventKind.CLOCK_IN, t("08:00"), YESTERDAY)
         self.event(e4, EventKind.CLOCK_IN, t("08:00"), YESTERDAY)
         self.event(self.e2, EventKind.LEAVE, None, YESTERDAY, end_time=t("12:00"))
-        self.event(self.e1, EventKind.LEAVE_OUT, t("11:00"), YESTERDAY)
+        self.event(self.e1, EventKind.LEAVE, t("11:00"), YESTERDAY)
         self.event(self.e2, EventKind.CLOCK_IN, t("13:00"), YESTERDAY)
         batch = StationBatch.objects.create(date=YESTERDAY, created_by=director)
         StationBatch.objects.filter(pk=batch.pk).update(
@@ -485,7 +500,7 @@ class StationAssignTests(AttendanceTestCase):
                 (None, "leave", "李大華（現場部） 請假 至 12:00", 0),
                 (t("08:00"), "in", "2 人上班", 2),
                 (t("10:30"), "batch", "建立安排（2 人）", 2),
-                (t("11:00"), "out", "王小明（現場部） 請假離開", 1),
+                (t("11:00"), "out", "王小明（現場部） 請假 11:00 起", 1),
                 (t("13:00"), "in", "李大華（現場部） 上班", 2),
             ],
         )
@@ -547,7 +562,7 @@ class ClockWindowTests(AttendanceTestCase):
         self.login(self.mgr)
         response = self.client.get(self.register_url(self.e1))
         self.assertContains(response, 'value="clock_in" class="btn btn-success btn-lg flex-fill" disabled')
-        self.assertContains(response, "其他時間、請假離開請用下方「補登紀錄」")
+        self.assertContains(response, "其他時間、中途請假請用下方「補登紀錄」")
         response = self.press(self.e1, "clock_in")
         self.assertFalse(Attendance.objects.exists())
         self.assertContains(self.client.get(response["Location"]), "上班按鈕只在")
