@@ -81,11 +81,10 @@
             {# Enter 送出時不做任何事，避免誤按上班 #}
             <button type="submit" name="action" value="noop" class="d-none" tabindex="-1" aria-hidden="true"></button>
             <div class="d-flex flex-wrap gap-2">
-              <button type="submit" name="action" value="clock_in" class="btn btn-success btn-lg flex-fill"{% if record.on_site %} disabled{% endif %}>上班</button>
-              <button type="submit" name="action" value="clock_out" class="btn btn-warning btn-lg flex-fill"{% if not record.on_site %} disabled{% endif %}>下班</button>
-              <button type="submit" name="action" value="leave_out" class="btn btn-outline-danger btn-lg flex-fill"{% if not record.on_site %} disabled{% endif %}>請假離開</button>
+              <button type="submit" name="action" value="clock_in" class="btn btn-success btn-lg flex-fill"{% if record.on_site or not clock.clock_in.open %} disabled{% endif %}>上班</button>
+              <button type="submit" name="action" value="clock_out" class="btn btn-warning btn-lg flex-fill"{% if not record.on_site or not clock.clock_out.open %} disabled{% endif %}>下班</button>
             </div>
-            <input type="text" name="quick_note" class="form-control mt-2" maxlength="200" placeholder="原因／備註（選填，例如：看醫生）" aria-label="原因／備註">
+            <div class="form-text">上班按鈕 {{ clock.clock_in.window }}、下班按鈕 {{ clock.clock_out.window }} 可以按；其他時間、請假離開請用下方「補登紀錄」。</div>
           </form>
         {% endif %}
 
@@ -113,7 +112,7 @@
 
         {% if event_form %}
           <details{% if event_form.errors or not is_today %} open{% endif %}>
-            <summary class="mb-2">補登紀錄（指定時間、請假、缺勤）</summary>
+            <summary class="mb-2">補登紀錄（指定時間、請假離開、請假、缺勤）</summary>
             <form method="post">
               {% csrf_token %}
               {% for field in event_form %}{% for err in field.errors %}<div class="text-danger small">{{ field.label }}：{{ err }}</div>{% endfor %}{% endfor %}
@@ -136,7 +135,7 @@
                   {{ event_form.note }}
                 </div>
               </div>
-              <div class="form-text">請假：兩個時間都空白是全天，只填開始是請到下班。缺勤不用填時間。</div>
+              <div class="form-text">時間用 24 小時制，例如 08:00、17:30。請假：兩個時間都空白是全天，只填開始是請到下班。缺勤不用填時間。</div>
               <button type="submit" name="action" value="add" class="btn btn-outline-primary mt-2">新增紀錄</button>
             </form>
           </details>

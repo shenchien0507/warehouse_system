@@ -1,4 +1,7 @@
+import datetime
+
 from django.conf import settings
+from django.core.validators import MaxValueValidator
 from django.db import models
 
 from apps.accounts.models import Station
@@ -149,3 +152,46 @@ class StationBatchEntry(models.Model):
         verbose_name = "工位安排明細"
         verbose_name_plural = "工位安排明細"
         constraints = [models.UniqueConstraint(fields=["batch", "employee"], name="unique_employee_per_station_batch")]
+
+
+def _minutes(value):
+    return value.hour * 60 + value.minute
+
+
+class ClockSetting(models.Model):
+    """上下班時間（全公司一組）：上班、下班按鈕只在「時間 ± 彈性分鐘」內可以按，其餘時間只能用補登。"""
+
+    work_start = models.TimeField("上班時間", default=datetime.time(8, 0))
+    work_end = models.TimeField("下班時間", default=datetime.time(17, 0))
+    flex_minutes = models.PositiveSmallIntegerField(
+        "彈性時間（分鐘）", default=30, validators=[MaxValueValidator(720)],
+        help_text="上班、下班時間前後各幾分鐘內可以按按鈕",
+    )
+
+    class Meta:
+        verbose_name = "上下班時間"
+        verbose_name_plural = "上下班時間"
+
+    def __str__(self):
+        return "上下班時間"
+
+    @classmethod
+    def load(cls):
+        return cls.objects.get_or_create(pk=1)[0]
+
+    def window(self, kind):
+        """按鈕可按的時段，例如 (07:30, 08:30)。"""
+        center = self.work_start if kind == EventKind.CLOCK_IN else self.work_end
+        base = datetime.datetime.combine(datetime.date.min, center) + datetime.timedelta(days=1)
+        delta = datetime.timedelta(minutes=self.flex_minutes)
+        return (base - delta).time(), (base + delta).time()
+
+    def allows(self, kind, time):
+        """time 是否在按鈕可按的時段內（跨午夜也算）。"""
+        center = self.work_start if kind == EventKind.CLOCK_IN else self.work_end
+        diff = abs(_minutes(time) - _minutes(center))
+        return min(diff, 1440 - diff) <= self.flex_minutes
+
+    def describe(self, kind):
+        start, end = self.window(kind)
+        return f"{start:%H:%M}–{end:%H:%M}"

@@ -3,15 +3,23 @@ from django.utils import timezone
 
 from apps.accounts.models import Station
 
-from .models import EventKind
+from .models import ClockSetting, EventKind
+
+
+def time_input():
+    """24 小時制的時間欄位（瀏覽器內建的時間選擇器可能顯示上午／下午，所以用文字輸入 HH:MM）。"""
+    return forms.TimeInput(
+        format="%H:%M",
+        attrs={"placeholder": "HH:MM", "pattern": r"([01]?\d|2[0-3]):[0-5]\d", "inputmode": "numeric", "maxlength": 5, "autocomplete": "off"},
+    )
 
 
 class EventForm(forms.Form):
     """補登一筆紀錄（上班、下班、請假離開、請假、缺勤），可指定時間。"""
 
     kind = forms.ChoiceField(label="類型", choices=EventKind.choices)
-    time = forms.TimeField(label="時間", required=False, widget=forms.TimeInput(attrs={"type": "time"}, format="%H:%M"))
-    end_time = forms.TimeField(label="請假到", required=False, widget=forms.TimeInput(attrs={"type": "time"}, format="%H:%M"))
+    time = forms.TimeField(label="時間", required=False, input_formats=["%H:%M"], widget=time_input())
+    end_time = forms.TimeField(label="請假到", required=False, input_formats=["%H:%M"], widget=time_input())
     note = forms.CharField(label="原因／備註", max_length=200, required=False)
 
     def clean(self):
@@ -52,3 +60,16 @@ class StationAssignForm(forms.Form):
     station = forms.ModelChoiceField(
         label="當日工位", queryset=Station.objects.order_by("name"), required=False
     )
+
+
+class ClockSettingForm(forms.ModelForm):
+    class Meta:
+        model = ClockSetting
+        fields = ["work_start", "work_end", "flex_minutes"]
+        widgets = {"work_start": time_input(), "work_end": time_input()}
+        help_texts = {"work_start": "24 小時制，例如 08:00", "work_end": "24 小時制，例如 17:30"}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in ("work_start", "work_end"):
+            self.fields[name].input_formats = ["%H:%M"]
