@@ -65,7 +65,7 @@ class StationAssignForm(forms.Form):
 class ClockSettingForm(forms.ModelForm):
     class Meta:
         model = ClockSetting
-        fields = ["work_start", "work_end", "flex_minutes"]
+        fields = ["work_start", "clock_in_early", "clock_in_late", "work_end", "clock_out_early", "clock_out_late"]
         widgets = {"work_start": time_input(), "work_end": time_input()}
         help_texts = {"work_start": "24 小時制，例如 08:00", "work_end": "24 小時制，例如 17:30"}
 
