@@ -217,3 +217,22 @@ class ClockSetting(models.Model):
     def describe(self, kind):
         start, end = self.window(kind)
         return f"{start:%H:%M}–{end:%H:%M}"
+
+
+class StationEditLock(models.Model):
+    """工位安排的編輯鎖：同一時間只有一個帳號能編輯（不分日期、部門）。
+    編輯頁開著時每分鐘更新 touched_at；超過 LOCK_MINUTES 沒更新（關掉頁面、斷線）就自動失效。"""
+
+    LOCK_MINUTES = 3
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="編輯人", on_delete=models.CASCADE, related_name="+")
+    date = models.DateField("編輯的日期")
+    started_at = models.DateTimeField("開始編輯")
+    touched_at = models.DateTimeField("最後動作")
+
+    class Meta:
+        verbose_name = "工位安排編輯鎖"
+        verbose_name_plural = "工位安排編輯鎖"
+
+    def __str__(self):
+        return f"{self.user} 編輯 {self.date} 工位安排"

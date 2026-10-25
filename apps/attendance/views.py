@@ -5,20 +5,23 @@ from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q
-from django.http import Http404
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import urlencode
+from django.views import View
 from django.views.generic import TemplateView
 
 from apps.accounts.levels import allows
+from apps.accounts.models import Station
 from apps.backoffice.menu import MENU_BY_KEY, can_use
 from apps.personnel.models import Employee
 
+from . import locks
 from .forms import DateForm, EventForm, LookupForm, StationAssignForm
-from .models import Attendance, AttendanceEvent, ClockSetting, EventKind, StationBatch, StationBatchEntry
-from .records import add_event, batch_diff, changes_since, now_minute, timeline, void_event
+from .models import Attendance, AttendanceEvent, ClockSetting, EventKind, StationBatch, StationBatchEntry, StationEditLock
+from .records import add_event, batch_diff, changes_since, now_minute, same_entries, station_counts, timeline, void_event
 from .rules import (
     can_add, can_arrange, can_register, can_void, employees_in_scope, station_departments,
 )
@@ -327,8 +330,9 @@ class StationScopeMixin(PageMixin):
 
 
 class StationListView(StationScopeMixin, TemplateView):
-    """工位安排首頁：按「建立安排」才進入編輯。上方提示目前生效的批次之後誰離開、誰新到；
-    下方可切換「批次」（各部門人數、和上一批的差別，可展開看詳細工位）與「時間軸」。"""
+    """工位安排首頁：按「建立安排」才進入編輯。上方是各工位人數，以及目前生效的批次之後誰離開、誰新到；
+    下方可切換「批次」（各部門、各工位人數、和上一批的差別，可展開看詳細工位）與「時間軸」。
+    別人建立的批次裡，自己範圍內的人完全沒變的不列出。"""
 
     template_name = "attendance/stations.html"
 
@@ -338,7 +342,7 @@ class StationListView(StationScopeMixin, TemplateView):
         is_today = date == timezone.localdate()
         view = "timeline" if self.request.GET.get("view") == "timeline" else "batches"
         batches = StationBatch.objects.filter(date=date).select_related("created_by").prefetch_related(
-            "entries__employee__department", "entries__station"
+            "entries__employee__department", "entries__employee__level", "entries__station"
         )
         rows = []
         for batch in batches:
@@ -347,28 +351,52 @@ class StationListView(StationScopeMixin, TemplateView):
                 continue
             entries.sort(key=lambda e: (e.employee.department.name if e.employee.department else "", e.employee.employee_no))
             counts = Counter(e.employee.department.name if e.employee.department else "未設定部門" for e in entries)
-            rows.append({"batch": batch, "entries": entries, "total": len(entries), "departments": sorted(counts.items())})
+            rows.append({
+                "batch": batch, "entries": entries, "total": len(entries), "departments": sorted(counts.items()),
+                "stations": station_counts(e.station for e in entries),
+            })
+        rows = [row for i, row in enumerate(rows) if i + 1 == len(rows) or not same_entries(row["entries"], rows[i + 1]["entries"])]
         for i, row in enumerate(rows):
             row["diff"] = batch_diff(row["entries"], rows[i + 1]["entries"] if i + 1 < len(rows) else None)
-        changes = []
+        changes, stations = [], None
+        if is_today:
+            on_site = list(self.in_scope(
+                Attendance.objects.filter(date=date, on_site=True).select_related("employee__department", "station")
+            ))
+            stations = station_counts(r.station for r in on_site)
+            context["on_site_count"] = len(on_site)
         if rows:
             rows[0]["current"] = True
             if is_today:
-                on_site = list(self.in_scope(Attendance.objects.filter(date=date, on_site=True).select_related("employee__department")))
                 changes = changes_since(date, rows[0]["entries"], on_site)
-                context["on_site_count"] = len(on_site)
+                self.mark_gone(date, rows[0]["entries"])
+            else:
+                stations = rows[0]["stations"]
+        user = self.request.user
+        lock = locks.held_by_other(user)
         context.update(
-            date=date, batches=rows, changes=changes, view=view, is_today=is_today,
-            can_create=can_arrange(self.request.user, date),
+            date=date, batches=rows, changes=changes, view=view, is_today=is_today, stations=stations,
+            can_arrange=can_arrange(user, date), can_create=can_arrange(user, date) and not lock,
+            lock=lock, lock_minutes=StationEditLock.LOCK_MINUTES, can_force_unlock=bool(lock) and allows(user, "attendance-stations-all"),
             timeline=timeline(date, self.can_see) if view == "timeline" else None,
         )
         return context
+
+    def mark_gone(self, date, entries):
+        """目前生效的批次裡已經不在現場的人（下班、請假）標上離開時間，表格裡顯示成灰色。"""
+        records = {r.employee_id: r for r in Attendance.objects.filter(date=date, employee_id__in=[e.employee_id for e in entries])}
+        for entry in entries:
+            record = records.get(entry.employee_id)
+            entry.gone = not (record and record.on_site)
+            entry.gone_at = record.clock_out if record else None
 
 
 class StationCreateView(StationScopeMixin, TemplateView):
     """建立安排：今天列出目前在場的人，之前的日期列出當天上過班的人；手動安排當日工位。
     改完先列出變更，確認後批次儲存並建立一筆批次紀錄。
-    工位沒改、但名單和目前生效的批次不同（有人離開或新到）也算變更，可以建立新批次。"""
+    工位沒改、但名單和目前生效的批次不同（有人離開或新到）也算變更，可以建立新批次。
+    同一時間只有一個帳號能編輯（編輯鎖）；新批次會帶上目前生效批次裡自己範圍以外的人，
+    所以最新的一批永遠是全部部門的完整安排。"""
 
     template_name = "attendance/station_form.html"
 
@@ -393,13 +421,24 @@ class StationCreateView(StationScopeMixin, TemplateView):
         rows, editable = self.build_rows(self.date)
         if not editable:
             raise PermissionDenied
+        acquired, lock = locks.acquire(request.user, self.date)
+        if not acquired:
+            messages.warning(request, f"{self.locked_text(lock)}，請等對方完成後再編輯。")
+            return self.redirect_back()
         return self.render_to_response(self.get_context_data(rows=rows, editable=editable))
 
     def post(self, request, *args, **kwargs):
         self.date = self.get_date()
+        if request.POST.get("action") == "release":
+            locks.release(request.user)
+            return self.redirect_back()
         rows, editable = self.build_rows(self.date, data=request.POST)
         if not editable:
             raise PermissionDenied
+        acquired, lock = locks.acquire(request.user, self.date)
+        if not acquired:
+            messages.error(request, f"{self.locked_text(lock)}，你的修改沒有儲存。")
+            return self.redirect_back()
         if not all(row["form"].is_valid() for row in rows):
             messages.error(request, "工位選項不正確，請重新選擇。")
             return self.render_to_response(self.get_context_data(rows=rows, editable=editable))
@@ -410,6 +449,7 @@ class StationCreateView(StationScopeMixin, TemplateView):
         ]
         left, arrived = self.roster_changes(rows)
         if not changes and not left and not arrived:
+            locks.release(request.user)
             messages.info(request, "沒有變更，沒有建立新的安排。")
             return self.redirect_back()
         if request.POST.get("action") != "confirm":
@@ -422,11 +462,14 @@ class StationCreateView(StationScopeMixin, TemplateView):
                 record.station = change["new"]
                 record.updated_by = request.user
                 record.save()
+            latest = StationBatch.objects.filter(date=self.date).prefetch_related("entries__employee").first()
+            others = [e for e in latest.entries.all() if not self.can_see(e.employee)] if latest else []
             batch = StationBatch.objects.create(date=self.date, created_by=request.user)
             StationBatchEntry.objects.bulk_create(
-                StationBatchEntry(batch=batch, employee=row["record"].employee, station=row["form"].cleaned_data["station"])
-                for row in rows
+                [StationBatchEntry(batch=batch, employee=row["record"].employee, station=row["form"].cleaned_data["station"]) for row in rows]
+                + [StationBatchEntry(batch=batch, employee=e.employee, station=e.station) for e in others]
             )
+        locks.release(request.user)
         roster = "、".join(text for text in (f"離開 {len(left)} 人" if left else "", f"新到 {len(arrived)} 人" if arrived else "") if text)
         messages.success(request, f"已建立安排，修改 {len(changes)} 人的工位{f'（名單{roster}）' if roster else ''}。")
         return self.redirect_back()
@@ -440,10 +483,43 @@ class StationCreateView(StationScopeMixin, TemplateView):
         arrived = [row["record"].employee for row in rows if row["record"].employee_id not in before]
         return left, arrived
 
+    @staticmethod
+    def locked_text(lock):
+        who = (lock.user.name or lock.user.username) if lock else "其他人"
+        since = f"（{timezone.localtime(lock.started_at):%H:%M} 開始）" if lock else ""
+        return f"{who} 正在編輯工位安排{since}"
+
     def redirect_back(self):
         return redirect(f"{reverse('attendance:stations')}?{urlencode({'date': f'{self.date:%Y-%m-%d}'})}")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context.update(date=self.date, is_today=self.date == timezone.localdate())
+        stations = Station.objects.order_by("name")
+        context.update(
+            date=self.date, is_today=self.date == timezone.localdate(), stations=stations,
+            lock_minutes=StationEditLock.LOCK_MINUTES,
+        )
         return context
+
+
+class StationLockView(StationScopeMixin, View):
+    """編輯鎖：編輯頁每分鐘呼叫一次延長（touch）、離開頁面時放開（release）；
+    可安排全部部門的人可以強制解除別人的鎖（force）。"""
+
+    def post(self, request, *args, **kwargs):
+        action = request.POST.get("action")
+        if action == "release":
+            locks.release(request.user)
+            return JsonResponse({"ok": True})
+        if action == "force":
+            if not allows(request.user, "attendance-stations-all"):
+                raise PermissionDenied
+            lock = locks.current_lock()
+            locks.release()
+            if lock:
+                messages.success(request, f"已解除 {lock.user.name or lock.user.username} 的編輯鎖。")
+            return redirect(f"{reverse('attendance:stations')}?{urlencode({'date': request.POST.get('date', '')})}")
+        form = DateForm(request.POST)
+        date = form.cleaned_data["date"] if form.is_valid() and form.cleaned_data.get("date") else timezone.localdate()
+        acquired, _ = locks.acquire(request.user, date)
+        return JsonResponse({"ok": acquired})
