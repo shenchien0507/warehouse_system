@@ -12,8 +12,11 @@
 {% block content %}
   <form method="get" class="row g-2 align-items-end mb-3">
     <div class="col-auto">
-      <label class="form-label" for="id_employee_no">工號</label>
-      <input type="text" name="employee_no" id="id_employee_no" class="form-control" value="{{ employee_no }}" autocomplete="off" autofocus>
+      <label class="form-label" for="id_employee_no">工號或姓名</label>
+      <input type="text" name="employee_no" id="id_employee_no" class="form-control" value="{% if not employee %}{{ employee_no }}{% endif %}" list="employee-options" autocomplete="off" autofocus placeholder="輸入工號、姓名或刷條碼">
+      <datalist id="employee-options">
+        {% for option in options %}<option value="{{ option.employee_no }} {{ option.name }}"></option>{% endfor %}
+      </datalist>
     </div>
     <div class="col-auto">
       <label class="form-label" for="id_date">日期</label>
@@ -28,8 +31,34 @@
     <div class="alert alert-secondary py-2">你正在看 {{ date|date:"Y-m-d" }} 的紀錄。之前日期只有主任以上能補登或作廢，且要用「補登紀錄」填時間。</div>
   {% endif %}
 
+  {% if missing_clock_out %}
+    <div class="alert alert-warning">
+      <strong>最近 {{ missing_clock_out|length }} 筆沒有下班紀錄</strong>，系統還當作在現場，請補登離開時間：
+      <ul class="mb-1 mt-1">
+        {% for r in missing_clock_out %}
+          <li><a href="{% url 'attendance:register' %}?employee_no={{ r.employee.employee_no|urlencode }}&date={{ r.date|date:'Y-m-d' }}">{{ r.date|date:"m/d" }} {{ r.employee.employee_no }} {{ r.employee.name }}</a>（上班 {{ r.clock_in|time:"H:i" }}）</li>
+        {% endfor %}
+      </ul>
+      {% if not can_fix_past %}<div class="small">補登之前日期要主任以上，請通知主管處理。</div>{% endif %}
+    </div>
+  {% endif %}
+
   {% if error %}
     <div class="alert alert-warning">{{ error }}</div>
+  {% endif %}
+
+  {% if candidates %}
+    <div class="card mb-3" style="max-width: 44rem;">
+      <div class="card-body">
+        <h2 class="h6">找到多位符合「{{ employee_no }}」的人員，請選一位：</h2>
+        <div class="list-group">
+          {% for c in candidates %}
+            <a class="list-group-item list-group-item-action" href="?employee_no={{ c.employee_no|urlencode }}&date={{ date|date:'Y-m-d' }}">{{ c.employee_no }} {{ c.name }} <span class="text-muted small">{{ c.department|default:"未設定部門" }}</span></a>
+          {% endfor %}
+        </div>
+        {% if more_candidates %}<div class="small text-muted mt-2">只列出前 {{ candidates|length }} 位，請輸入更完整的姓名或工號。</div>{% endif %}
+      </div>
+    </div>
   {% endif %}
 
   {% if employee %}
@@ -39,7 +68,7 @@
           <h2 class="h5 mb-0">{{ employee.employee_no }} {{ employee.name }}</h2>
           {% if not employee.is_active %}<span class="badge text-bg-secondary">已離職</span>{% endif %}
           {% if record.status %}<span class="badge text-bg-primary">{{ record.get_status_display }}</span>{% else %}<span class="badge text-bg-light border">未登記</span>{% endif %}
-          {% if is_today and record.on_site %}<span class="badge text-bg-success">在現場</span>{% endif %}
+          {% if is_today and record.on_site %}<span class="badge text-bg-success">在現場</span>{% elif is_today and record.came %}<span class="badge text-bg-secondary">已離開</span>{% elif record.on_site %}<span class="badge text-bg-warning">沒有下班紀錄</span>{% endif %}
         </div>
         <div class="text-muted small mb-3">
           {{ employee.department|default:"未設定部門" }}{% if employee.level %}／{{ employee.level }}{% endif %}
@@ -116,8 +145,8 @@
         {% endif %}
       </div>
     </div>
-  {% elif not error %}
-    <p class="text-muted">輸入工號後按查詢（或 Enter）。</p>
+  {% elif not error and not candidates %}
+    <p class="text-muted">輸入工號或姓名後按查詢（或 Enter），也可以從下拉選單挑人。按完上班、下班會回到這裡，直接登記下一位。要一次登記多人，點下方人數進名單勾選。</p>
   {% endif %}
 
   {% include "attendance/_headcount.html" %}

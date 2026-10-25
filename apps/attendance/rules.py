@@ -4,6 +4,7 @@ from django.utils import timezone
 
 from apps.accounts.levels import allows
 from apps.accounts.models import Department
+from apps.personnel.models import Employee
 
 
 def departments_in_scope(user):
@@ -13,6 +14,15 @@ def departments_in_scope(user):
     if allows(user, "attendance-register-own") and user.department_id:
         return Department.objects.filter(pk=user.department_id)
     return Department.objects.none()
+
+
+def employees_in_scope(user):
+    """可以登記的人員：可登記全部部門的看全部（含未設定部門），可登記自己部門的只看自己部門。"""
+    if allows(user, "attendance-register-all"):
+        return Employee.objects.all()
+    if allows(user, "attendance-register-own") and user.department_id:
+        return Employee.objects.filter(department_id=user.department_id)
+    return Employee.objects.none()
 
 
 def can_register(user, employee):
