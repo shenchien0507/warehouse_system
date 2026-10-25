@@ -158,15 +158,19 @@ def _minutes(value):
     return value.hour * 60 + value.minute
 
 
+def _flex_field(label, help_text):
+    return models.PositiveSmallIntegerField(label, default=30, validators=[MaxValueValidator(720)], help_text=help_text)
+
+
 class ClockSetting(models.Model):
-    """上下班時間（全公司一組）：上班、下班按鈕只在「時間 ± 彈性分鐘」內可以按，其餘時間只能用補登。"""
+    """上下班時間（全公司一組）：上班、下班按鈕只在各自的「時間 −提早分鐘 ～ +延後分鐘」內可以按，其餘時間只能用補登。"""
 
     work_start = models.TimeField("上班時間", default=datetime.time(8, 0))
+    clock_in_early = _flex_field("上班：可提早（−分鐘）", "上班時間前幾分鐘開始可以按「上班」")
+    clock_in_late = _flex_field("上班：可延後（+分鐘）", "上班時間後幾分鐘內還可以按「上班」")
     work_end = models.TimeField("下班時間", default=datetime.time(17, 0))
-    flex_minutes = models.PositiveSmallIntegerField(
-        "彈性時間（分鐘）", default=30, validators=[MaxValueValidator(720)],
-        help_text="上班、下班時間前後各幾分鐘內可以按按鈕",
-    )
+    clock_out_early = _flex_field("下班：可提早（−分鐘）", "下班時間前幾分鐘開始可以按「下班」")
+    clock_out_late = _flex_field("下班：可延後（+分鐘）", "下班時間後幾分鐘內還可以按「下班」")
 
     class Meta:
         verbose_name = "上下班時間"
@@ -179,18 +183,23 @@ class ClockSetting(models.Model):
     def load(cls):
         return cls.objects.get_or_create(pk=1)[0]
 
+    def rule(self, kind):
+        """(基準時間, 可提早分鐘, 可延後分鐘)。"""
+        if kind == EventKind.CLOCK_IN:
+            return self.work_start, self.clock_in_early, self.clock_in_late
+        return self.work_end, self.clock_out_early, self.clock_out_late
+
     def window(self, kind):
-        """按鈕可按的時段，例如 (07:30, 08:30)。"""
-        center = self.work_start if kind == EventKind.CLOCK_IN else self.work_end
+        """按鈕可按的時段，例如 (07:30, 08:15)。"""
+        center, early, late = self.rule(kind)
         base = datetime.datetime.combine(datetime.date.min, center) + datetime.timedelta(days=1)
-        delta = datetime.timedelta(minutes=self.flex_minutes)
-        return (base - delta).time(), (base + delta).time()
+        return (base - datetime.timedelta(minutes=early)).time(), (base + datetime.timedelta(minutes=late)).time()
 
     def allows(self, kind, time):
         """time 是否在按鈕可按的時段內（跨午夜也算）。"""
-        center = self.work_start if kind == EventKind.CLOCK_IN else self.work_end
-        diff = abs(_minutes(time) - _minutes(center))
-        return min(diff, 1440 - diff) <= self.flex_minutes
+        center, early, late = self.rule(kind)
+        offset = (_minutes(time) - _minutes(center) + 720) % 1440 - 720  # 相對基準時間的分鐘數，-720～719
+        return -early <= offset <= late
 
     def describe(self, kind):
         start, end = self.window(kind)

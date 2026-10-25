@@ -12,6 +12,7 @@ from apps.personnel.models import Employee
 from .models import Attendance, AttendanceEvent, ClockSetting, EventKind, StationBatch, Status
 from .records import add_event, now_minute
 
+FLEX_FIELDS = ("clock_in_early", "clock_in_late", "clock_out_early", "clock_out_late")
 TODAY = timezone.localdate()
 YESTERDAY = TODAY - datetime.timedelta(days=1)
 MIDNIGHT = datetime.time(0, 0)  # 今天一定已經過了的時間，測試今天的紀錄用
@@ -34,7 +35,7 @@ class AttendanceTestCase(TestCase):
             PagePermission.objects.create(page_key=key, label=key, min_level=Level.LEADER)
         self.mgr = make_user("mgr", Level.MANAGER)
         # 彈性 12 小時：任何時間都能按上班、下班，時段限制另外測
-        ClockSetting.objects.create(pk=1, flex_minutes=720)
+        ClockSetting.objects.create(pk=1, **{f: 720 for f in FLEX_FIELDS})
 
     def login(self, user):
         self.client.login(username=user.username, password="pw12345!")
@@ -538,7 +539,7 @@ class ClockWindowTests(AttendanceTestCase):
         now = datetime.datetime.combine(TODAY, now_minute())
         far = (now + datetime.timedelta(hours=6)).time()
         ClockSetting.objects.filter(pk=1).update(
-            work_start=now.time() if clock_in_open else far, work_end=now.time() if clock_out_open else far, flex_minutes=10,
+            work_start=now.time() if clock_in_open else far, work_end=now.time() if clock_out_open else far, **{f: 10 for f in FLEX_FIELDS},
         )
 
     def test_buttons_blocked_outside_window(self):
@@ -573,11 +574,21 @@ class ClockWindowTests(AttendanceTestCase):
         self.assertFalse(Attendance.objects.exists())
 
     def test_window_wraps_midnight(self):
-        setting = ClockSetting(work_start=t("00:10"), work_end=t("23:50"), flex_minutes=30)
+        setting = ClockSetting(work_start=t("00:10"), work_end=t("23:50"), **{f: 30 for f in FLEX_FIELDS})
         self.assertTrue(setting.allows(EventKind.CLOCK_IN, t("23:45")))
         self.assertTrue(setting.allows(EventKind.CLOCK_OUT, t("00:15")))
         self.assertFalse(setting.allows(EventKind.CLOCK_IN, t("00:41")))
         self.assertEqual(setting.describe(EventKind.CLOCK_IN), "23:40–00:40")
+
+    def test_early_and_late_set_separately(self):
+        setting = ClockSetting(
+            work_start=t("08:00"), clock_in_early=30, clock_in_late=5, work_end=t("17:00"), clock_out_early=0, clock_out_late=60,
+        )
+        self.assertEqual((setting.describe(EventKind.CLOCK_IN), setting.describe(EventKind.CLOCK_OUT)), ("07:30–08:05", "17:00–18:00"))
+        self.assertTrue(setting.allows(EventKind.CLOCK_IN, t("07:30")))
+        self.assertFalse(setting.allows(EventKind.CLOCK_IN, t("08:06")))
+        self.assertFalse(setting.allows(EventKind.CLOCK_OUT, t("16:59")))
+        self.assertTrue(setting.allows(EventKind.CLOCK_OUT, t("18:00")))
 
     def test_setting_page_uses_24h(self):
         self.client.force_login(make_user("boss", Level.ADMIN))
@@ -585,11 +596,12 @@ class ClockWindowTests(AttendanceTestCase):
         response = self.client.get(url)
         self.assertContains(response, 'placeholder="HH:MM"')
         self.assertNotContains(response, 'type="time"')
-        response = self.client.post(url, {"work_start": "07:30", "work_end": "17:30", "flex_minutes": 15}, follow=True)
-        self.assertContains(response, "上班按鈕 07:15–07:45 可按，下班按鈕 17:15–17:45 可按")
+        data = {"work_start": "07:30", "clock_in_early": 15, "clock_in_late": 5, "work_end": "17:30", "clock_out_early": 0, "clock_out_late": 30}
+        response = self.client.post(url, data, follow=True)
+        self.assertContains(response, "上班按鈕 07:15–07:35 可按，下班按鈕 17:30–18:00 可按")
         setting = ClockSetting.load()
-        self.assertEqual((setting.work_start, setting.work_end, setting.flex_minutes), (t("07:30"), t("17:30"), 15))
-        self.assertContains(self.client.post(url, {"work_start": "5:30 PM", "work_end": "17:30", "flex_minutes": 15}), "輸入有效的時間")
+        self.assertEqual((setting.work_start, setting.clock_in_late, setting.work_end, setting.clock_out_late), (t("07:30"), 5, t("17:30"), 30))
+        self.assertContains(self.client.post(url, {**data, "work_start": "5:30 PM"}), "輸入有效的時間")
         # 非管理員、沒開放頁面權限的人不能進
         self.login(self.mgr)
         self.assertEqual(self.client.get(url).status_code, 403)
