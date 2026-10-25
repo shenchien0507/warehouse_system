@@ -1,11 +1,16 @@
 <hr class="my-4">
 <h2 class="h4">到班人數</h2>
-<p class="lead">{{ date|date:"Y-m-d" }} 共 {{ total_present }} 人到班{% if is_today %}，目前在場 {{ total_on_site }} 人{% endif %}　<small class="text-muted fs-6">點數字可以看名單並進去設定</small></p>
+<p class="lead">{{ date|date:"Y-m-d" }} {% if is_today %}今天{% else %}當天{% endif %}來過 {{ total_came }} 人（到班 {{ total_present }}、部分請假 {{ total_partial }}）{% if is_today %}，目前在場 {{ total_on_site }} 人{% endif %}　<small class="text-muted fs-6">點數字可以看名單{% if is_today %}，在名單上可以勾選多人一次上班、下班{% endif %}</small></p>
 
 <div class="table-responsive">
   <table class="table table-striped align-middle">
     <thead class="table-light">
-      <tr><th>部門</th><th>在職</th><th>到班</th><th>部分請假</th><th>請假</th><th>缺勤</th><th>未登記</th>{% if is_today %}<th>目前在場</th>{% endif %}<th>到班人員所在工位</th></tr>
+      <tr>
+        <th rowspan="2">部門</th>
+        <th colspan="6" class="text-center border-end">{% if is_today %}今天{% else %}當天{% endif %}狀況（加起來等於在職人數）</th>
+        <th colspan="{% if is_today %}2{% else %}1{% endif %}" class="text-center">{% if is_today %}現在{% else %}當天來過的人{% endif %}</th>
+      </tr>
+      <tr><th>在職</th><th>到班</th><th>部分請假</th><th>請假</th><th>缺勤</th><th class="border-end">未登記</th>{% if is_today %}<th>目前在場</th>{% endif %}<th>所在工位</th></tr>
     </thead>
     <tbody>
       {% for row in summary %}
@@ -17,8 +22,8 @@
             <td><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=partial">{{ row.partial }}</a></td>
             <td><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=leave">{{ row.leave }}</a></td>
             <td><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=absent">{{ row.absent }}</a></td>
-            <td{% if row.unregistered %} class="text-danger"{% endif %}><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=unregistered">{{ row.unregistered }}</a></td>
-            {% if is_today %}<td><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=on_site">{{ row.on_site }}</a></td>{% endif %}
+            <td class="border-end{% if row.unregistered %} text-danger{% endif %}"><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=unregistered">{{ row.unregistered }}</a></td>
+            {% if is_today %}<td class="fw-bold"><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=on_site">{{ row.on_site }}</a></td>{% endif %}
             <td>{% for st in row.stations %}<a class="badge text-bg-light border me-1 text-decoration-none" href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=station&station={{ st.key }}">{{ st.label }} {{ st.count }}</a>{% empty %}<span class="text-muted">—</span>{% endfor %}</td>
           </tr>
         {% endwith %}

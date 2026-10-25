@@ -60,6 +60,11 @@ class Attendance(models.Model):
     def __str__(self):
         return f"{self.date} {self.employee} {self.get_status_display()}"
 
+    @property
+    def came(self):
+        """這天有來過現場（到班或部分請假）。"""
+        return self.status in PRESENT_STATUSES
+
     def active_events(self):
         return [e for e in self.events.all() if e.voided_at is None]
 

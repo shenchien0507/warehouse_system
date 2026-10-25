@@ -62,7 +62,22 @@ class RegisterTests(AttendanceTestCase):
         response = self.client.get(self.register_url(self.e1))
         self.assertContains(response, "王小明")
         self.assertContains(response, "現場部／員工")
-        self.assertNotContains(self.client.get(reverse("attendance:register")), "王小明")
+        self.assertNotContains(self.client.get(reverse("attendance:register")), "現場部／員工")
+
+    def test_lookup_by_name_or_partial_employee_no(self):
+        self.login(self.mgr)
+        url = reverse("attendance:register")
+        response = self.client.get(f"{url}?employee_no=小明")
+        self.assertEqual((response.context["employee"], response.context["employee_no"]), (self.e1, "P001"))
+        self.assertEqual(self.client.get(f"{url}?{urlencode({'employee_no': 'P002 李大華'})}").context["employee"], self.e2)
+        response = self.client.get(f"{url}?employee_no=P00")
+        self.assertIsNone(response.context["employee"])
+        self.assertEqual([c.name for c in response.context["candidates"]], ["王小明", "李大華", "陳美玲"])
+        self.assertContains(response, "請選一位")
+        # 組長只找得到自己部門的人
+        self.login(make_user("lead", Level.LEADER, self.floor))
+        self.assertEqual([c.name for c in self.client.get(f"{url}?employee_no=P00").context["candidates"]], ["王小明", "李大華"])
+        self.assertContains(self.client.get(f"{url}?employee_no=美玲"), "找不到工號或姓名")
 
     def test_unknown_employee_no(self):
         self.login(make_user("lead", Level.LEADER, self.floor))
@@ -72,7 +87,7 @@ class RegisterTests(AttendanceTestCase):
         leader = make_user("lead", Level.LEADER, self.floor)
         self.login(leader)
         response = self.press(self.e1, "clock_in")
-        self.assertIn("employee_no=P001", response["Location"])
+        self.assertNotIn("employee_no", response["Location"])  # 回到空白工號欄，登記下一位
         record = Attendance.objects.get(employee=self.e1)
         self.assertEqual((record.status, record.on_site, record.created_by), (Status.PRESENT, True, leader))
         self.assertIsNotNone(record.clock_in)
@@ -222,14 +237,38 @@ class HeadcountTests(AttendanceTestCase):
         self.login(self.mgr)
         response = self.client.get(reverse("attendance:register"))
         self.assertContains(response, "到班人數")
-        self.assertEqual((response.context["total_present"], response.context["total_on_site"]), (2, 1))
+        context = response.context
+        self.assertEqual((context["total_came"], context["total_present"], context["total_partial"], context["total_on_site"]), (2, 1, 1, 1))
         floor = next(row for row in response.context["summary"] if row["department"] == self.floor)
+        # 當天狀況互不重疊，加起來等於在職
         self.assertEqual(
-            (floor["active"], floor["present"], floor["partial"], floor["leave"], floor["on_site"], floor["unregistered"]), (2, 2, 1, 0, 1, 0)
+            (floor["active"], floor["present"], floor["partial"], floor["leave"], floor["absent"], floor["unregistered"]), (2, 1, 1, 0, 0, 0)
         )
-        self.assertEqual([(st["label"], st["count"]) for st in floor["stations"]], [("撿貨", 1), ("櫃台", 1)])
+        # 工位只算現在在場的人：李大華已下班，不算
+        self.assertEqual(floor["on_site"], 1)
+        self.assertEqual([(st["label"], st["count"]) for st in floor["stations"]], [("撿貨", 1)])
         office = next(row for row in response.context["summary"] if row["department"] == self.office)
         self.assertEqual((office["present"], office["unregistered"]), (0, 1))
+
+    def test_past_date_stations_count_everyone_who_came(self):
+        record = self.event(self.e1, EventKind.CLOCK_IN, date=YESTERDAY)
+        self.event(self.e1, EventKind.CLOCK_OUT, time=t("01:00"), date=YESTERDAY)
+        Attendance.objects.filter(pk=record.pk).update(station=self.picking)
+        self.login(self.mgr)
+        response = self.client.get(f"{reverse('attendance:register')}?date={YESTERDAY:%Y-%m-%d}")
+        floor = next(row for row in response.context["summary"] if row["department"] == self.floor)
+        self.assertEqual([(st["label"], st["count"]) for st in floor["stations"]], [("撿貨", 1)])
+
+    def test_reminds_missing_clock_out(self):
+        self.event(self.e1, EventKind.CLOCK_IN, date=YESTERDAY)
+        self.event(self.e3, EventKind.CLOCK_IN, date=YESTERDAY)
+        self.event(self.e2, EventKind.CLOCK_IN, date=YESTERDAY)
+        self.event(self.e2, EventKind.CLOCK_OUT, time=t("01:00"), date=YESTERDAY)
+        self.login(make_user("lead", Level.LEADER, self.floor))
+        response = self.client.get(reverse("attendance:register"))
+        self.assertEqual([r.employee for r in response.context["missing_clock_out"]], [self.e1])
+        self.assertContains(response, "沒有下班紀錄")
+        self.assertContains(response, "請通知主管處理")
 
     def test_all_voided_counts_as_unregistered(self):
         record = self.event(self.e1, EventKind.CLOCK_IN)
@@ -269,6 +308,7 @@ class PersonListTests(AttendanceTestCase):
     def test_lists_by_kind(self):
         for kind, names in {
             "active": ["王小明", "李大華"],
+            "came": ["王小明"],
             "present": ["王小明"],
             "partial": [],
             "leave": ["李大華"],
@@ -285,6 +325,35 @@ class PersonListTests(AttendanceTestCase):
         self.assertEqual([r["employee"].name for r in response.context["rows"]], ["王小明"])
         self.assertContains(response, "employee_no=P001")
         self.assertEqual(self.get(self.mgr, department=self.floor.pk, kind="station", station="none").context["rows"], [])
+
+    def test_station_list_today_only_people_on_site(self):
+        self.event(self.e1, EventKind.CLOCK_OUT)
+        self.assertEqual(self.get(self.mgr, department=self.floor.pk, kind="station", station=self.picking.pk).context["rows"], [])
+        response = self.get(self.mgr, department=self.floor.pk, kind="came")
+        self.assertContains(response, "已離開")
+
+    def test_clock_in_and_out_from_list(self):
+        e4 = Employee.objects.create(employee_no="P004", name="張三", department=self.floor)
+        self.login(make_user("lead", Level.LEADER, self.floor))
+        url = f"{reverse('attendance:list')}?{urlencode({'date': f'{TODAY:%Y-%m-%d}', 'department': self.floor.pk, 'kind': 'active'})}"
+        self.assertContains(self.client.get(url), "勾選的人上班")
+        # 勾選多人上班：已在場的王小明會被擋下，張三上班；請假的李大華可以上班（變部分請假）
+        response = self.client.post(url, {"do": "clock_in", "employee": [self.e1.pk, self.e2.pk, e4.pk, self.e3.pk]})
+        self.assertRedirects(response, url)
+        on_site = set(Attendance.objects.filter(on_site=True).values_list("employee__name", flat=True))
+        self.assertEqual(on_site, {"王小明", "李大華", "張三"})  # 陳美玲不在名單（別的部門），不處理
+        self.assertEqual(Attendance.objects.get(employee=self.e2).status, Status.PARTIAL)
+        # 每列的按鈕只處理那個人
+        self.client.post(url, {"do": f"clock_out:{e4.pk}", "employee": [self.e1.pk]})
+        on_site = set(Attendance.objects.filter(on_site=True).values_list("employee__name", flat=True))
+        self.assertEqual(on_site, {"王小明", "李大華"})
+        self.assertContains(self.client.post(url, {"do": "clock_out"}, follow=True), "請先勾選人員")
+
+    def test_list_past_date_has_no_clock_buttons(self):
+        url = f"{reverse('attendance:list')}?{urlencode({'date': f'{YESTERDAY:%Y-%m-%d}', 'department': self.floor.pk, 'kind': 'active'})}"
+        self.login(self.mgr)
+        self.assertNotContains(self.client.get(url), "勾選的人上班")
+        self.assertEqual(self.client.post(url, {"do": "clock_in", "employee": [self.e1.pk]}).status_code, 403)
 
     def test_leader_cannot_list_other_department(self):
         leader = make_user("lead", Level.LEADER, self.floor)

@@ -1,8 +1,10 @@
+import datetime
 from collections import Counter
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -17,9 +19,38 @@ from apps.personnel.models import Employee
 from .forms import DateForm, EventForm, LookupForm, StationAssignForm
 from .models import PRESENT_STATUSES, Attendance, AttendanceEvent, EventKind, StationBatch, StationBatchEntry, Status
 from .records import add_event, batch_diff, changes_since, now_minute, timeline, void_event
-from .rules import can_add, can_arrange, can_register, can_void, departments_in_scope, station_departments
+from .rules import (
+    can_add, can_arrange, can_register, can_void, departments_in_scope, employees_in_scope, station_departments,
+)
 
 NO_DEPARTMENT = "none"  # 人員沒有設定部門時，統計與名單用的代碼（只有經理以上看得到）
+QUICK = {"clock_in": EventKind.CLOCK_IN, "clock_out": EventKind.CLOCK_OUT, "leave_out": EventKind.LEAVE_OUT}
+MISSING_CLOCK_OUT_DAYS = 7  # 提醒最近幾天沒有下班紀錄的人
+
+
+def here_now(record, is_today):
+    """「現在」的人：今天是目前在場的人；之前的日期沒有「現在」，算當天來過的人。"""
+    return record.on_site if is_today else record.came
+
+
+def quick_event(user, employee, kind, date, note=""):
+    """按上班、下班、請假離開：記下現在的時間；回傳 (到班紀錄, 錯誤訊息)。"""
+    if not employee.is_active and not Attendance.objects.filter(employee=employee, date=date).exists():
+        return None, f"{employee} 已離職，不能登記到班。"
+    return add_event(employee, date, user, kind, now_minute(), note=note)
+
+
+def missing_clock_out(user):
+    """最近幾天上了班卻沒有離開紀錄的人，提醒補登下班時間。"""
+    today = timezone.localdate()
+    return (
+        Attendance.objects.filter(
+            date__lt=today, date__gte=today - datetime.timedelta(days=MISSING_CLOCK_OUT_DAYS), on_site=True,
+            employee__in=employees_in_scope(user),
+        )
+        .select_related("employee")
+        .order_by("-date", "employee__employee_no")
+    )
 
 
 class PageMixin:
@@ -65,8 +96,10 @@ def scope_entries(user):
 
 
 def summarize(user, date):
-    """某一天各部門的到班人數：到班（含部分請假）、部分請假、請假、缺勤、未登記、目前在場，以及到班人員所在工位。"""
+    """某一天各部門的人數。當天狀況互不重疊：到班（全天）、部分請假、請假、缺勤、未登記，加起來就是在職人數；
+    「現在」另外算：目前在場，以及在場的人所在工位（之前的日期算當天來過的人）。"""
     entries = scope_entries(user)
+    is_today = date == timezone.localdate()
     records = Attendance.objects.filter(date=date).exclude(status="").select_related("employee", "station")
     active = Employee.objects.filter(is_active=True).values_list("pk", "department_id")
     summary = []
@@ -79,12 +112,13 @@ def summarize(user, date):
         stations = Counter(
             (str(r.station.pk), r.station.name) if r.station else ("none", "未填工位")
             for r in dept_records
-            if r.status in PRESENT_STATUSES
+            if here_now(r, is_today)
         )
         summary.append({
             **entry,
             "active": len(active_ids),
-            "present": status[Status.PRESENT] + status[Status.PARTIAL],
+            "came": status[Status.PRESENT] + status[Status.PARTIAL],
+            "present": status[Status.PRESENT],
             "partial": status[Status.PARTIAL],
             "leave": status[Status.LEAVE],
             "absent": status[Status.ABSENT],
@@ -101,21 +135,24 @@ class RegisterView(RegisterAccessMixin, TemplateView):
 
     page_key = "attendance-register"
     template_name = "attendance/register.html"
-    QUICK = {"clock_in": EventKind.CLOCK_IN, "clock_out": EventKind.CLOCK_OUT, "leave_out": EventKind.LEAVE_OUT}
+    MAX_CANDIDATES = 20
 
     def load(self):
-        """依網址的工號與日期找出人員與當天紀錄。"""
+        """依網址的工號（或姓名）與日期找出人員與當天紀錄。"""
         lookup = LookupForm(self.request.GET)
         lookup.is_valid()
         self.date = lookup.cleaned_data.get("date") or timezone.localdate()
         self.employee_no = lookup.cleaned_data.get("employee_no", "")
         self.employee = self.record = None
+        self.candidates = []
         self.error = ""
         if not self.employee_no:
             return
-        self.employee = Employee.objects.select_related("department").filter(employee_no__iexact=self.employee_no).first()
+        self.employee = self.find(self.employee_no)
+        if self.candidates:
+            return
         if not self.employee:
-            self.error = f"找不到工號「{self.employee_no}」的人員。"
+            self.error = f"找不到工號或姓名「{self.employee_no}」的人員。"
         elif not can_register(self.request.user, self.employee):
             self.employee = None
             self.error = "這位人員不在你可以登記的範圍內。"
@@ -124,6 +161,26 @@ class RegisterView(RegisterAccessMixin, TemplateView):
             if not self.employee.is_active and not self.record:
                 self.error = f"{self.employee} 已離職，不能登記到班。"
                 self.employee = None
+            else:
+                self.employee_no = self.employee.employee_no
+
+    def find(self, query):
+        """先找完全相同的工號（下拉選單選的「工號 姓名」取第一段）；找不到再用姓名或部分工號在可登記範圍內找在職人員。
+        只找到一個就直接帶出，找到多個就列出來讓人選。"""
+        people = Employee.objects.select_related("department")
+        for key in dict.fromkeys((query, query.split()[0])):
+            found = people.filter(employee_no__iexact=key).first()
+            if found:
+                return found
+        matches = list(
+            employees_in_scope(self.request.user).filter(is_active=True)
+            .filter(Q(name__icontains=query) | Q(employee_no__icontains=query))
+            .select_related("department")[: self.MAX_CANDIDATES + 1]
+        )
+        if len(matches) == 1:
+            return matches[0]
+        self.candidates = matches
+        return None
 
     def get(self, request, *args, **kwargs):
         self.load()
@@ -137,11 +194,11 @@ class RegisterView(RegisterAccessMixin, TemplateView):
         if not can_add(request.user, self.date):
             raise PermissionDenied
         action = request.POST.get("action")
-        if action in self.QUICK:
+        if action in QUICK:
             if self.date != timezone.localdate():
                 messages.error(request, "只有今天可以直接按上班、下班；其他日期請用「補登紀錄」填時間。")
-            else:
-                self.save_event(self.QUICK[action], now_minute(), note=request.POST.get("quick_note", "").strip()[:200])
+            elif self.save_event(QUICK[action], now_minute(), note=request.POST.get("quick_note", "").strip()[:200]):
+                return self.redirect_back(keep_employee=False)
         elif action == "add":
             form = EventForm(request.POST, prefix="e")
             if not form.is_valid():
@@ -169,7 +226,7 @@ class RegisterView(RegisterAccessMixin, TemplateView):
         return True
 
     def redirect_back(self, keep_employee=True):
-        """按上班、下班、作廢後留在這個人；補登後回到搜尋畫面。"""
+        """按上班、下班、補登成功後回到空白的工號欄，方便登記下一個人；作廢或登記失敗留在這個人。"""
         params = {"date": f"{self.date:%Y-%m-%d}"}
         if keep_employee:
             params["employee_no"] = self.employee_no
@@ -189,22 +246,54 @@ class RegisterView(RegisterAccessMixin, TemplateView):
         context.update(
             menu_item=MENU_BY_KEY[self.page_key], date=self.date, employee_no=self.employee_no, employee=self.employee,
             record=self.record, events=events, error=self.error, is_today=self.date == today, editable=editable,
-            can_clock=editable and self.date == today,
+            can_clock=editable and self.date == today, candidates=self.candidates[: self.MAX_CANDIDATES],
+            more_candidates=len(self.candidates) > self.MAX_CANDIDATES,
+            options=employees_in_scope(user).filter(is_active=True).order_by("employee_no"),
+            missing_clock_out=missing_clock_out(user), can_fix_past=allows(user, "attendance-past-dates"),
             summary=summarize(user, self.date),
         )
+        context["total_came"] = sum(row["came"] for row in context["summary"])
         context["total_present"] = sum(row["present"] for row in context["summary"])
+        context["total_partial"] = sum(row["partial"] for row in context["summary"])
         context["total_on_site"] = sum(row["on_site"] for row in context["summary"])
         return context
 
 
 class PersonListView(RegisterAccessMixin, TemplateView):
-    """從人數統計點進來的人員名單；每個人可以點「登記」去設定。"""
+    """從人數統計點進來的人員名單。今天可以直接按每一列的上班、下班，或勾選多人一次上班、下班；
+    其他登記（請假、補登、作廢）按「登記」去登記頁。"""
 
     template_name = "attendance/person_list.html"
     KINDS = {
-        "active": "在職", "present": "到班", "partial": "部分請假", "leave": "請假", "absent": "缺勤",
-        "on_site": "目前在場", "unregistered": "未登記", "station": "到班（依工位）",
+        "active": "在職", "came": "今天來過", "present": "到班", "partial": "部分請假", "leave": "請假", "absent": "缺勤",
+        "on_site": "目前在場", "unregistered": "未登記", "station": "依工位",
     }
+
+    def post(self, request, *args, **kwargs):
+        context = self.get_context_data()
+        if not context["can_clock"]:
+            raise PermissionDenied
+        action, _, one = request.POST.get("do", "").partition(":")
+        if action not in ("clock_in", "clock_out"):
+            raise Http404
+        listed = {str(row["employee"].pk): row["employee"] for row in context["rows"]}
+        employees = [listed[pk] for pk in dict.fromkeys([one] if one else request.POST.getlist("employee")) if pk in listed]
+        if not employees:
+            messages.warning(request, "請先勾選人員。")
+            return redirect(request.get_full_path())
+        done, errors = [], []
+        for employee in employees:
+            _, error = quick_event(request.user, employee, QUICK[action], context["date"])
+            if error:
+                errors.append(f"{employee.name}：{error}")
+            else:
+                done.append(employee.name)
+        label = EventKind(QUICK[action]).label
+        if done:
+            messages.success(request, f"{len(done)} 人{label} {now_minute():%H:%M}：{'、'.join(done)}。")
+        for error in errors:
+            messages.error(request, error)
+        return redirect(request.get_full_path())
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -228,7 +317,9 @@ class PersonListView(RegisterAccessMixin, TemplateView):
             rows = [{"employee": e, "record": None} for e in employees.filter(is_active=True) if e.pk not in registered]
         elif kind == "station":
             station = self.request.GET.get("station", "")
-            present = records.filter(status__in=PRESENT_STATUSES)
+            is_today = date == timezone.localdate()
+            present = records.filter(on_site=True) if is_today else records.filter(status__in=PRESENT_STATUSES)
+            title = f"{entry['label']}　{'目前在場' if is_today else '當天來過'}（依工位）"
             if station == "none":
                 present, name = present.filter(station__isnull=True), "未填工位"
             else:
@@ -237,9 +328,15 @@ class PersonListView(RegisterAccessMixin, TemplateView):
             title += f"　{name}"
             rows = [{"employee": r.employee, "record": r} for r in present]
         else:
-            filters = {"present": {"status__in": PRESENT_STATUSES}, "on_site": {"on_site": True}}.get(kind, {"status": kind})
+            filters = {"came": {"status__in": PRESENT_STATUSES}, "on_site": {"on_site": True}}.get(kind, {"status": kind})
             rows = [{"employee": r.employee, "record": r} for r in records.filter(**filters)]
-        context.update(date=date, title=title, rows=rows, department_key=key)
+        is_today = date == timezone.localdate()
+        can_clock = is_today and can_add(self.request.user, date)
+        context.update(
+            date=date, title=title, rows=rows, department_key=key, is_today=is_today, can_clock=can_clock,
+            can_clock_in=can_clock and any(not (r["record"] and r["record"].on_site) for r in rows),
+            can_clock_out=can_clock and any(r["record"] and r["record"].on_site for r in rows),
+        )
         return context
 
 
