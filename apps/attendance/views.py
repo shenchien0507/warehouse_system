@@ -17,20 +17,14 @@ from apps.backoffice.menu import MENU_BY_KEY, can_use
 from apps.personnel.models import Employee
 
 from .forms import DateForm, EventForm, LookupForm, StationAssignForm
-from .models import PRESENT_STATUSES, Attendance, AttendanceEvent, EventKind, StationBatch, StationBatchEntry, Status
+from .models import Attendance, AttendanceEvent, EventKind, StationBatch, StationBatchEntry
 from .records import add_event, batch_diff, changes_since, now_minute, timeline, void_event
 from .rules import (
-    can_add, can_arrange, can_register, can_void, departments_in_scope, employees_in_scope, station_departments,
+    can_add, can_arrange, can_register, can_void, employees_in_scope, station_departments,
 )
 
-NO_DEPARTMENT = "none"  # 人員沒有設定部門時，統計與名單用的代碼（只有經理以上看得到）
 QUICK = {"clock_in": EventKind.CLOCK_IN, "clock_out": EventKind.CLOCK_OUT, "leave_out": EventKind.LEAVE_OUT}
 MISSING_CLOCK_OUT_DAYS = 7  # 提醒最近幾天沒有下班紀錄的人
-
-
-def here_now(record, is_today):
-    """「現在」的人：今天是目前在場的人；之前的日期沒有「現在」，算當天來過的人。"""
-    return record.on_site if is_today else record.came
 
 
 def quick_event(user, employee, kind, date, note=""):
@@ -87,46 +81,34 @@ class RegisterAccessMixin(PageMixin):
         return allows(user, "attendance-register-all") or (allows(user, "attendance-register-own") and bool(user.department_id))
 
 
-def scope_entries(user):
-    """統計與名單的範圍：可登記的部門；經理以上再加上「未設定部門」（有這類人員時）。"""
-    entries = [{"key": str(d.pk), "label": str(d), "department": d} for d in departments_in_scope(user)]
-    if allows(user, "attendance-register-all") and Employee.objects.filter(department__isnull=True).exists():
-        entries.append({"key": NO_DEPARTMENT, "label": "未設定部門", "department": None})
-    return entries
+def day_rows(user, date):
+    """可登記範圍內的在職人員和他們當天的到班紀錄（沒有紀錄是 None）。"""
+    employees = employees_in_scope(user).filter(is_active=True).select_related("department", "level").order_by("employee_no")
+    records = {r.employee_id: r for r in Attendance.objects.filter(date=date, employee__in=employees).select_related("station")}
+    return [{"employee": e, "record": records.get(e.pk)} for e in employees]
+
+
+def arrived(row):
+    """實到：當天有打上班卡（部分請假但有來也算）。"""
+    return bool(row["record"] and row["record"].came)
+
+
+def on_site(row):
+    return bool(row["record"] and row["record"].on_site)
+
+
+# 人數統計與名單：應到＝在職人員；實到＝有打上班卡的人；未到＝其餘（請假、缺勤、未登記）
+COUNTS = {
+    "expected": ("應到", lambda row: True),
+    "arrived": ("實到", arrived),
+    "missing": ("未到", lambda row: not arrived(row)),
+    "on_site": ("目前在場", on_site),
+}
 
 
 def summarize(user, date):
-    """某一天各部門的人數。當天狀況互不重疊：到班（全天）、部分請假、請假、缺勤、未登記，加起來就是在職人數；
-    「現在」另外算：目前在場，以及在場的人所在工位（之前的日期算當天來過的人）。"""
-    entries = scope_entries(user)
-    is_today = date == timezone.localdate()
-    records = Attendance.objects.filter(date=date).exclude(status="").select_related("employee", "station")
-    active = Employee.objects.filter(is_active=True).values_list("pk", "department_id")
-    summary = []
-    for entry in entries:
-        dept_id = entry["department"].pk if entry["department"] else None
-        dept_records = [r for r in records if r.employee.department_id == dept_id]
-        registered = {r.employee_id for r in dept_records}
-        active_ids = [pk for pk, d in active if d == dept_id]
-        status = Counter(r.status for r in dept_records)
-        stations = Counter(
-            (str(r.station.pk), r.station.name) if r.station else ("none", "未填工位")
-            for r in dept_records
-            if here_now(r, is_today)
-        )
-        summary.append({
-            **entry,
-            "active": len(active_ids),
-            "came": status[Status.PRESENT] + status[Status.PARTIAL],
-            "present": status[Status.PRESENT],
-            "partial": status[Status.PARTIAL],
-            "leave": status[Status.LEAVE],
-            "absent": status[Status.ABSENT],
-            "on_site": sum(1 for r in dept_records if r.on_site),
-            "unregistered": len([pk for pk in active_ids if pk not in registered]),
-            "stations": [{"key": key, "label": label, "count": count} for (key, label), count in sorted(stations.items(), key=lambda i: i[0][1])],
-        })
-    return summary
+    rows = day_rows(user, date)
+    return {key: sum(1 for row in rows if test(row)) for key, (_, test) in COUNTS.items()}
 
 
 class RegisterView(RegisterAccessMixin, TemplateView):
@@ -252,22 +234,14 @@ class RegisterView(RegisterAccessMixin, TemplateView):
             missing_clock_out=missing_clock_out(user), can_fix_past=allows(user, "attendance-past-dates"),
             summary=summarize(user, self.date),
         )
-        context["total_came"] = sum(row["came"] for row in context["summary"])
-        context["total_present"] = sum(row["present"] for row in context["summary"])
-        context["total_partial"] = sum(row["partial"] for row in context["summary"])
-        context["total_on_site"] = sum(row["on_site"] for row in context["summary"])
         return context
 
 
 class PersonListView(RegisterAccessMixin, TemplateView):
-    """從人數統計點進來的人員名單。今天可以直接按每一列的上班、下班，或勾選多人一次上班、下班；
+    """從人數（應到、實到、未到、目前在場）點進來的人員名單，不分部門，列出部門欄。今天可以直接按每一列的上班、下班，或勾選多人一次上班、下班；
     其他登記（請假、補登、作廢）按「登記」去登記頁。"""
 
     template_name = "attendance/person_list.html"
-    KINDS = {
-        "active": "在職", "came": "今天來過", "present": "到班", "partial": "部分請假", "leave": "請假", "absent": "缺勤",
-        "on_site": "目前在場", "unregistered": "未登記", "station": "依工位",
-    }
 
     def post(self, request, *args, **kwargs):
         context = self.get_context_data()
@@ -298,42 +272,15 @@ class PersonListView(RegisterAccessMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         date = self.get_date()
-        key = self.request.GET.get("department", "")
-        entry = next((e for e in scope_entries(self.request.user) if e["key"] == key), None)
         kind = self.request.GET.get("kind", "")
-        if entry is None or kind not in self.KINDS:
+        if kind not in COUNTS:
             raise Http404
-        department = entry["department"]
-        employees = Employee.objects.filter(department=department).order_by("employee_no")
-        records = Attendance.objects.filter(date=date, employee__department=department).select_related(
-            "station"
-        ).order_by("employee__employee_no")
-        title = f"{entry['label']}　{self.KINDS[kind]}"
-        if kind == "active":
-            by_record = {r.employee_id: r for r in records}
-            rows = [{"employee": e, "record": by_record.get(e.pk)} for e in employees.filter(is_active=True)]
-        elif kind == "unregistered":
-            registered = set(records.exclude(status="").values_list("employee_id", flat=True))
-            rows = [{"employee": e, "record": None} for e in employees.filter(is_active=True) if e.pk not in registered]
-        elif kind == "station":
-            station = self.request.GET.get("station", "")
-            is_today = date == timezone.localdate()
-            present = records.filter(on_site=True) if is_today else records.filter(status__in=PRESENT_STATUSES)
-            title = f"{entry['label']}　{'目前在場' if is_today else '當天來過'}（依工位）"
-            if station == "none":
-                present, name = present.filter(station__isnull=True), "未填工位"
-            else:
-                present = present.filter(station_id=station if station.isdigit() else 0)
-                name = str(present[0].station) if present else "工位"
-            title += f"　{name}"
-            rows = [{"employee": r.employee, "record": r} for r in present]
-        else:
-            filters = {"came": {"status__in": PRESENT_STATUSES}, "on_site": {"on_site": True}}.get(kind, {"status": kind})
-            rows = [{"employee": r.employee, "record": r} for r in records.filter(**filters)]
+        title, test = COUNTS[kind]
+        rows = [row for row in day_rows(self.request.user, date) if test(row)]
         is_today = date == timezone.localdate()
         can_clock = is_today and can_add(self.request.user, date)
         context.update(
-            date=date, title=title, rows=rows, department_key=key, is_today=is_today, can_clock=can_clock,
+            date=date, title=title, rows=rows, is_today=is_today, can_clock=can_clock,
             can_clock_in=can_clock and any(not (r["record"] and r["record"].on_site) for r in rows),
             can_clock_out=can_clock and any(r["record"] and r["record"].on_site for r in rows),
         )

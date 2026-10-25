@@ -7,17 +7,8 @@ from apps.accounts.models import Department
 from apps.personnel.models import Employee
 
 
-def departments_in_scope(user):
-    """可登記全部部門的人看全部；可登記自己部門的人只看自己部門；其他人不能登記。"""
-    if allows(user, "attendance-register-all"):
-        return Department.objects.order_by("name")
-    if allows(user, "attendance-register-own") and user.department_id:
-        return Department.objects.filter(pk=user.department_id)
-    return Department.objects.none()
-
-
 def employees_in_scope(user):
-    """可以登記的人員：可登記全部部門的看全部（含未設定部門），可登記自己部門的只看自己部門。"""
+    """可以登記的人員（到班人數與名單也是這個範圍）：可登記全部部門的看全部（含未設定部門），可登記自己部門的只看自己部門。"""
     if allows(user, "attendance-register-all"):
         return Employee.objects.all()
     if allows(user, "attendance-register-own") and user.department_id:

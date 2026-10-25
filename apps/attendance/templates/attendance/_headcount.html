@@ -1,35 +1,11 @@
 <hr class="my-4">
-<h2 class="h4">到班人數</h2>
-<p class="lead">{{ date|date:"Y-m-d" }} {% if is_today %}今天{% else %}當天{% endif %}來過 {{ total_came }} 人（到班 {{ total_present }}、部分請假 {{ total_partial }}）{% if is_today %}，目前在場 {{ total_on_site }} 人{% endif %}　<small class="text-muted fs-6">點數字可以看名單{% if is_today %}，在名單上可以勾選多人一次上班、下班{% endif %}</small></p>
+<h2 class="h4">到班人數 <small class="text-muted fs-6">{{ date|date:"Y-m-d" }}，點數字可以看名單{% if is_today %}，在名單上可以勾選多人一次上班、下班{% endif %}</small></h2>
 
-<div class="table-responsive">
-  <table class="table table-striped align-middle">
-    <thead class="table-light">
-      <tr>
-        <th rowspan="2">部門</th>
-        <th colspan="6" class="text-center border-end">{% if is_today %}今天{% else %}當天{% endif %}狀況（加起來等於在職人數）</th>
-        <th colspan="{% if is_today %}2{% else %}1{% endif %}" class="text-center">{% if is_today %}現在{% else %}當天來過的人{% endif %}</th>
-      </tr>
-      <tr><th>在職</th><th>到班</th><th>部分請假</th><th>請假</th><th>缺勤</th><th class="border-end">未登記</th>{% if is_today %}<th>目前在場</th>{% endif %}<th>所在工位</th></tr>
-    </thead>
-    <tbody>
-      {% for row in summary %}
-        {% with base=date|date:"Y-m-d" %}
-          <tr>
-            <td>{{ row.label }}</td>
-            <td><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=active">{{ row.active }}</a></td>
-            <td class="fw-bold"><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=present">{{ row.present }}</a></td>
-            <td><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=partial">{{ row.partial }}</a></td>
-            <td><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=leave">{{ row.leave }}</a></td>
-            <td><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=absent">{{ row.absent }}</a></td>
-            <td class="border-end{% if row.unregistered %} text-danger{% endif %}"><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=unregistered">{{ row.unregistered }}</a></td>
-            {% if is_today %}<td class="fw-bold"><a href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=on_site">{{ row.on_site }}</a></td>{% endif %}
-            <td>{% for st in row.stations %}<a class="badge text-bg-light border me-1 text-decoration-none" href="{% url 'attendance:list' %}?date={{ base }}&department={{ row.key }}&kind=station&station={{ st.key }}">{{ st.label }} {{ st.count }}</a>{% empty %}<span class="text-muted">—</span>{% endfor %}</td>
-          </tr>
-        {% endwith %}
-      {% empty %}
-        <tr><td colspan="9" class="text-center text-muted py-4">還沒有可統計的部門</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<div class="row g-3" style="max-width: 44rem;">
+  {% with base=date|date:"Y-m-d" %}
+    <div class="col-6 col-sm-3"><a class="card text-center text-decoration-none h-100" href="{% url 'attendance:list' %}?date={{ base }}&kind=expected"><div class="card-body"><div class="text-muted">應到</div><div class="display-6">{{ summary.expected }}</div><div class="small text-muted">在職人員</div></div></a></div>
+    <div class="col-6 col-sm-3"><a class="card text-center text-decoration-none h-100 border-success" href="{% url 'attendance:list' %}?date={{ base }}&kind=arrived"><div class="card-body"><div class="text-muted">實到</div><div class="display-6 text-success">{{ summary.arrived }}</div><div class="small text-muted">有打上班卡</div></div></a></div>
+    <div class="col-6 col-sm-3"><a class="card text-center text-decoration-none h-100{% if summary.missing %} border-danger{% endif %}" href="{% url 'attendance:list' %}?date={{ base }}&kind=missing"><div class="card-body"><div class="text-muted">未到</div><div class="display-6{% if summary.missing %} text-danger{% endif %}">{{ summary.missing }}</div><div class="small text-muted">請假、缺勤、未打卡</div></div></a></div>
+    {% if is_today %}<div class="col-6 col-sm-3"><a class="card text-center text-decoration-none h-100" href="{% url 'attendance:list' %}?date={{ base }}&kind=on_site"><div class="card-body"><div class="text-muted">目前在場</div><div class="display-6">{{ summary.on_site }}</div><div class="small text-muted">排工位看這個</div></div></a></div>{% endif %}
+  {% endwith %}
 </div>
