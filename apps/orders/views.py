@@ -201,7 +201,7 @@ class BatchListView(StatsPageMixin, ListView):
     def post(self, request, *args, **kwargs):
         form = ImportForm(request.POST, request.FILES)
         if form.is_valid():
-            outcome = import_file(request.user, form.cleaned_data["file"])
+            outcome = import_file(request.user, form.cleaned_data["file"], form.cleaned_data["work_date"])
             if outcome.batch:
                 messages.success(request, f"已匯入 {outcome.batch.file_name}：{outcome.batch.line_count} 列、{outcome.batch.order_count} 張訂單。")
                 return redirect("orders:batch_detail", pk=outcome.batch.pk)
@@ -229,6 +229,8 @@ class BatchDetailView(StatsPageMixin, DetailView):
         summary = batch_stats(self.object)
         context["summary"] = summary
         context["by_import_time"] = len(summary.by_import_time)
+        dated = [day for day in summary.days if day]
+        context["first_day"], context["last_day"] = (dated[0], dated[-1]) if dated else (None, None)
         return context
 
 

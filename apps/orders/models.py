@@ -108,6 +108,7 @@ class ImportBatch(models.Model):
 
     file_name = models.CharField("檔名", max_length=200)
     imported_at = models.DateTimeField("匯入時間", auto_now_add=True)
+    work_date = models.DateField("作業日")  # 統計算哪一天的作業：之前日期的訂單都算進當天切開時間前
     imported_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, verbose_name="匯入人", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
