@@ -33,7 +33,7 @@ def to_line(batch, row_no, values):
     return OrderLine(batch=batch, row_no=row_no, **data)
 
 
-def import_file(user, uploaded):
+def import_file(user, uploaded, work_date=None):
     version = MappingVersion.active()
     if version is None:
         return ImportOutcome(message="目前沒有生效的欄位對應版本，請先到後台「匯入欄位對應」設定。")
@@ -53,7 +53,7 @@ def import_file(user, uploaded):
         return ImportOutcome(message="檔案裡沒有資料列，沒有匯入。")
     with transaction.atomic():
         batch = ImportBatch.objects.create(
-            file_name=uploaded.name[:200], imported_by=user, mapping_version=version, group_version=group_version,
+            file_name=uploaded.name[:200], work_date=work_date or timezone.localdate(), imported_by=user, mapping_version=version, group_version=group_version,
             line_count=len(result.lines), order_count=len({values["order_no"] for _, values in result.lines}),
         )
         OrderLine.objects.bulk_create((to_line(batch, row_no, values) for row_no, values in result.lines), batch_size=2000)

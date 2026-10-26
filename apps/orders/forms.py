@@ -1,4 +1,5 @@
 from django import forms
+from django.utils import timezone
 
 from apps.attendance.forms import TIME_FORMATS, time_input
 
@@ -62,6 +63,14 @@ class CheckFileForm(forms.Form):
 
 class ImportForm(forms.Form):
     file = forms.FileField(label="訂單檔", help_text="上傳 .xlsx 或 .csv，用目前生效的欄位對應讀取；有任何一列錯誤就整份不匯入。")
+    work_date = forms.DateField(
+        label="作業日", required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+        help_text="統計算這一天的作業：作業日之前的訂單都算進切開時間前，作業日當天的才依時間分前後。預設今天。",
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["work_date"].initial = timezone.localdate()
 
 
 class GroupVersionForm(forms.Form):

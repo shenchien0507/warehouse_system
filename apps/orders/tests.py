@@ -238,8 +238,8 @@ class ImportStatsTests(TestCase):
         self.user = make_user("boss", Level.ADMIN)
         self.client.login(username=self.user.username, password="pw12345!")
 
-    def upload(self, rows=STAT_ROWS, headers=STAT_HEADERS, name="今天.xlsx"):
-        return self.client.post(reverse("orders:batch_list"), {"file": xlsx(headers, rows, name=name)})
+    def upload(self, rows=STAT_ROWS, headers=STAT_HEADERS, name="今天.xlsx", work_date="2026-08-07"):
+        return self.client.post(reverse("orders:batch_list"), {"file": xlsx(headers, rows, name=name), "work_date": work_date})
 
     def response(self, batch):
         return self.client.get(reverse("orders:batch_detail", args=[batch.pk]))
@@ -292,10 +292,10 @@ class ImportStatsTests(TestCase):
             ["friDay商城", 2, "7-11", "A", "2026/08/08 09:00:00"],
             ["friDay商城", 3, "7-11", "A", "2026/08/08 15:00:00"],
             ["friDay商城", 4, "7-11", "A", ""],
-        ])
+        ], work_date="2026-08-08")
         summary = self.response(ImportBatch.objects.get()).context["summary"]
         self.assertEqual(
-            [(r.date and r.date.isoformat(), r.name, r.period, r.count.distinct) for r in summary.groups],
+            [(r.date and r.date.isoformat(), r.name, r.period, r.count.distinct) for r in summary.daily],
             [("2026-08-07", "其他平台", "14:00 前", 1), ("2026-08-08", "其他平台", "14:00 前", 1),
              ("2026-08-08", "其他平台", "14:00 後", 1), (None, "其他平台", "沒有下單時間", 1)],
         )
@@ -303,6 +303,34 @@ class ImportStatsTests(TestCase):
         response = self.response(ImportBatch.objects.get())
         self.assertContains(response, "當天 2 張")
         self.assertContains(response, "沒有日期")
+        self.assertContains(response, "訂單日期 08/07–08/08")
+
+    def test_earlier_days_count_before_cutoff_of_work_date(self):
+        """作業日 10/5：10/2–10/4 的訂單不管幾點都算 10/5 的 14:00 前；10/5 當天的才看時間。"""
+        rows = [
+            ["friDay商城", 1, "7-11", "A", "2026/10/02 00:00:00"],
+            ["friDay商城", 2, "7-11", "A", "2026/10/03 20:00:00"],
+            ["蝦皮購物", 3, "蝦皮無包裝", "A", "2026/10/04 23:59:00"],
+            ["蝦皮購物", 4, "蝦皮無包裝", "A", "2026/10/05 09:00:00"],
+            ["蝦皮購物", 5, "蝦皮無包裝", "A", "2026/10/05 15:00:00"],
+            ["friDay商城", 6, "7-11", "A", "2026/10/05 00:00:00"],  # 作業日當天 00:00:00：用匯入時間 15:00 → 後
+        ]
+        now = timezone.make_aware(datetime(2026, 10, 26, 15, 0))
+        with mock.patch("django.utils.timezone.now", return_value=now):
+            self.upload(rows, work_date="2026-10-05")
+        batch = ImportBatch.objects.get()
+        self.assertEqual(batch.work_date.isoformat(), "2026-10-05")
+        self.assertEqual(self.stats(batch), {
+            ("蝦皮無包裝", "14:00 前"): (2, 2),
+            ("蝦皮無包裝", "14:00 後"): (1, 1),
+            ("其他平台", "14:00 前"): (2, None),
+            ("其他平台", "14:00 後"): (1, None),
+        })
+        self.assertContains(self.response(batch), "作業日當天有 1 張訂單的下單時間是 00:00:00")
+
+    def test_work_date_defaults_to_today(self):
+        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS)})
+        self.assertEqual(ImportBatch.objects.get().work_date, timezone.localdate())
 
     def test_blank_order_time_listed_separately(self):
         self.upload([["friDay商城", 7, "7-11", "A", ""]])
@@ -340,7 +368,7 @@ class ImportStatsTests(TestCase):
             batch = self.upload_at(clock, rows)
             # 00:00:00 的兩張依匯入時間；有實際時間的照下單時間（16:30 → 14:00 後）
             self.assertEqual(self.stats(batch), {("其他平台", p): (n, None) for p, n in expected.items()})
-            self.assertContains(self.response(batch), f"有 2 張訂單的下單時間是 00:00:00，依匯入時間 {clock} 判斷前後")
+            self.assertContains(self.response(batch), f"作業日當天有 2 張訂單的下單時間是 00:00:00，依匯入時間 {clock} 判斷前後")
 
     def test_midnight_rule_is_per_group(self):
         group = StatGroup.objects.get(name="其他平台")  # v1 已鎖定，這裡直接改資料模擬「沒勾選」的分組
@@ -364,7 +392,7 @@ SOURCE_ROWS = [
 class StatGroupTests(TestCase):
     def setUp(self):
         self.client.login(username=make_user("boss", Level.ADMIN).username, password="pw12345!")
-        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="v1.xlsx")})
+        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="v1.xlsx"), "work_date": "2026-08-07"})
         self.v1 = GroupVersion.objects.get(number=1)
 
     def new_version(self, source=True):
@@ -420,7 +448,7 @@ class StatGroupTests(TestCase):
         self.assertEqual([c.describe() for c in group.conditions.all()], ["平台：friDay商城", "出貨類型：蝦皮隔日到貨"])
 
         # 草稿還沒生效：新匯入仍用 v1
-        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="草稿時.xlsx")})
+        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="草稿時.xlsx"), "work_date": "2026-08-07"})
         self.assertEqual(ImportBatch.objects.get(file_name="草稿時.xlsx").group_version, self.v1)
 
         self.client.post(reverse("orders_manage:group_version_activate", args=[v2.pk]))
@@ -428,7 +456,7 @@ class StatGroupTests(TestCase):
         self.v1.refresh_from_db()
         self.assertTrue(v2.is_active)
         self.assertFalse(self.v1.is_active)
-        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="v2.xlsx")})
+        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="v2.xlsx"), "work_date": "2026-08-07"})
         # v2：順序 5 排最前面，friDay 和隔日到貨都算進「中午切」，依 14:30 切開
         self.assertEqual(self.stats("v2.xlsx")[("中午切", "14:30 前")], 2)  # friDay 5（14:00）、6（14:01）
         self.assertEqual(self.stats("v2.xlsx")[("中午切", "14:30 後")], 1)  # 隔日到貨 12（20:00）
@@ -447,7 +475,7 @@ class StatGroupTests(TestCase):
         other = v2.groups.get(name="其他平台")
         self.client.post(reverse("orders_manage:group_delete", args=[v2.pk, other.pk]))
         self.client.post(reverse("orders_manage:group_version_activate", args=[v2.pk]))
-        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="v2.xlsx")})
+        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="v2.xlsx"), "work_date": "2026-08-07"})
         self.assertEqual(self.stats("v2.xlsx")[("未分組", "")], 2)
 
     def test_create_blank_version_reads_source_file(self):
