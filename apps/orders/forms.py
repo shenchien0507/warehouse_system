@@ -3,7 +3,7 @@ from django import forms
 from apps.attendance.forms import TIME_FORMATS, time_input
 
 from .fields import FIELDS, KIND_LABELS
-from .models import MappingVersion, OrderLine, StatCondition, StatGroup
+from .models import GroupVersion, MappingVersion, OrderLine, StatCondition, StatGroup
 
 
 class UploadForm(forms.Form):
@@ -62,6 +62,15 @@ class CheckFileForm(forms.Form):
 
 class ImportForm(forms.Form):
     file = forms.FileField(label="訂單檔", help_text="上傳 .xlsx 或 .csv，用目前生效的欄位對應讀取；有任何一列錯誤就整份不匯入。")
+
+
+class GroupVersionForm(forms.ModelForm):
+    """新增空白的分組版本；要沿用現有分組請在版本頁按「複製成新版本」。"""
+
+    class Meta:
+        model = GroupVersion
+        fields = ["note"]
+        help_texts = {"note": "會建立沒有任何分組的空白草稿版本；要沿用現有分組，請到那個版本按「複製成新版本」。"}
 
 
 class StatGroupForm(forms.ModelForm):
