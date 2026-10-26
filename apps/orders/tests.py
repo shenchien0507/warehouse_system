@@ -1,8 +1,11 @@
+from datetime import datetime
 from io import BytesIO
+from unittest import mock
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from openpyxl import Workbook
 
 from apps.accounts.models import PagePermission
@@ -269,3 +272,20 @@ class ImportStatsTests(TestCase):
         self.assertEqual(self.upload().status_code, 403)
         PagePermission.objects.create(page_key="order-stats", label="訂單統計", min_level=Level.STAFF)
         self.assertContains(self.client.get(reverse("orders:batch_list")), "還沒有匯入過")
+
+    def test_date_only_order_time_uses_import_time(self):
+        rows = [["friDay商城", 9, "7-11", "A", "2026/08/07 00:00:00"], ["friDay商城", 10, "7-11", "A", "2026/08/07"], ["friDay商城", 11, "7-11", "A", "2026/08/07 16:30:00"]]
+        for clock, expected in [("13:00", "14:00 前"), ("14:00", "14:00 前"), ("15:00", "14:00 後")]:
+            hour, minute = map(int, clock.split(":"))
+            now = timezone.make_aware(datetime(2026, 10, 26, hour, minute, 30))
+            with mock.patch("django.utils.timezone.now", return_value=now):
+                self.upload(rows, name=f"{clock}.xlsx")
+            batch = ImportBatch.objects.get(file_name=f"{clock}.xlsx")
+            stats = self.stats(batch)
+            # 00:00:00 的兩張依匯入時間；有實際時間的照下單時間（16:30 → 14:00 後）
+            if expected == "14:00 前":
+                self.assertEqual(stats, {("friDay商城", "7-11", "14:00 前"): (2, None), ("friDay商城", "7-11", "14:00 後"): (1, None)})
+            else:
+                self.assertEqual(stats, {("friDay商城", "7-11", "14:00 後"): (3, None)})
+            response = self.client.get(reverse("orders:batch_detail", args=[batch.pk]))
+            self.assertContains(response, f"有 2 張訂單的下單時間是 00:00:00，依匯入時間 {clock} 算在\n      {expected}")

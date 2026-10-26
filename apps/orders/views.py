@@ -16,7 +16,7 @@ from .batches import import_file
 from .forms import CheckFileForm, ImportForm, MappingForm, UploadForm
 from .importer import ImportFileError, inspect, read_headers
 from .models import ImportBatch, MappingVersion
-from .stats import batch_stats
+from .stats import batch_stats, cutoff_period
 
 
 def localtime_text(value):
@@ -222,8 +222,10 @@ class BatchDetailView(StatsPageMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        rows = batch_stats(self.object)
-        context["rows"] = rows
+        summary = batch_stats(self.object)
+        context["rows"] = summary.rows
+        context["by_import_time"] = len(summary.by_import_time)
+        context["import_period"] = cutoff_period(self.object.imported_at)
         context["total_distinct"] = self.object.order_count
         return context
 

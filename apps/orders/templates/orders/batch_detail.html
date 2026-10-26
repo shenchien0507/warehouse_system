@@ -20,8 +20,14 @@
 {% block content %}
   <p class="small text-muted">
     去重：同一個訂單號只算 1 張。非去重：有幾列就算幾張，只有蝦皮無包裝（含[代收]）列出。
-    不是蝦皮購物的訂單依下單時間分 14:00 前（含 14:00 整）、14:00 後。
+    不是蝦皮購物的訂單依下單時間分 14:00 前（含 14:00 整）、14:00 後；下單時間是 00:00:00（只有日期）的，用匯入時間判斷。
   </p>
+  {% if by_import_time %}
+    <div class="alert alert-info py-2">
+      有 {{ by_import_time }} 張訂單的下單時間是 00:00:00，依匯入時間 {{ batch.imported_at|date:"H:i" }} 算在
+      {{ import_period }}。
+    </div>
+  {% endif %}
   <div class="table-responsive">
     <table class="table table-striped align-middle" id="stats-table">
       <thead class="table-light">
