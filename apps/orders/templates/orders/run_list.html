@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}訂單統計{% endblock %}
+
+{% block heading %}訂單統計{% endblock %}
+
+{% block content %}
+  <div class="card mb-4">
+    <div class="card-body">
+      <h2 class="h5">匯入訂單檔</h2>
+      <p class="text-muted small mb-3">
+        每個分類放一份檔案（可以只放幾個），一起變成一筆統計紀錄：各分類各一張表，最後合計。作業日之前的訂單都算進作業日的切開時間前。
+        {% if active_version %}目前用欄位對應 {{ active_version }} 讀取{% if active_groups %}、統計分組 {{ active_groups }} 計算{% else %}，<span class="text-danger">但沒有生效的統計分組版本</span>{% endif %}。{% else %}<span class="text-danger">目前沒有生效的欄位對應版本，請先到後台設定。</span>{% endif %}
+      </p>
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger py-2">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>
+      {% endif %}
+      <form method="post" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+        <div class="row g-3 mb-3">
+          {% for field in form.file_fields %}
+            <div class="col-md-4 wh-field{% if field.errors %} has-error{% endif %}">
+              <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+            </div>
+          {% endfor %}
+        </div>
+        <div class="row g-2 align-items-end">
+          <div class="col-md-3 wh-field{% if form.work_date.errors %} has-error{% endif %}">
+            <label class="form-label" for="{{ form.work_date.id_for_label }}">作業日</label>
+            {{ form.work_date }}
+            {% for error in form.work_date.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-primary" onclick="this.disabled=true;this.textContent='匯入中…';this.form.submit();">匯入並統計</button>
+          </div>
+        </div>
+        <div class="form-text">上傳 .xlsx 或 .csv；任何一份有錯，這次全部不匯入。大檔案要讀一陣子，按下後請稍候。</div>
+      </form>
+      {% for category, problem in outcome.files %}
+        {% if problem.errors %}
+          <div class="table-responsive mt-3">
+            <div class="fw-bold small mb-1">{{ category.name }}</div>
+            <table class="table table-sm mb-0">
+              <thead class="table-light"><tr><th>第幾列</th><th>欄位</th><th>檔案裡的值</th><th>問題</th></tr></thead>
+              <tbody>
+                {% for row_no, label, raw, error in problem.errors %}
+                  <tr><td>{{ row_no }}</td><td>{{ label }}</td><td>{{ raw|default:"（空白）" }}</td><td>{{ error }}</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% if problem.error_count > problem.errors|length %}<div class="form-text">只列出前 {{ problem.errors|length }} 筆。</div>{% endif %}
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+
+  <h2 class="h5">統計紀錄</h2>
+  <div class="table-responsive">
+    <table class="table table-striped table-hover align-middle">
+      <thead class="table-light">
+        <tr><th>作業日</th><th>匯入時間</th><th>匯入人</th><th>分類（檔名）</th><th class="text-end">訂單數</th><th class="text-end">操作</th></tr>
+      </thead>
+      <tbody>
+        {% for run in object_list %}
+          <tr>
+            <td>{{ run.work_date|date:"Y/m/d" }}</td>
+            <td>{{ run.created_at|date:"Y/m/d H:i" }}</td>
+            <td>{{ run.created_by.name|default:"" }}</td>
+            <td>{% for batch in run.batches.all %}<div>{{ batch.category_name|default:"未分類" }}<span class="text-muted small ms-1">{{ batch.file_name }}</span></div>{% endfor %}</td>
+            <td class="text-end">{% for batch in run.batches.all %}<div>{{ batch.order_count }}</div>{% endfor %}</td>
+            <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'orders:run_detail' run.pk %}">看統計</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="text-muted">還沒有匯入過。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "components/_pagination.html" %}
+{% endblock %}

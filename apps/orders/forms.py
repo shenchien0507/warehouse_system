@@ -4,7 +4,7 @@ from django.utils import timezone
 from apps.attendance.forms import TIME_FORMATS, time_input
 
 from .fields import FIELDS, KIND_LABELS
-from .models import GroupVersion, MappingVersion, StatCondition, StatGroup
+from .models import GroupVersion, ImportCategory, MappingVersion, StatCondition, StatGroup
 
 
 class UploadForm(forms.Form):
@@ -62,15 +62,45 @@ class CheckFileForm(forms.Form):
 
 
 class ImportForm(forms.Form):
-    file = forms.FileField(label="訂單檔", help_text="上傳 .xlsx 或 .csv，用目前生效的欄位對應讀取；有任何一列錯誤就整份不匯入。")
+    """一次匯入：每個使用中的分類一個上傳格（可以只放幾個），加上共用的作業日。"""
+
     work_date = forms.DateField(
         label="作業日", required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
         help_text="統計算這一天的作業：作業日之前的訂單都算進切開時間前，作業日當天的才依時間分前後。預設今天。",
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, categories=(), **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["work_date"].initial = timezone.localdate()
+        self.categories = list(categories)
+        for category in self.categories:
+            self.fields[self.file_field(category)] = forms.FileField(label=category.name, required=False)
+
+    @staticmethod
+    def file_field(category):
+        return f"file_{category.pk}"
+
+    @property
+    def file_fields(self):
+        return [self[self.file_field(c)] for c in self.categories]
+
+    def clean(self):
+        cleaned = super().clean()
+        if not self.categories:
+            raise forms.ValidationError("後台還沒有使用中的匯入分類，請先到後台「匯入分類」設定。")
+        if not any(cleaned.get(self.file_field(c)) for c in self.categories):
+            raise forms.ValidationError("至少要放一份檔案。")
+        return cleaned
+
+    def files_to_import(self):
+        """[(分類, 上傳檔)]，沒放檔案的分類略過。"""
+        return [(c, self.cleaned_data[self.file_field(c)]) for c in self.categories if self.cleaned_data.get(self.file_field(c))]
+
+
+class ImportCategoryForm(forms.ModelForm):
+    class Meta:
+        model = ImportCategory
+        fields = ["name", "sort_order", "is_active"]
 
 
 class GroupVersionForm(forms.Form):

@@ -1,4 +1,4 @@
-"""訂單統計：每匯入一份檔案就是一批，一批獨立計算，數的都是訂單數（看訂單號）。
+"""訂單統計：一次匯入（統計紀錄）可放多個分類的檔案，每個分類的檔案是一批、各自統計，最後再跨分類合計；數的都是訂單數（看訂單號）。
 
 - 去重：同一個訂單號只算 1。非去重：有幾列就算幾張（分組勾選「另外列出非去重」才顯示）。
 - 每批有「作業日」（預設匯入那天）。作業日之前的訂單都算進作業日的切開時間前（跨日累計），
@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from datetime import date, time
 
 from django.utils import timezone
+
+from .models import OrderLine
 
 
 UNGROUPED = "未分組"
@@ -200,10 +202,30 @@ def summarize(lines, imported_at, groups, work_date=None):
     )
 
 
-def batch_stats(batch):
-    lines = batch.lines.values_list("platform", "shop", "ship_type", "order_time", "order_no").iterator(chunk_size=5000)
-    groups = batch.group_version.groups.prefetch_related("conditions") if batch.group_version else []
-    return summarize(lines, batch.imported_at, groups, batch.work_date)
+LINE_VALUES = ("platform", "shop", "ship_type", "order_time", "order_no")
+
+
+def version_groups(group_version):
+    return list(group_version.groups.prefetch_related("conditions")) if group_version else []
+
+
+def batch_stats(batch, groups=None):
+    """一批（一個分類的檔案）的統計；00:00:00 用的匯入時間是整筆統計紀錄的匯入時間。"""
+    lines = batch.lines.values_list(*LINE_VALUES).iterator(chunk_size=5000)
+    groups = version_groups(batch.group_version) if groups is None else groups
+    return summarize(lines, batch.run.created_at, groups, batch.run.work_date)
+
+
+def run_stats(run):
+    """一筆統計紀錄：[(批次, 統計)] 依分類順序，加上全部分類的合計（同一張訂單在不同分類只算 1 張）。"""
+    batches = sorted(
+        run.batches.select_related("category", "group_version", "run"),
+        key=lambda b: (b.category is None, b.category.sort_order if b.category else 0, b.pk),
+    )
+    groups = version_groups(batches[0].group_version) if batches else []
+    sections = [(batch, batch_stats(batch, groups)) for batch in batches]
+    lines = OrderLine.objects.filter(batch__run=run).values_list(*LINE_VALUES).iterator(chunk_size=5000)
+    return sections, summarize(lines, run.created_at, groups, run.work_date)
 
 
 def validate(values):

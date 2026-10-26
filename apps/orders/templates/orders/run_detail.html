@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}訂單統計{% endblock %}
+
+{% block page_header %}
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <h1 class="h3 mb-0 me-auto">訂單統計：作業日 {{ run.work_date|date:"Y/m/d" }}</h1>
+    <a class="btn btn-outline-secondary" href="{% url 'orders:run_list' %}">回統計紀錄</a>
+    <form method="post" action="{% url 'orders:run_delete' run.pk %}" onsubmit="return confirm('確定刪除這筆統計紀錄？所有分類的檔案和統計都會一起刪掉。');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-danger">刪除這筆</button>
+    </form>
+  </div>
+  <p class="text-muted small mb-3">
+    {{ run.created_at|date:"Y/m/d H:i" }} 由 {{ run.created_by.name|default:"（已刪除的帳號）" }} 匯入{% if first_batch %}，欄位對應 {{ first_batch.mapping_version }}、統計分組 {{ first_batch.group_version|default:"（無）" }}{% endif %}。
+  </p>
+{% endblock %}
+
+{% block content %}
+  <p class="small text-muted">
+    作業日之前的訂單都算進切開時間前，作業日當天的依下單時間分前後；沒有切開時間的分組一天一列（都可以在分組設定改）。去重：同一個訂單號只算 1 張。非去重：有幾列就算幾張，分組有勾選才列出。
+    每個分類一張表，最後一張是全部分類的合計，同一張訂單出現在幾個分類都只算 1 張。
+  </p>
+  {% if sections|length > 1 %}
+    <nav class="mb-3 small">
+      {% for section in sections %}<a class="me-3" href="#{{ section.anchor }}">{{ section.batch.category_name|default:"未分類" }}</a>{% endfor %}
+      <a href="#category-total">合計</a>
+    </nav>
+  {% endif %}
+
+  {% for section in sections %}
+    <section class="mb-5">
+      {% include "orders/_summary.html" with summary=section.summary by_import_time=section.by_import_time first_day=section.first_day last_day=section.last_day title=section.batch.category_name|default:"未分類" anchor=section.anchor note=section.batch.file_name %}
+    </section>
+  {% endfor %}
+
+  {% if sections|length > 1 %}
+    <section class="mb-4 border-top pt-4">
+      {% include "orders/_summary.html" with summary=total.summary by_import_time=total.by_import_time first_day=total.first_day last_day=total.last_day title="合計" anchor="category-total" note="全部分類，同一張訂單只算 1 張" %}
+    </section>
+  {% endif %}
+{% endblock %}
