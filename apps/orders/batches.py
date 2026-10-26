@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from . import stats
 from .importer import read_lines
-from .models import ImportBatch, MappingVersion, OrderLine
+from .models import GroupVersion, ImportBatch, MappingVersion, OrderLine
 
 TEXT_FIELDS = [f.name for f in OrderLine._meta.get_fields() if f.get_internal_type() == "CharField"]
 
@@ -37,6 +37,9 @@ def import_file(user, uploaded):
     version = MappingVersion.active()
     if version is None:
         return ImportOutcome(message="目前沒有生效的欄位對應版本，請先到後台「匯入欄位對應」設定。")
+    group_version = GroupVersion.active()
+    if group_version is None:
+        return ImportOutcome(message="目前沒有生效的統計分組版本，請先到後台「統計分組」設定。")
     result = read_lines(version, uploaded, validate=stats.validate)
     if result.missing_must_map:
         names = "、".join(f"{c.field.label}（「{c.source_column}」）" for c in result.missing_must_map)
@@ -50,7 +53,7 @@ def import_file(user, uploaded):
         return ImportOutcome(message="檔案裡沒有資料列，沒有匯入。")
     with transaction.atomic():
         batch = ImportBatch.objects.create(
-            file_name=uploaded.name[:200], imported_by=user, mapping_version=version,
+            file_name=uploaded.name[:200], imported_by=user, mapping_version=version, group_version=group_version,
             line_count=len(result.lines), order_count=len({values["order_no"] for _, values in result.lines}),
         )
         OrderLine.objects.bulk_create((to_line(batch, row_no, values) for row_no, values in result.lines), batch_size=2000)

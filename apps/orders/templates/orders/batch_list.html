@@ -10,7 +10,7 @@
       <h2 class="h5">匯入訂單檔</h2>
       <p class="text-muted small mb-3">
         每匯入一份檔案就是一批，統計只算這一批，不同批不會合併。
-        {% if active_version %}目前用欄位對應 {{ active_version }} 讀取。{% else %}<span class="text-danger">目前沒有生效的欄位對應版本，請先到後台設定。</span>{% endif %}
+        {% if active_version %}目前用欄位對應 {{ active_version }} 讀取{% if active_groups %}、統計分組 {{ active_groups }} 計算{% else %}，<span class="text-danger">但沒有生效的統計分組版本</span>{% endif %}。{% else %}<span class="text-danger">目前沒有生效的欄位對應版本，請先到後台設定。</span>{% endif %}
       </p>
       <form method="post" enctype="multipart/form-data" novalidate class="row g-2 align-items-start">
         {% csrf_token %}
@@ -43,7 +43,7 @@
   <div class="table-responsive">
     <table class="table table-striped table-hover align-middle">
       <thead class="table-light">
-        <tr><th>檔名</th><th>匯入時間</th><th>匯入人</th><th>對應版本</th><th class="text-end">商品列數</th><th class="text-end">訂單數</th><th class="text-end">操作</th></tr>
+        <tr><th>檔名</th><th>匯入時間</th><th>匯入人</th><th>對應版本</th><th>分組版本</th><th class="text-end">商品列數</th><th class="text-end">訂單數</th><th class="text-end">操作</th></tr>
       </thead>
       <tbody>
         {% for batch in object_list %}
@@ -52,12 +52,13 @@
             <td>{{ batch.imported_at|date:"Y/m/d H:i" }}</td>
             <td>{{ batch.imported_by.name|default:"" }}</td>
             <td>{{ batch.mapping_version }}</td>
+            <td>{{ batch.group_version|default:"" }}</td>
             <td class="text-end">{{ batch.line_count }}</td>
             <td class="text-end">{{ batch.order_count }}</td>
             <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'orders:batch_detail' batch.pk %}">看統計</a></td>
           </tr>
         {% empty %}
-          <tr><td colspan="7" class="text-muted">還沒有匯入過。</td></tr>
+          <tr><td colspan="8" class="text-muted">還沒有匯入過。</td></tr>
         {% endfor %}
       </tbody>
     </table>

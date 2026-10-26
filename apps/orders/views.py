@@ -2,21 +2,22 @@
 「訂單統計」：匯入檔案，每一批獨立統計。"""
 
 from django.contrib import messages
+from django.db import transaction
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.functional import cached_property
-from django.views.generic import DetailView, FormView, ListView, View
+from django.views.generic import DetailView, FormView, ListView, TemplateView, View
 
 from apps.backoffice.menu import MENU_BY_KEY, can_use
 from apps.backoffice.views import ManageDeleteView, ManageListView, ManageMixin
 
 from .batches import import_file
-from .forms import CheckFileForm, ImportForm, MappingForm, UploadForm
+from .forms import CheckFileForm, ConditionFormSet, ImportForm, MappingForm, StatGroupForm, UploadForm
 from .importer import ImportFileError, inspect, read_headers
-from .models import ImportBatch, MappingVersion
-from .stats import batch_stats, cutoff_period
+from .models import GroupVersion, ImportBatch, MappingVersion, StatGroup
+from .stats import batch_stats
 
 
 def localtime_text(value):
@@ -192,7 +193,7 @@ class BatchListView(StatsPageMixin, ListView):
     """匯入檔案與歷次匯入紀錄；匯入成功就直接到這一批的統計。"""
 
     template_name = "orders/batch_list.html"
-    queryset = ImportBatch.objects.select_related("imported_by", "mapping_version")
+    queryset = ImportBatch.objects.select_related("imported_by", "mapping_version", "group_version")
     paginate_by = 20
 
     def post(self, request, *args, **kwargs):
@@ -212,21 +213,20 @@ class BatchListView(StatsPageMixin, ListView):
         context["form"] = getattr(self, "form", None) or ImportForm()
         context["outcome"] = getattr(self, "outcome", None)
         context["active_version"] = MappingVersion.active()
+        context["active_groups"] = GroupVersion.active()
         return context
 
 
 class BatchDetailView(StatsPageMixin, DetailView):
     template_name = "orders/batch_detail.html"
-    queryset = ImportBatch.objects.select_related("imported_by", "mapping_version")
+    queryset = ImportBatch.objects.select_related("imported_by", "mapping_version", "group_version")
     context_object_name = "batch"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         summary = batch_stats(self.object)
-        context["rows"] = summary.rows
+        context["summary"] = summary
         context["by_import_time"] = len(summary.by_import_time)
-        context["import_period"] = cutoff_period(self.object.imported_at)
-        context["total_distinct"] = self.object.order_count
         return context
 
 
@@ -239,3 +239,157 @@ class BatchDeleteView(StatsPageMixin, View):
         batch.delete()
         messages.success(request, f"已刪除匯入批次 {name}。")
         return redirect("orders:batch_list")
+
+
+class GroupVersionMixin:
+    model = GroupVersion
+    page_key = "manage-order-groups"
+    list_url_name = "orders_manage:group_version_list"
+
+
+def describe_cutoff(group):
+    if not group.cutoff:
+        return "不分"
+    text = group.cutoff.strftime("%H:%M")
+    return f"{text}（00:00:00 用匯入時間）" if group.midnight_uses_import_time else text
+
+
+class GroupVersionList(GroupVersionMixin, ManageListView):
+    queryset = GroupVersion.objects.select_related("created_by").prefetch_related("groups")
+    columns = [
+        ("版本", str),
+        ("狀態", "status"),
+        ("分組", lambda o: "、".join(g.name for g in o.groups.all())),
+        ("建立人", lambda o: o.created_by.name if o.created_by else ""),
+        ("建立時間", lambda o: localtime_text(o.created_at)),
+        ("第一次生效", lambda o: localtime_text(o.activated_at)),
+        ("備註", "note"),
+    ]
+
+    def row_actions(self, obj):
+        actions = [("編輯" if not obj.is_locked else "查看", reverse("orders_manage:group_version_detail", args=[obj.pk]), "primary")]
+        if not obj.is_locked:
+            actions.append(("刪除", reverse("orders_manage:group_version_delete", args=[obj.pk]), "danger"))
+        return actions
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["note"] = (
+            "統計分組和欄位對應一樣用版本管理：同時只有一個版本生效，匯入時用生效中的版本，每個批次會記住用的版本，之後改分組不影響舊批次。"
+            "生效過的版本不能再改，要調整請在版本頁按「複製成新版本」，改好再按「生效」。"
+        )
+        return context
+
+
+class GroupVersionObjectMixin(GroupVersionMixin, ManageMixin):
+    @cached_property
+    def version(self):
+        return get_object_or_404(GroupVersion, pk=self.kwargs["version_pk"] if "version_pk" in self.kwargs else self.kwargs["pk"])
+
+
+class GroupVersionDetail(GroupVersionObjectMixin, TemplateView):
+    """版本裡的分組：草稿可以新增、編輯、刪除分組；生效過的只能看。"""
+
+    template_name = "orders/group_version_detail.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        version = self.version
+        context["object"] = version
+        context["active"] = GroupVersion.active()
+        context["groups"] = [
+            {"group": g, "conditions": [c.describe() for c in g.conditions.all()], "cutoff": describe_cutoff(g)}
+            for g in version.groups.prefetch_related("conditions")
+        ]
+        return context
+
+
+class GroupVersionActivate(GroupVersionObjectMixin, View):
+    def post(self, request, *args, **kwargs):
+        version = self.version
+        if not version.groups.exists():
+            messages.error(request, f"{version} 還沒有任何分組，不能生效。")
+        else:
+            version.activate()
+            messages.success(request, f"{version} 已生效，之後匯入的批次都用這個版本統計。")
+        return redirect("orders_manage:group_version_detail", pk=version.pk)
+
+
+class GroupVersionCopy(GroupVersionObjectMixin, View):
+    def post(self, request, *args, **kwargs):
+        new = self.version.copy(request.user)
+        messages.success(request, f"已從 {self.version} 複製成 {new}（草稿）。")
+        return redirect("orders_manage:group_version_detail", pk=new.pk)
+
+
+class GroupVersionDelete(GroupVersionMixin, ManageDeleteView):
+    """只能刪除沒生效過的草稿。"""
+
+    queryset = GroupVersion.objects.filter(activated_at__isnull=True)
+
+
+class DraftGroupMixin(GroupVersionObjectMixin):
+    """分組的新增、編輯、刪除只能在草稿版本裡做。"""
+
+    def dispatch(self, request, *args, **kwargs):
+        if can_use(request.user, self.menu_item) and self.version.is_locked:
+            messages.error(request, f"{self.version} 生效過，不能再改。請按「複製成新版本」再修改。")
+            return redirect("orders_manage:group_version_detail", pk=self.version.pk)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_success_url(self):
+        return reverse("orders_manage:group_version_detail", args=[self.version.pk])
+
+
+class GroupFormView(DraftGroupMixin, FormView):
+    """分組本身的欄位和底下的條件一起存。"""
+
+    template_name = "orders/group_form.html"
+    form_class = StatGroupForm
+    group = None
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["instance"] = self.group or StatGroup(version=self.version)
+        return kwargs
+
+    def get_formset(self):
+        data = self.request.POST if self.request.method == "POST" else None
+        return ConditionFormSet(data, instance=self.group or StatGroup(version=self.version), prefix="conditions")
+
+    def post(self, request, *args, **kwargs):
+        form, formset = self.get_form(), self.get_formset()
+        if form.is_valid() and formset.is_valid():
+            with transaction.atomic():
+                group = form.save()
+                formset.instance = group
+                formset.save()
+            messages.success(request, f"已儲存分組「{group}」。")
+            return redirect(self.get_success_url())
+        return self.render_to_response(self.get_context_data(form=form, formset=formset))
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["version"] = self.version
+        context["object"] = self.group
+        context["formset"] = kwargs.get("formset") or self.get_formset()
+        context["list_url"] = self.get_success_url()
+        return context
+
+
+class GroupCreate(GroupFormView):
+    pass
+
+
+class GroupUpdate(GroupFormView):
+    @cached_property
+    def group(self):
+        return get_object_or_404(StatGroup, pk=self.kwargs["pk"], version=self.version)
+
+
+class GroupDelete(DraftGroupMixin, View):
+    def post(self, request, *args, **kwargs):
+        group = get_object_or_404(StatGroup, pk=kwargs["pk"], version=self.version)
+        group.delete()
+        messages.success(request, f"已刪除分組「{group.name}」。")
+        return redirect(self.get_success_url())

@@ -12,41 +12,61 @@
     </form>
   </div>
   <p class="text-muted small mb-3">
-    {{ batch.imported_at|date:"Y/m/d H:i" }} 由 {{ batch.imported_by.name|default:"（已刪除的帳號）" }} 匯入，欄位對應 {{ batch.mapping_version }}，
+    {{ batch.imported_at|date:"Y/m/d H:i" }} 由 {{ batch.imported_by.name|default:"（已刪除的帳號）" }} 匯入，欄位對應 {{ batch.mapping_version }}、統計分組 {{ batch.group_version|default:"（無）" }}，
     共 {{ batch.line_count }} 列、{{ batch.order_count }} 張訂單。
   </p>
 {% endblock %}
 
 {% block content %}
   <p class="small text-muted">
-    去重：同一個訂單號只算 1 張。非去重：有幾列就算幾張，只有蝦皮無包裝（含[代收]）列出。
-    不是蝦皮購物的訂單，以及蝦皮隔日到貨、蝦皮無包裝（含[代收]），依下單時間分 14:00 前（含 14:00 整）、14:00 後；下單時間是 00:00:00（只有日期）的，用匯入時間判斷。
+    去重：同一個訂單號只算 1 張。非去重：有幾列就算幾張，分組有勾選才列出。分組和切開時間在後台「統計分組」設定，這批固定用匯入當下生效的 {{ batch.group_version }} 計算。
   </p>
   {% if by_import_time %}
-    <div class="alert alert-info py-2">
-      有 {{ by_import_time }} 張訂單的下單時間是 00:00:00，依匯入時間 {{ batch.imported_at|date:"H:i" }} 算在
-      {{ import_period }}。
-    </div>
+    <div class="alert alert-info py-2">有 {{ by_import_time }} 張訂單的下單時間是 00:00:00，依匯入時間 {{ batch.imported_at|date:"H:i" }} 判斷前後。</div>
   {% endif %}
+
   <div class="table-responsive">
-    <table class="table table-striped align-middle" id="stats-table">
+    <table class="table table-striped align-middle" id="group-table">
       <thead class="table-light">
-        <tr><th>平台</th><th>出貨方式</th><th>時段</th><th class="text-end">訂單數（去重）</th><th class="text-end">訂單數（非去重）</th></tr>
+        <tr><th>分組</th><th>時段</th><th class="text-end">訂單數（去重）</th><th class="text-end">訂單數（非去重）</th></tr>
       </thead>
       <tbody>
-        {% for row in rows %}
-          <tr>
-            <td>{{ row.platform|default:"（空白）" }}</td>
-            <td>{{ row.ship_type|default:"（空白）" }}</td>
+        {% for row in summary.groups %}
+          <tr{% if row.name == "未分組" %} class="table-warning"{% endif %}>
+            <td>{{ row.name }}</td>
             <td>{{ row.period|default:"—" }}</td>
-            <td class="text-end fw-bold">{{ row.distinct }}</td>
-            <td class="text-end">{% if row.show_rows %}{{ row.rows }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="text-end fw-bold fs-5">{{ row.count.distinct }}</td>
+            <td class="text-end">{% if row.show_rows %}{{ row.count.rows }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
           </tr>
         {% endfor %}
       </tbody>
       <tfoot>
-        <tr class="table-light"><th colspan="3">全部（去重）</th><th class="text-end">{{ total_distinct }}</th><th></th></tr>
+        <tr class="table-light"><th colspan="2">全部（去重）</th><th class="text-end">{{ summary.total }}</th><th></th></tr>
       </tfoot>
     </table>
   </div>
+
+  <details class="mt-4">
+    <summary class="h6">明細：各分組裡的平台、店鋪、出貨類型</summary>
+    <div class="table-responsive mt-2">
+      <table class="table table-sm table-striped align-middle" id="detail-table">
+        <thead class="table-light">
+          <tr><th>分組</th><th>平台</th><th>店鋪</th><th>出貨類型</th><th>時段</th><th class="text-end">去重</th><th class="text-end">非去重</th></tr>
+        </thead>
+        <tbody>
+          {% for row in summary.details %}
+            <tr>
+              <td>{{ row.group }}</td>
+              <td>{{ row.platform|default:"（空白）" }}</td>
+              <td>{{ row.shop|default:"（空白）" }}</td>
+              <td>{{ row.ship_type|default:"（空白）" }}</td>
+              <td>{{ row.period|default:"—" }}</td>
+              <td class="text-end">{{ row.count.distinct }}</td>
+              <td class="text-end">{% if row.show_rows %}{{ row.count.rows }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
 {% endblock %}
