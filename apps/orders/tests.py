@@ -282,7 +282,11 @@ class ImportStatsTests(TestCase):
             ("其他平台", "14:00 前"): (1, None),  # 14:00:59 只看到分鐘，算 14:00 前
             ("其他平台", "14:00 後"): (1, None),
         })
-        details = {(r.group, r.ship_type, r.period): r.count.distinct for r in self.summary(batch).details}
+        summary = self.summary(batch)
+        # 最後一列：去重扣掉有列非去重的蝦皮無包裝（7 − 3 = 4），非去重放蝦皮無包裝的列數 4
+        self.assertEqual((summary.total, summary.counted, summary.rows_total, summary.rows_groups), (7, 4, 4, ["蝦皮無包裝"]))
+        self.assertContains(self.response(batch), "急單全部（扣蝦皮無包裝）")
+        details = {(r.group, r.ship_type, r.period): r.count.distinct for r in summary.details}
         self.assertEqual(details[("蝦皮無包裝", "蝦皮無包裝[代收]", "14:00 前")], 1)
 
     def test_each_batch_counted_alone(self):
@@ -413,7 +417,7 @@ class ImportStatsTests(TestCase):
         self.assertEqual(count(sections[1]["summary"]), {("其他平台", "14:00 前"): 1, ("其他平台", "14:00 後"): 1})
         self.assertEqual(count(page.context["total"]["summary"]), {("其他平台", "14:00 前"): 1, ("其他平台", "14:00 後"): 1})
         self.assertEqual(page.context["total"]["summary"].total, 2)
-        self.assertContains(page, "合計全部（去重）")
+        self.assertContains(page, "合計全部（扣蝦皮無包裝）")
 
     def test_one_bad_file_rejects_all_categories(self):
         response = self.client.post(reverse("orders:run_list"), import_data(

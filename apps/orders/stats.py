@@ -136,6 +136,9 @@ class Summary:
     days: dict  # 日期 → 當天訂單數（去重），依日期排
     by_import_time: set  # 改用匯入時間判斷前後的訂單號
     total: int  # 全部訂單數（去重）
+    counted: int = 0  # 最後一列的去重：扣掉有列出非去重的分組（例如無包裝）
+    rows_total: int = 0  # 最後一列的非去重：有列出非去重的分組加起來的列數
+    rows_groups: list = field(default_factory=list)  # 有列出非去重的分組名稱
 
     @property
     def by_day(self):
@@ -167,6 +170,7 @@ def summarize(lines, imported_at, groups, work_date=None):
     table, daily = {}, {}
     details = {}
     by_import_time, everyone, per_day = set(), set(), {}
+    counted, rows_total = set(), 0
     for platform, shop, ship_type, order_time, order_no in lines:
         platform, shop, ship_type = platform or "", shop or "", ship_type or ""
         group = find_group(groups, platform, shop, ship_type)
@@ -188,6 +192,10 @@ def summarize(lines, imported_at, groups, work_date=None):
             detail = details[key] = DetailRow(*key, show_rows)
         detail.count.add(order_no)
         everyone.add(order_no)
+        if show_rows:
+            rows_total += 1
+        else:
+            counted.add(order_no)
         per_day.setdefault(day, set()).add(order_no)
     order = {g.name: i for i, g in enumerate(groups)}
     rank = lambda name: order.get(name, len(order))  # 未分組排最後
@@ -199,6 +207,9 @@ def summarize(lines, imported_at, groups, work_date=None):
         days={day: len(per_day[day]) for day in sorted(per_day, key=by_day)},
         by_import_time=by_import_time,
         total=len(everyone),
+        counted=len(counted),
+        rows_total=rows_total,
+        rows_groups=[g.name for g in groups if g.show_rows],
     )
 
 
