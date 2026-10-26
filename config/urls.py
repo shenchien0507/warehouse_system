@@ -29,4 +29,5 @@ urlpatterns = [
     path("manage/accounts/", include("apps.accounts.manage_urls")),
     path("manage/personnel/", include("apps.personnel.urls")),
     path("manage/attendance/", include("apps.attendance.manage_urls")),
+    path("manage/orders/", include("apps.orders.manage_urls")),
 ]
