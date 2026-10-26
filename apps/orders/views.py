@@ -253,9 +253,10 @@ class GroupVersionMixin:
 
 def describe_cutoff(group):
     if not group.cutoff:
-        return "不分"
+        return "不分（一天一列）" if group.split_by_day else "不分（跨日合計）"
+    notes = [text for on, text in [(group.carry_over, "作業日之前算前"), (group.midnight_uses_import_time, "00:00:00 用匯入時間")] if on]
     text = group.cutoff.strftime("%H:%M")
-    return f"{text}（00:00:00 用匯入時間）" if group.midnight_uses_import_time else text
+    return f"{text}（{'、'.join(notes)}）" if notes else text
 
 
 class GroupVersionList(GroupVersionMixin, ManageListView):

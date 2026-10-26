@@ -233,6 +233,13 @@ class StatGroup(models.Model):
         "下單時間是 00:00:00 時用匯入時間", default=False,
         help_text="有些平台只給日期（時間都是 00:00:00），勾選後這種訂單改用這批的匯入時間判斷前後；有實際時間的照下單時間。",
     )
+    carry_over = models.BooleanField(
+        "作業日之前的訂單算進前", default=True,
+        help_text="有切開時間時：勾選後作業日之前的訂單不管幾點都算「前」（跨日累計）；不勾就每張照自己的下單時間分前後。",
+    )
+    split_by_day = models.BooleanField(
+        "沒切時間時一天一列", default=True, help_text="沒有切開時間時：勾選後依下單日期一天一列；不勾就跨日合成一列。",
+    )
     show_rows = models.BooleanField("另外列出非去重", default=False, help_text="非去重：有幾列就算幾張。")
 
     class Meta:

@@ -89,7 +89,7 @@ class SourceFileForm(forms.Form):
 class StatGroupForm(forms.ModelForm):
     class Meta:
         model = StatGroup
-        fields = ["name", "sort_order", "cutoff", "midnight_uses_import_time", "show_rows"]
+        fields = ["name", "sort_order", "cutoff", "midnight_uses_import_time", "carry_over", "split_by_day", "show_rows"]
         widgets = {"cutoff": time_input()}
 
     def __init__(self, *args, **kwargs):

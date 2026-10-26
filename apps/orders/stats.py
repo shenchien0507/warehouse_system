@@ -2,7 +2,7 @@
 
 - 去重：同一個訂單號只算 1。非去重：有幾列就算幾張（分組勾選「另外列出非去重」才顯示）。
 - 每批有「作業日」（預設匯入那天）。作業日之前的訂單都算進作業日的切開時間前（跨日累計），
-  作業日當天的依下單時間分前後；沒有切開時間的分組則一天一列。
+  作業日當天的依下單時間分前後；沒有切開時間的分組則一天一列。兩者都可在分組設定關掉。
   頁面另外依下單日期列出每天的數字供核對，沒有下單時間的列「沒有日期」。
 - 訂單依後台「統計分組」的條件歸組，符合多組時算進排最前面的那組；都不符合的列在「未分組」。
 - 分組有切開時間時，依下單時間分成前、後兩個數字；只看到分鐘，切開時間整分（含 59 秒）算前。
@@ -55,9 +55,9 @@ def period(group, order_time, imported_at, work_date):
         return NO_TIME
     before, after = labels(group.cutoff)
     day = order_date(order_time)
-    if day < work_date:
+    if group.carry_over and day < work_date:
         return before
-    if day > work_date:
+    if group.carry_over and day > work_date:
         return after
     if uses_import_time(group, order_time, work_date):
         return cutoff_period(group.cutoff, imported_at)
@@ -144,7 +144,9 @@ class Summary:
 def main_order(row, rank, by_day, work_date):
     """主表排序：全部的「前」（跨日累計）→ 作業日之前沒切時間的分組（依日期）→ 全部的「後」
     → 作業日當天（含之後）沒切時間的分組 → 沒有下單時間、未分組。"""
-    no_cutoff = row.period == "" and row.name != UNGROUPED and row.date is not None
+    no_cutoff = row.period == "" and row.name != UNGROUPED
+    if no_cutoff and row.date is None:  # 沒切時間、跨日合成一列：排在作業日當天那段
+        return (3, date.max, rank(row.name))
     if row.period.endswith(" 前"):
         return (0, rank(row.name))
     if no_cutoff and row.date < work_date:
@@ -172,7 +174,7 @@ def summarize(lines, imported_at, groups, work_date=None):
         day = order_date(order_time)
         if uses_import_time(group, order_time, work_date):
             by_import_time.add(order_no)
-        split_by_day = group is not None and group.cutoff is None  # 沒切時間的分組一天一列
+        split_by_day = group is not None and group.cutoff is None and group.split_by_day  # 沒切時間的分組一天一列
         for rows, key in ((table, (day if split_by_day else None, name, p)), (daily, (day, name, p))):
             row = rows.get(key)
             if row is None:
