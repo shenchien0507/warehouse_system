@@ -96,6 +96,22 @@ class GroupRow:
     period: str
     show_rows: bool
     count: Count = field(default_factory=Count)
+    first: object = None  # 這一列訂單最早、最晚的下單日期（跨日累計時顯示日期範圍）
+    last: object = None
+
+    def add(self, order_no, day):
+        self.count.add(order_no)
+        if day is not None:
+            self.first = min(self.first or day, day)
+            self.last = max(self.last or day, day)
+
+    @property
+    def dates(self):
+        """10/02–10/05、10/05；沒有日期回傳空字串。"""
+        if self.first is None:
+            return ""
+        text = self.first.strftime("%m/%d")
+        return text if self.last == self.first else f"{text}–{self.last.strftime('%m/%d')}"
 
 
 @dataclass
@@ -125,15 +141,19 @@ class Summary:
         return [(day, count, [r for r in self.daily if r.date == day]) for day, count in self.days.items()]
 
 
-def main_order(row, rank, by_day):
-    """主表排序：先全部的「前」（跨日累計），再全部的「後」，再來沒切時間的分組依日期一天一天排，最後沒有下單時間、未分組。"""
+def main_order(row, rank, by_day, work_date):
+    """主表排序：全部的「前」（跨日累計）→ 作業日之前沒切時間的分組（依日期）→ 全部的「後」
+    → 作業日當天（含之後）沒切時間的分組 → 沒有下單時間、未分組。"""
+    no_cutoff = row.period == "" and row.name != UNGROUPED and row.date is not None
     if row.period.endswith(" 前"):
         return (0, rank(row.name))
+    if no_cutoff and row.date < work_date:
+        return (1, row.date, rank(row.name))
     if row.period.endswith(" 後"):
-        return (1, rank(row.name))
-    if row.period == "" and row.name != UNGROUPED:
-        return (2, by_day(row.date), rank(row.name))
-    return (3, rank(row.name), row.period)
+        return (2, rank(row.name))
+    if no_cutoff:
+        return (3, row.date, rank(row.name))
+    return (4, rank(row.name), row.period)
 
 
 def summarize(lines, imported_at, groups, work_date=None):
@@ -157,7 +177,7 @@ def summarize(lines, imported_at, groups, work_date=None):
             row = rows.get(key)
             if row is None:
                 row = rows[key] = GroupRow(*key, show_rows)
-            row.count.add(order_no)
+            row.add(order_no, day)
         key = (day, name, platform, shop, ship_type, p)
         detail = details.get(key)
         if detail is None:
@@ -169,7 +189,7 @@ def summarize(lines, imported_at, groups, work_date=None):
     rank = lambda name: order.get(name, len(order))  # 未分組排最後
     by_day = lambda day: (day is None, day or date.min)  # 沒有日期排最後
     return Summary(
-        groups=sorted(table.values(), key=lambda r: main_order(r, rank, by_day)),
+        groups=sorted(table.values(), key=lambda r: main_order(r, rank, by_day, work_date)),
         daily=sorted(daily.values(), key=lambda r: (by_day(r.date), rank(r.name), r.period == NO_TIME, r.period)),
         details=sorted(details.values(), key=lambda r: (by_day(r.date), rank(r.group), r.platform, r.shop, r.ship_type, r.period)),
         days={day: len(per_day[day]) for day in sorted(per_day, key=by_day)},
