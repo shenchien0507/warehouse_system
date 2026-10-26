@@ -160,6 +160,9 @@ class GroupVersion(models.Model):
 
     number = models.PositiveIntegerField("版本", unique=True)
     note = models.CharField("備註", max_length=200, blank=True)
+    source_file_name = models.CharField("來源檔", max_length=200, blank=True)
+    # 來源檔裡出現過的 [平台, 店鋪, 出貨類型] 組合，當條件連動選單的選項
+    source_combos = models.JSONField("來源檔的平台／店鋪／出貨類型", default=list, blank=True)
     is_active = models.BooleanField("生效中", default=False)
     activated_at = models.DateTimeField("第一次生效時間", null=True, blank=True)
     created_by = models.ForeignKey(
@@ -202,7 +205,10 @@ class GroupVersion(models.Model):
             self.save(update_fields=["is_active", "activated_at"])
 
     def copy(self, user):
-        new = GroupVersion.objects.create(number=GroupVersion.next_number(), note=f"從 {self} 複製", created_by=user)
+        new = GroupVersion.objects.create(
+            number=GroupVersion.next_number(), note=f"從 {self} 複製", created_by=user,
+            source_file_name=self.source_file_name, source_combos=self.source_combos,
+        )
         for group in self.groups.prefetch_related("conditions"):
             conditions = list(group.conditions.all())
             group.pk, group.version = None, new

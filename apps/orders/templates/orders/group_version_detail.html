@@ -9,7 +9,7 @@
       統計分組 {{ object }}
       <span class="badge {% if object.is_active %}text-bg-success{% elif object.is_locked %}text-bg-secondary{% else %}text-bg-warning{% endif %} align-middle fs-6">{{ object.status }}</span>
     </h1>
-    {% if not object.is_locked %}
+    {% if not object.is_locked and object.source_combos %}
       <a class="btn btn-primary" href="{% url 'orders_manage:group_create' object.pk %}">新增分組</a>
     {% endif %}
     {% if not object.is_active %}
@@ -31,6 +31,23 @@
 {% endblock %}
 
 {% block manage_content %}
+  <div class="card mb-3">
+    <div class="card-body py-2">
+      {% if object.source_combos %}
+        來源檔：{{ object.source_file_name }}，讀到 {{ platform_count }} 個平台、{{ object.source_combos|length }} 種平台／店鋪／出貨類型組合，條件只能從這些值選。
+      {% else %}
+        <span class="text-danger">這個版本還沒有來源檔，條件沒有選項。</span>{% if object.is_locked %}請按「複製成新版本」，再在草稿上傳來源檔。{% endif %}
+      {% endif %}
+      {% if not object.is_locked %}
+        <form method="post" action="{% url 'orders_manage:group_version_source' object.pk %}" enctype="multipart/form-data" class="d-flex flex-wrap gap-2 align-items-center mt-2">
+          {% csrf_token %}
+          <input type="file" name="file" class="form-control w-auto" required>
+          <button type="submit" class="btn btn-outline-primary">{% if object.source_combos %}重新上傳來源檔{% else %}上傳來源檔{% endif %}</button>
+          <span class="form-text">用目前生效的欄位對應讀取；重新上傳只換選項，已設定的條件不會刪掉。</span>
+        </form>
+      {% endif %}
+    </div>
+  </div>
   <div class="table-responsive">
     <table class="table table-striped align-middle">
       <thead class="table-light">
