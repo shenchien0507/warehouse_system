@@ -12,14 +12,14 @@
     </form>
   </div>
   <p class="text-muted small mb-3">
-    {{ batch.imported_at|date:"Y/m/d H:i" }} 由 {{ batch.imported_by.name|default:"（已刪除的帳號）" }} 匯入，欄位對應 {{ batch.mapping_version }}，
+    {{ batch.imported_at|date:"Y/m/d H:i" }} 由 {{ batch.imported_by.name|default:"（已刪除的帳號）" }} 匯入，欄位對應 {{ batch.mapping_version }}、統計分組 {{ batch.group_version|default:"（無）" }}，
     共 {{ batch.line_count }} 列、{{ batch.order_count }} 張訂單。
   </p>
 {% endblock %}
 
 {% block content %}
   <p class="small text-muted">
-    去重：同一個訂單號只算 1 張。非去重：有幾列就算幾張，分組有勾選才列出。分組和切開時間在後台「統計分組」設定。
+    去重：同一個訂單號只算 1 張。非去重：有幾列就算幾張，分組有勾選才列出。分組和切開時間在後台「統計分組」設定，這批固定用匯入當下生效的 {{ batch.group_version }} 計算。
   </p>
   {% if by_import_time %}
     <div class="alert alert-info py-2">有 {{ by_import_time }} 張訂單的下單時間是 00:00:00，依匯入時間 {{ batch.imported_at|date:"H:i" }} 判斷前後。</div>

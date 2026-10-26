@@ -112,6 +112,9 @@ class ImportBatch(models.Model):
         settings.AUTH_USER_MODEL, verbose_name="匯入人", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
     mapping_version = models.ForeignKey(MappingVersion, verbose_name="欄位對應版本", on_delete=models.PROTECT, related_name="batches")
+    group_version = models.ForeignKey(
+        "GroupVersion", verbose_name="統計分組版本", on_delete=models.PROTECT, related_name="batches", null=True,
+    )
     line_count = models.PositiveIntegerField("商品列數", default=0)
     order_count = models.PositiveIntegerField("訂單數", default=0)
 
@@ -151,10 +154,70 @@ class OrderLine(models.Model):
         return f"{self.order_no} {self.product_code}"
 
 
+class GroupVersion(models.Model):
+    """統計分組的一個版本，做法和欄位對應版本一樣：同時只有一個版本生效，生效過的版本不能再改，要調整就複製成新版本。
+    每個匯入批次記住匯入當下生效的版本，舊批次的數字不會因為之後改分組而變動。"""
+
+    number = models.PositiveIntegerField("版本", unique=True)
+    note = models.CharField("備註", max_length=200, blank=True)
+    is_active = models.BooleanField("生效中", default=False)
+    activated_at = models.DateTimeField("第一次生效時間", null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="建立人", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField("建立時間", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "統計分組版本"
+        verbose_name_plural = "統計分組版本"
+        ordering = ["-number"]
+
+    def __str__(self):
+        return f"v{self.number}"
+
+    @classmethod
+    def next_number(cls):
+        last = cls.objects.order_by("-number").values_list("number", flat=True).first()
+        return (last or 0) + 1
+
+    @classmethod
+    def active(cls):
+        return cls.objects.filter(is_active=True).first()
+
+    @property
+    def is_locked(self):
+        return self.activated_at is not None
+
+    @property
+    def status(self):
+        if self.is_active:
+            return "生效中"
+        return "已停用" if self.is_locked else "草稿"
+
+    def activate(self):
+        with transaction.atomic():
+            GroupVersion.objects.filter(is_active=True).exclude(pk=self.pk).update(is_active=False)
+            self.is_active = True
+            self.activated_at = self.activated_at or timezone.now()
+            self.save(update_fields=["is_active", "activated_at"])
+
+    def copy(self, user):
+        new = GroupVersion.objects.create(number=GroupVersion.next_number(), note=f"從 {self} 複製", created_by=user)
+        for group in self.groups.prefetch_related("conditions"):
+            conditions = list(group.conditions.all())
+            group.pk, group.version = None, new
+            group.save()
+            StatCondition.objects.bulk_create(
+                StatCondition(group=group, platforms=c.platforms, shops=c.shops, ship_types=c.ship_types) for c in conditions
+            )
+        return new
+
+
 class StatGroup(models.Model):
     """訂單統計的分組：符合任一條件的訂單算進這組；可設切開時間把一天分成前後兩個數字。"""
 
-    name = models.CharField("分組名稱", max_length=50, unique=True)
+    version = models.ForeignKey(GroupVersion, verbose_name="版本", on_delete=models.CASCADE, related_name="groups")
+    name = models.CharField("分組名稱", max_length=50)
     sort_order = models.PositiveIntegerField("顯示順序", default=0, help_text="數字小的排前面；同一張訂單符合多組時，算進排最前面的那組。")
     cutoff = models.TimeField(
         "切開時間", null=True, blank=True, help_text="例如 14:00；只看到分鐘，14:00 整（含 14:00:59）算前。留空就不分前後。"
@@ -169,6 +232,7 @@ class StatGroup(models.Model):
         verbose_name = "統計分組"
         verbose_name_plural = "統計分組"
         ordering = ["sort_order", "pk"]
+        constraints = [models.UniqueConstraint(fields=["version", "name"], name="unique_version_group_name")]
 
     def __str__(self):
         return self.name

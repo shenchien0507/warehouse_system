@@ -4,14 +4,13 @@
 - 訂單依後台「統計分組」的條件歸組，符合多組時算進排最前面的那組；都不符合的列在「未分組」。
 - 分組有切開時間時，依下單時間分成前、後兩個數字；只看到分鐘，切開時間整分（含 59 秒）算前。
   分組勾選「下單時間是 00:00:00 時用匯入時間」時，這種只有日期的訂單改用這批的匯入時間判斷。
-分組設定改了，舊的批次也會照新設定重新計算（訂單資料本身不變）。"""
+分組有版本：每個批次用匯入當下生效的分組版本計算，之後改分組不影響舊批次。"""
 
 from dataclasses import dataclass, field
 from datetime import time
 
 from django.utils import timezone
 
-from .models import StatGroup
 
 UNGROUPED = "未分組"
 NO_TIME = "沒有下單時間"
@@ -96,9 +95,9 @@ class Summary:
     total: int  # 全部訂單數（去重）
 
 
-def summarize(lines, imported_at, groups=None):
-    """lines：[(平台, 店鋪, 出貨類型, 下單時間, 訂單號)]。"""
-    groups = list(groups if groups is not None else StatGroup.objects.prefetch_related("conditions"))
+def summarize(lines, imported_at, groups):
+    """lines：[(平台, 店鋪, 出貨類型, 下單時間, 訂單號)]；groups：依順序排好的 StatGroup（含 conditions）。"""
+    groups = list(groups)
     table = {}
     for group in groups:
         for p in labels(group.cutoff) if group.cutoff else [""]:
@@ -135,7 +134,8 @@ def summarize(lines, imported_at, groups=None):
 
 def batch_stats(batch):
     lines = batch.lines.values_list("platform", "shop", "ship_type", "order_time", "order_no").iterator(chunk_size=5000)
-    return summarize(lines, batch.imported_at)
+    groups = batch.group_version.groups.prefetch_related("conditions") if batch.group_version else []
+    return summarize(lines, batch.imported_at, groups)
 
 
 def validate(values):

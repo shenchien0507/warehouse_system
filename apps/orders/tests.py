@@ -13,7 +13,7 @@ from openpyxl import Workbook
 from apps.accounts.models import PagePermission
 from apps.accounts.testing import Level, make_user
 
-from .models import ColumnMapping, ImportBatch, MappingVersion, OrderLine, StatGroup
+from .models import ColumnMapping, GroupVersion, ImportBatch, MappingVersion, OrderLine, StatGroup
 
 HEADERS = ["交易平台", "交易序號", "買家姓名", "出貨日期", "商品編號", "小計數量", "建立時間"]
 ROWS = [
@@ -326,7 +326,7 @@ class ImportStatsTests(TestCase):
             self.assertContains(self.response(batch), f"有 2 張訂單的下單時間是 00:00:00，依匯入時間 {clock} 判斷前後")
 
     def test_midnight_rule_is_per_group(self):
-        group = StatGroup.objects.get(name="其他平台")
+        group = StatGroup.objects.get(name="其他平台")  # v1 已鎖定，這裡直接改資料模擬「沒勾選」的分組
         group.midnight_uses_import_time = False
         group.save()
         batch = self.upload_at("15:00", [["friDay商城", 9, "7-11", "A", "2026/08/07 00:00:00"]])
@@ -336,8 +336,12 @@ class ImportStatsTests(TestCase):
 class StatGroupTests(TestCase):
     def setUp(self):
         self.client.login(username=make_user("boss", Level.ADMIN).username, password="pw12345!")
-        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS)})
-        self.batch = ImportBatch.objects.get()
+        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="v1.xlsx")})
+        self.v1 = GroupVersion.objects.get(number=1)
+
+    def new_version(self):
+        self.client.post(reverse("orders_manage:group_version_copy", args=[self.v1.pk]))
+        return GroupVersion.objects.get(number=2)
 
     def save_group(self, url, conditions, **fields):
         data = {
@@ -349,37 +353,93 @@ class StatGroupTests(TestCase):
                 data[f"conditions-{i}-{key}"] = values
         return self.client.post(url, data)
 
-    def stats(self):
-        rows = self.client.get(reverse("orders:batch_detail", args=[self.batch.pk])).context["summary"].groups
+    def stats(self, name="v1.xlsx"):
+        batch = ImportBatch.objects.get(file_name=name)
+        rows = self.client.get(reverse("orders:batch_detail", args=[batch.pk])).context["summary"].groups
         return {(r.name, r.period): r.count.distinct for r in rows if r.count.rows}
 
-    def test_create_group_with_own_cutoff_typed_without_colon(self):
+    def test_default_v1_active_and_batch_remembers_it(self):
+        self.assertTrue(self.v1.is_active)
+        self.assertEqual([g.name for g in self.v1.groups.all()], ["蝦皮無包裝", "蝦皮隔日到貨", "蝦皮其他", "其他平台"])
+        self.assertEqual(ImportBatch.objects.get().group_version, self.v1)
+
+    def test_locked_version_cannot_be_edited(self):
+        group = self.v1.groups.first()
+        response = self.save_group(reverse("orders_manage:group_edit", args=[self.v1.pk, group.pk]), [{"platforms": ["蝦皮購物"]}], name="改名")
+        self.assertRedirects(response, reverse("orders_manage:group_version_detail", args=[self.v1.pk]))
+        group.refresh_from_db()
+        self.assertEqual(group.name, "蝦皮無包裝")
+        self.client.post(reverse("orders_manage:group_delete", args=[self.v1.pk, group.pk]))
+        self.assertTrue(StatGroup.objects.filter(pk=group.pk).exists())
+        self.assertEqual(self.client.post(reverse("orders_manage:group_version_delete", args=[self.v1.pk])).status_code, 404)
+
+    def test_new_version_with_own_cutoff_only_affects_later_batches(self):
+        v2 = self.new_version()
+        self.assertEqual(v2.status, "草稿")
+        self.assertEqual(v2.groups.count(), 4)
         response = self.save_group(
-            reverse("orders_manage:group_create"), [{"platforms": ["friDay商城"]}, {"ship_types": ["蝦皮隔日到貨"]}],
+            reverse("orders_manage:group_create", args=[v2.pk]), [{"platforms": ["friDay商城"]}, {"ship_types": ["蝦皮隔日到貨"]}],
             name="中午切", cutoff="1430",
         )
-        self.assertRedirects(response, reverse("orders_manage:group_list"))
-        group = StatGroup.objects.get(name="中午切")
+        self.assertRedirects(response, reverse("orders_manage:group_version_detail", args=[v2.pk]))
+        group = v2.groups.get(name="中午切")
         self.assertEqual(group.cutoff.strftime("%H:%M"), "14:30")
         self.assertEqual([c.describe() for c in group.conditions.all()], ["平台：friDay商城", "出貨類型：蝦皮隔日到貨"])
-        # 順序 5 排最前面：friDay 和隔日到貨都算進這組，依 14:30 切開
-        stats = self.stats()
-        self.assertEqual(stats[("中午切", "14:30 前")], 2)  # friDay 14:00、隔日到貨不符（20:00）→ 只有 friDay 5、6
-        self.assertNotIn(("其他平台", "14:00 前"), stats)
+
+        # 草稿還沒生效：新匯入仍用 v1
+        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="草稿時.xlsx")})
+        self.assertEqual(ImportBatch.objects.get(file_name="草稿時.xlsx").group_version, self.v1)
+
+        self.client.post(reverse("orders_manage:group_version_activate", args=[v2.pk]))
+        v2.refresh_from_db()
+        self.v1.refresh_from_db()
+        self.assertTrue(v2.is_active)
+        self.assertFalse(self.v1.is_active)
+        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="v2.xlsx")})
+        # v2：順序 5 排最前面，friDay 和隔日到貨都算進「中午切」，依 14:30 切開
+        self.assertEqual(self.stats("v2.xlsx")[("中午切", "14:30 前")], 2)  # friDay 5（14:00）、6（14:01）
+        self.assertEqual(self.stats("v2.xlsx")[("中午切", "14:30 後")], 1)  # 隔日到貨 12（20:00）
+        # 舊批次照 v1，數字不變
+        self.assertEqual(self.stats("v1.xlsx")[("其他平台", "14:00 前")], 1)
+        self.assertNotIn(("中午切", "14:30 前"), self.stats("v1.xlsx"))
 
     def test_options_come_from_imported_data(self):
-        response = self.client.get(reverse("orders_manage:group_create"))
+        v2 = self.new_version()
+        response = self.client.get(reverse("orders_manage:group_create", args=[v2.pk]))
         self.assertContains(response, '<option value="蝦皮無包裝[代收]">蝦皮無包裝[代收]</option>', html=True)
 
     def test_condition_required(self):
-        response = self.save_group(reverse("orders_manage:group_create"), [{}])
+        v2 = self.new_version()
+        response = self.save_group(reverse("orders_manage:group_create", args=[v2.pk]), [{}])
         self.assertContains(response, "至少要選一組條件")
         self.assertFalse(StatGroup.objects.filter(name="測試").exists())
 
     def test_ungrouped(self):
-        StatGroup.objects.filter(name="其他平台").delete()
-        self.assertEqual(self.stats()[("未分組", "")], 2)
+        v2 = self.new_version()
+        other = v2.groups.get(name="其他平台")
+        self.client.post(reverse("orders_manage:group_delete", args=[v2.pk, other.pk]))
+        self.client.post(reverse("orders_manage:group_version_activate", args=[v2.pk]))
+        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="v2.xlsx")})
+        self.assertEqual(self.stats("v2.xlsx")[("未分組", "")], 2)
+
+    def test_cannot_activate_empty_version(self):
+        v2 = self.new_version()
+        v2.groups.all().delete()
+        self.client.post(reverse("orders_manage:group_version_activate", args=[v2.pk]))
+        v2.refresh_from_db()
+        self.assertFalse(v2.is_active)
+
+    def test_pages_render(self):
+        v2 = self.new_version()
+        self.assertContains(self.client.get(reverse("orders_manage:group_version_list")), "生效中")
+        response = self.client.get(reverse("orders_manage:group_version_detail", args=[self.v1.pk]))
+        self.assertContains(response, "14:00（00:00:00 用匯入時間）")
+        self.assertNotContains(response, "新增分組")
+        self.assertContains(self.client.get(reverse("orders_manage:group_version_detail", args=[v2.pk])), "新增分組")
+        group = v2.groups.first()
+        self.assertContains(self.client.get(reverse("orders_manage:group_edit", args=[v2.pk, group.pk])), 'value="14:00"')
 
     def test_menu_permission(self):
         self.client.login(username=make_user("lead", Level.LEADER).username, password="pw12345!")
-        self.assertEqual(self.client.get(reverse("orders_manage:group_list")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("orders_manage:group_version_list")).status_code, 403)
+        self.assertEqual(self.client.post(reverse("orders_manage:group_version_copy", args=[self.v1.pk])).status_code, 403)

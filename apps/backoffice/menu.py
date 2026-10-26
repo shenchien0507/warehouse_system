@@ -30,7 +30,7 @@ MENU = [
     MenuItem("manage-level-rules", "職級規則", "accounts_manage:level_rule_list", "帳號與權限", admin_only=True),
     MenuItem("manage-clock-setting", "上下班時間", "attendance_manage:clock_setting", "到班設定"),
     MenuItem("manage-order-import", "匯入欄位對應", "orders_manage:version_list", "訂單"),
-    MenuItem("manage-order-groups", "統計分組", "orders_manage:group_list", "訂單"),
+    MenuItem("manage-order-groups", "統計分組", "orders_manage:group_version_list", "訂單"),
 ]
 
 MENU_BY_KEY = {item.page_key: item for item in MENU}

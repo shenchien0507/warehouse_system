@@ -3,8 +3,15 @@
 {% block title %}{{ menu_item.label }}{% endblock %}
 
 {% block manage_header %}
-  {% include "backoffice/_breadcrumb.html" with current=object|default:"新增" %}
-  <h1 class="h3 mb-4">{% if object %}編輯分組：{{ object }}{% else %}新增分組{% endif %}</h1>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{% url 'backoffice:dashboard' %}">後台管理</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'orders_manage:group_version_list' %}">{{ menu_item.label }}</a></li>
+      <li class="breadcrumb-item"><a href="{{ list_url }}">{{ version }}</a></li>
+      <li class="breadcrumb-item active" aria-current="page">{{ object|default:"新增分組" }}</li>
+    </ol>
+  </nav>
+  <h1 class="h3 mb-4">{% if object %}編輯分組：{{ object }}{% else %}新增分組{% endif %}（{{ version }} 草稿）</h1>
 {% endblock %}
 
 {% block manage_content %}
