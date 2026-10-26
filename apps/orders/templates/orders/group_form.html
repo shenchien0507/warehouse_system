@@ -1,0 +1,59 @@
+{% extends "backoffice/base.html" %}
+
+{% block title %}{{ menu_item.label }}{% endblock %}
+
+{% block manage_header %}
+  {% include "backoffice/_breadcrumb.html" with current=object|default:"新增" %}
+  <h1 class="h3 mb-4">{% if object %}編輯分組：{{ object }}{% else %}新增分組{% endif %}</h1>
+{% endblock %}
+
+{% block manage_content %}
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="alert alert-danger">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>
+    {% endif %}
+    <div class="row">
+      <div class="col-lg-6">
+        {% for field in form %}{% include "components/_form_field.html" with field=field %}{% endfor %}
+      </div>
+    </div>
+
+    <h2 class="h5 mt-2">條件</h2>
+    <p class="text-muted small mb-2">
+      每一組條件裡，平台、店鋪、出貨類型都要符合；留空代表全部。符合任何一組條件就算進這個分組。
+      按住 Ctrl（Mac 是 ⌘）可以多選。選項是匯入過的資料裡出現過的值；[代收] 是不同的出貨類型，要另外選。
+    </p>
+    {{ formset.management_form }}
+    {% if formset.non_form_errors %}
+      <div class="alert alert-danger">{% for error in formset.non_form_errors %}<div>{{ error }}</div>{% endfor %}</div>
+    {% endif %}
+    {% for cform in formset %}
+      <div class="card mb-3">
+        <div class="card-body">
+          <div class="d-flex align-items-center mb-2">
+            <strong class="me-auto">條件 {{ forloop.counter }}</strong>
+            {% if cform.instance.pk %}
+              <div class="form-check">{{ cform.DELETE }} <label class="form-check-label" for="{{ cform.DELETE.id_for_label }}">刪除這組條件</label></div>
+            {% endif %}
+          </div>
+          {% for hidden in cform.hidden_fields %}{{ hidden }}{% endfor %}
+          <div class="row g-3">
+            {% for field in cform.visible_fields %}
+              {% if field.name != "DELETE" %}
+                <div class="col-md-4 wh-field{% if field.errors %} has-error{% endif %}">
+                  <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                  {{ field }}
+                  {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+    <p class="text-muted small">條件不夠用時，先儲存，再進來編輯就會多出空白的條件。</p>
+    <button type="submit" class="btn btn-primary">儲存</button>
+    <a class="btn btn-outline-secondary ms-2" href="{{ list_url }}">取消</a>
+  </form>
+{% endblock %}

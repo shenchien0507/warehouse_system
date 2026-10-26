@@ -149,3 +149,54 @@ class OrderLine(models.Model):
 
     def __str__(self):
         return f"{self.order_no} {self.product_code}"
+
+
+class StatGroup(models.Model):
+    """訂單統計的分組：符合任一條件的訂單算進這組；可設切開時間把一天分成前後兩個數字。"""
+
+    name = models.CharField("分組名稱", max_length=50, unique=True)
+    sort_order = models.PositiveIntegerField("顯示順序", default=0, help_text="數字小的排前面；同一張訂單符合多組時，算進排最前面的那組。")
+    cutoff = models.TimeField(
+        "切開時間", null=True, blank=True, help_text="例如 14:00；只看到分鐘，14:00 整（含 14:00:59）算前。留空就不分前後。"
+    )
+    midnight_uses_import_time = models.BooleanField(
+        "下單時間是 00:00:00 時用匯入時間", default=False,
+        help_text="有些平台只給日期（時間都是 00:00:00），勾選後這種訂單改用這批的匯入時間判斷前後；有實際時間的照下單時間。",
+    )
+    show_rows = models.BooleanField("另外列出非去重", default=False, help_text="非去重：有幾列就算幾張。")
+
+    class Meta:
+        verbose_name = "統計分組"
+        verbose_name_plural = "統計分組"
+        ordering = ["sort_order", "pk"]
+
+    def __str__(self):
+        return self.name
+
+
+class StatCondition(models.Model):
+    """分組的一組條件：平台、店鋪、出貨類型都要符合（空白代表全部）。"""
+
+    group = models.ForeignKey(StatGroup, verbose_name="分組", on_delete=models.CASCADE, related_name="conditions")
+    platforms = models.JSONField("交易平台", default=list, blank=True)
+    shops = models.JSONField("交易店鋪", default=list, blank=True)
+    ship_types = models.JSONField("出貨類型", default=list, blank=True)
+
+    class Meta:
+        verbose_name = "分組條件"
+        verbose_name_plural = "分組條件"
+        ordering = ["pk"]
+
+    def matches(self, platform, shop, ship_type):
+        return (
+            (not self.platforms or platform in self.platforms)
+            and (not self.shops or shop in self.shops)
+            and (not self.ship_types or ship_type in self.ship_types)
+        )
+
+    def describe(self):
+        parts = [
+            (label, values) for label, values in
+            [("平台", self.platforms), ("店鋪", self.shops), ("出貨類型", self.ship_types)] if values
+        ]
+        return "；".join(f"{label}：{'、'.join(values)}" for label, values in parts) or "全部訂單"

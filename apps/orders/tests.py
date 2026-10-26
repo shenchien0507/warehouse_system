@@ -13,7 +13,7 @@ from openpyxl import Workbook
 from apps.accounts.models import PagePermission
 from apps.accounts.testing import Level, make_user
 
-from .models import ColumnMapping, ImportBatch, MappingVersion, OrderLine
+from .models import ColumnMapping, ImportBatch, MappingVersion, OrderLine, StatGroup
 
 HEADERS = ["交易平台", "交易序號", "買家姓名", "出貨日期", "商品編號", "小計數量", "建立時間"]
 ROWS = [
@@ -232,6 +232,8 @@ STAT_ROWS = [
 
 
 class ImportStatsTests(TestCase):
+    """預設分組重現原本的規則：蝦皮無包裝、蝦皮隔日到貨分 14:00 前後，蝦皮其他不分，其他平台分 14:00 前後且 00:00:00 用匯入時間。"""
+
     def setUp(self):
         self.user = make_user("boss", Level.ADMIN)
         self.client.login(username=self.user.username, password="pw12345!")
@@ -239,9 +241,15 @@ class ImportStatsTests(TestCase):
     def upload(self, rows=STAT_ROWS, headers=STAT_HEADERS, name="今天.xlsx"):
         return self.client.post(reverse("orders:batch_list"), {"file": xlsx(headers, rows, name=name)})
 
-    def stats(self, batch):
-        response = self.client.get(reverse("orders:batch_detail", args=[batch.pk]))
-        return {(r.platform, r.ship_type, r.period): (r.distinct, r.rows if r.show_rows else None) for r in response.context["rows"]}
+    def response(self, batch):
+        return self.client.get(reverse("orders:batch_detail", args=[batch.pk]))
+
+    def stats(self, batch, keep_zero=False):
+        rows = self.response(batch).context["summary"].groups
+        return {
+            (r.name, r.period): (r.count.distinct, r.count.rows if r.show_rows else None)
+            for r in rows if keep_zero or r.count.rows
+        }
 
     def test_import_creates_batch_and_stats(self):
         response = self.upload()
@@ -249,33 +257,39 @@ class ImportStatsTests(TestCase):
         self.assertRedirects(response, reverse("orders:batch_detail", args=[batch.pk]))
         self.assertEqual((batch.file_name, batch.imported_by, batch.mapping_version.number), ("今天.xlsx", self.user, 1))
         self.assertEqual((batch.line_count, batch.order_count), (10, 7))
-        self.assertEqual(self.stats(batch), {
-            # 蝦皮無包裝：去重和非去重，也分 14:00 前後
-            ("蝦皮購物", "蝦皮無包裝", "14:00 前"): (1, 1),
-            ("蝦皮購物", "蝦皮無包裝", "14:00 後"): (1, 2),
-            ("蝦皮購物", "蝦皮無包裝[代收]", "14:00 前"): (1, 1),
-            ("蝦皮購物", "蝦皮隔日到貨", "14:00 後"): (1, None),
-            ("蝦皮購物", "蝦皮店到店", ""): (1, None),  # 其他蝦皮出貨方式只有去重、不分前後
-            ("friDay商城", "7-11", "14:00 前"): (1, None),  # 14:00:59 只看到分鐘，算 14:00 前
-            ("friDay商城", "7-11", "14:00 後"): (1, None),
+        self.assertEqual(self.stats(batch, keep_zero=True), {
+            # 蝦皮無包裝（含[代收]）：去重和非去重，分 14:00 前後
+            ("蝦皮無包裝", "14:00 前"): (2, 2),
+            ("蝦皮無包裝", "14:00 後"): (1, 2),
+            ("蝦皮隔日到貨", "14:00 前"): (0, None),  # 有切開時間的分組前後都會列出
+            ("蝦皮隔日到貨", "14:00 後"): (1, None),
+            ("蝦皮其他", ""): (1, None),
+            ("其他平台", "14:00 前"): (1, None),  # 14:00:59 只看到分鐘，算 14:00 前
+            ("其他平台", "14:00 後"): (1, None),
         })
+        details = {(r.group, r.ship_type, r.period): r.count.distinct for r in self.response(batch).context["summary"].details}
+        self.assertEqual(details[("蝦皮無包裝", "蝦皮無包裝[代收]", "14:00 前")], 1)
 
     def test_each_batch_counted_alone(self):
         self.upload()
         self.upload(STAT_ROWS[:2], name="補單.xlsx")
         second = ImportBatch.objects.get(file_name="補單.xlsx")
-        self.assertEqual(self.stats(second), {("蝦皮購物", "蝦皮無包裝", "14:00 後"): (1, 2)})
+        self.assertEqual(self.stats(second), {("蝦皮無包裝", "14:00 後"): (1, 2)})
         self.assertEqual(ImportBatch.objects.get(file_name="今天.xlsx").order_count, 7)
 
     def test_any_error_rejects_whole_file(self):
-        rows = STAT_ROWS + [["蝦皮購物", "", "蝦皮店到店", "A", ""], ["friDay商城", 7, "7-11", "A", ""], ["蝦皮購物", 8, "蝦皮店到店", "A", "明天"], ["蝦皮購物", 13, "蝦皮隔日到貨[代收]", "A", ""]]
+        rows = STAT_ROWS + [["蝦皮購物", "", "蝦皮店到店", "A", ""], ["蝦皮購物", 8, "蝦皮店到店", "A", "明天"]]
         response = self.upload(rows)
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "有 4 列資料有問題，整份沒有匯入")
+        self.assertContains(response, "有 2 列資料有問題，整份沒有匯入")
         errors = response.context["outcome"].errors
-        self.assertEqual([(row_no, label) for row_no, label, _, _ in errors], [(12, "訂單號"), (13, "下單時間"), (14, "下單時間"), (15, "下單時間")])
+        self.assertEqual([(row_no, label) for row_no, label, _, _ in errors], [(12, "訂單號"), (13, "下單時間")])
         self.assertFalse(ImportBatch.objects.exists())
         self.assertFalse(OrderLine.objects.exists())
+
+    def test_blank_order_time_listed_separately(self):
+        self.upload([["friDay商城", 7, "7-11", "A", ""]])
+        self.assertEqual(self.stats(ImportBatch.objects.get()), {("其他平台", "沒有下單時間"): (1, None)})
 
     def test_missing_order_no_column(self):
         response = self.upload(headers=["交易平台", "訂單編號", "出貨類型", "商品編號", "建立時間"])
@@ -296,19 +310,76 @@ class ImportStatsTests(TestCase):
         PagePermission.objects.create(page_key="order-stats", label="訂單統計", min_level=Level.STAFF)
         self.assertContains(self.client.get(reverse("orders:batch_list")), "還沒有匯入過")
 
+    def upload_at(self, clock, rows):
+        hour, minute = map(int, clock.split(":"))
+        now = timezone.make_aware(datetime(2026, 10, 26, hour, minute, 30))
+        with mock.patch("django.utils.timezone.now", return_value=now):
+            self.upload(rows, name=f"{clock}.xlsx")
+        return ImportBatch.objects.get(file_name=f"{clock}.xlsx")
+
     def test_date_only_order_time_uses_import_time(self):
         rows = [["friDay商城", 9, "7-11", "A", "2026/08/07 00:00:00"], ["friDay商城", 10, "7-11", "A", "2026/08/07"], ["friDay商城", 11, "7-11", "A", "2026/08/07 16:30:00"]]
-        for clock, expected in [("13:00", "14:00 前"), ("14:00", "14:00 前"), ("15:00", "14:00 後")]:
-            hour, minute = map(int, clock.split(":"))
-            now = timezone.make_aware(datetime(2026, 10, 26, hour, minute, 30))
-            with mock.patch("django.utils.timezone.now", return_value=now):
-                self.upload(rows, name=f"{clock}.xlsx")
-            batch = ImportBatch.objects.get(file_name=f"{clock}.xlsx")
-            stats = self.stats(batch)
+        for clock, expected in [("13:00", {"14:00 前": 2, "14:00 後": 1}), ("14:00", {"14:00 前": 2, "14:00 後": 1}), ("15:00", {"14:00 後": 3})]:
+            batch = self.upload_at(clock, rows)
             # 00:00:00 的兩張依匯入時間；有實際時間的照下單時間（16:30 → 14:00 後）
-            if expected == "14:00 前":
-                self.assertEqual(stats, {("friDay商城", "7-11", "14:00 前"): (2, None), ("friDay商城", "7-11", "14:00 後"): (1, None)})
-            else:
-                self.assertEqual(stats, {("friDay商城", "7-11", "14:00 後"): (3, None)})
-            response = self.client.get(reverse("orders:batch_detail", args=[batch.pk]))
-            self.assertContains(response, f"有 2 張訂單的下單時間是 00:00:00，依匯入時間 {clock} 算在\n      {expected}")
+            self.assertEqual(self.stats(batch), {("其他平台", p): (n, None) for p, n in expected.items()})
+            self.assertContains(self.response(batch), f"有 2 張訂單的下單時間是 00:00:00，依匯入時間 {clock} 判斷前後")
+
+    def test_midnight_rule_is_per_group(self):
+        group = StatGroup.objects.get(name="其他平台")
+        group.midnight_uses_import_time = False
+        group.save()
+        batch = self.upload_at("15:00", [["friDay商城", 9, "7-11", "A", "2026/08/07 00:00:00"]])
+        self.assertEqual(self.stats(batch), {("其他平台", "14:00 前"): (1, None)})  # 沒勾：00:00 照資料算
+
+
+class StatGroupTests(TestCase):
+    def setUp(self):
+        self.client.login(username=make_user("boss", Level.ADMIN).username, password="pw12345!")
+        self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS)})
+        self.batch = ImportBatch.objects.get()
+
+    def save_group(self, url, conditions, **fields):
+        data = {
+            "name": "測試", "sort_order": 5, "cutoff": "", "conditions-TOTAL_FORMS": len(conditions),
+            "conditions-INITIAL_FORMS": 0, "conditions-MIN_NUM_FORMS": 0, "conditions-MAX_NUM_FORMS": 1000, **fields,
+        }
+        for i, condition in enumerate(conditions):
+            for key, values in condition.items():
+                data[f"conditions-{i}-{key}"] = values
+        return self.client.post(url, data)
+
+    def stats(self):
+        rows = self.client.get(reverse("orders:batch_detail", args=[self.batch.pk])).context["summary"].groups
+        return {(r.name, r.period): r.count.distinct for r in rows if r.count.rows}
+
+    def test_create_group_with_own_cutoff_typed_without_colon(self):
+        response = self.save_group(
+            reverse("orders_manage:group_create"), [{"platforms": ["friDay商城"]}, {"ship_types": ["蝦皮隔日到貨"]}],
+            name="中午切", cutoff="1430",
+        )
+        self.assertRedirects(response, reverse("orders_manage:group_list"))
+        group = StatGroup.objects.get(name="中午切")
+        self.assertEqual(group.cutoff.strftime("%H:%M"), "14:30")
+        self.assertEqual([c.describe() for c in group.conditions.all()], ["平台：friDay商城", "出貨類型：蝦皮隔日到貨"])
+        # 順序 5 排最前面：friDay 和隔日到貨都算進這組，依 14:30 切開
+        stats = self.stats()
+        self.assertEqual(stats[("中午切", "14:30 前")], 2)  # friDay 14:00、隔日到貨不符（20:00）→ 只有 friDay 5、6
+        self.assertNotIn(("其他平台", "14:00 前"), stats)
+
+    def test_options_come_from_imported_data(self):
+        response = self.client.get(reverse("orders_manage:group_create"))
+        self.assertContains(response, '<option value="蝦皮無包裝[代收]">蝦皮無包裝[代收]</option>', html=True)
+
+    def test_condition_required(self):
+        response = self.save_group(reverse("orders_manage:group_create"), [{}])
+        self.assertContains(response, "至少要選一組條件")
+        self.assertFalse(StatGroup.objects.filter(name="測試").exists())
+
+    def test_ungrouped(self):
+        StatGroup.objects.filter(name="其他平台").delete()
+        self.assertEqual(self.stats()[("未分組", "")], 2)
+
+    def test_menu_permission(self):
+        self.client.login(username=make_user("lead", Level.LEADER).username, password="pw12345!")
+        self.assertEqual(self.client.get(reverse("orders_manage:group_list")).status_code, 403)

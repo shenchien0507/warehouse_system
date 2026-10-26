@@ -6,11 +6,18 @@ from apps.accounts.models import Station
 from .models import ClockSetting, EventKind
 
 
+TIME_FORMATS = ["%H:%M", "%H%M"]  # 畫面上冒號是固定的；沒有 JavaScript 時直接打 1400 也可以
+
+
 def time_input():
-    """24 小時制的時間欄位（瀏覽器內建的時間選擇器可能顯示上午／下午，所以用文字輸入 HH:MM）。"""
+    """24 小時制的時間欄位（瀏覽器內建的時間選擇器可能顯示上午／下午，所以用文字輸入 HH:MM）。
+    static/js/base.js 讓格子固定顯示 __:__，只要打數字。"""
     return forms.TimeInput(
         format="%H:%M",
-        attrs={"placeholder": "HH:MM", "pattern": r"([01]?\d|2[0-3]):[0-5]\d", "inputmode": "numeric", "maxlength": 5, "autocomplete": "off"},
+        attrs={
+            "placeholder": "HH:MM", "inputmode": "numeric", "maxlength": 5,
+            "autocomplete": "off", "data-time24": "",
+        },
     )
 
 
@@ -18,8 +25,8 @@ class EventForm(forms.Form):
     """補登一筆紀錄（上班、下班、請假、缺勤），可指定時間。"""
 
     kind = forms.ChoiceField(label="類型", choices=EventKind.choices)
-    time = forms.TimeField(label="時間", required=False, input_formats=["%H:%M"], widget=time_input())
-    end_time = forms.TimeField(label="請假到", required=False, input_formats=["%H:%M"], widget=time_input())
+    time = forms.TimeField(label="時間", required=False, input_formats=TIME_FORMATS, widget=time_input())
+    end_time = forms.TimeField(label="請假到", required=False, input_formats=TIME_FORMATS, widget=time_input())
     note = forms.CharField(label="原因／備註", max_length=200, required=False)
 
     def clean(self):
@@ -72,4 +79,4 @@ class ClockSettingForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for name in ("work_start", "work_end"):
-            self.fields[name].input_formats = ["%H:%M"]
+            self.fields[name].input_formats = TIME_FORMATS

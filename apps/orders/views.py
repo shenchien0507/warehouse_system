@@ -2,6 +2,7 @@
 「訂單統計」：匯入檔案，每一批獨立統計。"""
 
 from django.contrib import messages
+from django.db import transaction
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -13,10 +14,10 @@ from apps.backoffice.menu import MENU_BY_KEY, can_use
 from apps.backoffice.views import ManageDeleteView, ManageListView, ManageMixin
 
 from .batches import import_file
-from .forms import CheckFileForm, ImportForm, MappingForm, UploadForm
+from .forms import CheckFileForm, ConditionFormSet, ImportForm, MappingForm, StatGroupForm, UploadForm
 from .importer import ImportFileError, inspect, read_headers
-from .models import ImportBatch, MappingVersion
-from .stats import batch_stats, cutoff_period
+from .models import ImportBatch, MappingVersion, StatGroup
+from .stats import batch_stats
 
 
 def localtime_text(value):
@@ -223,10 +224,9 @@ class BatchDetailView(StatsPageMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         summary = batch_stats(self.object)
-        context["rows"] = summary.rows
+        context["summary"] = summary
         context["by_import_time"] = len(summary.by_import_time)
-        context["import_period"] = cutoff_period(self.object.imported_at)
-        context["total_distinct"] = self.object.order_count
+        context["groups"] = StatGroup.objects.prefetch_related("conditions")
         return context
 
 
@@ -239,3 +239,87 @@ class BatchDeleteView(StatsPageMixin, View):
         batch.delete()
         messages.success(request, f"已刪除匯入批次 {name}。")
         return redirect("orders:batch_list")
+
+
+class GroupMixin:
+    model = StatGroup
+    page_key = "manage-order-groups"
+    list_url_name = "orders_manage:group_list"
+
+
+def describe_cutoff(group):
+    if not group.cutoff:
+        return "不分"
+    text = group.cutoff.strftime("%H:%M")
+    return f"{text}（00:00:00 用匯入時間）" if group.midnight_uses_import_time else text
+
+
+class GroupList(GroupMixin, ManageListView):
+    queryset = StatGroup.objects.prefetch_related("conditions")
+    paginate_by = None
+    columns = [
+        ("順序", "sort_order"),
+        ("分組名稱", "name"),
+        ("條件", lambda o: " ／ ".join(c.describe() for c in o.conditions.all())),
+        ("切開時間", describe_cutoff),
+        ("非去重", "show_rows"),
+    ]
+    create_url_name = "orders_manage:group_create"
+    edit_url_name = "orders_manage:group_edit"
+    delete_url_name = "orders_manage:group_delete"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["note"] = (
+            "訂單統計依這裡的分組列出數字。條件裡的平台、店鋪、出貨類型留空代表全部；一組可以有好幾組條件，符合任一組就算進來。"
+            "同一張訂單符合多組時算進順序最前面的那組，都不符合的列在「未分組」。改了分組，舊的匯入批次也會照新設定重算。"
+        )
+        return context
+
+
+class GroupFormView(GroupMixin, ManageMixin, FormView):
+    """分組本身的欄位和底下的條件一起存。"""
+
+    template_name = "orders/group_form.html"
+    form_class = StatGroupForm
+    object = None
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["instance"] = self.object
+        return kwargs
+
+    def get_formset(self):
+        data = self.request.POST if self.request.method == "POST" else None
+        return ConditionFormSet(data, instance=self.object or StatGroup(), prefix="conditions")
+
+    def post(self, request, *args, **kwargs):
+        form, formset = self.get_form(), self.get_formset()
+        if form.is_valid() and formset.is_valid():
+            with transaction.atomic():
+                group = form.save()
+                formset.instance = group
+                formset.save()
+            messages.success(request, f"已儲存分組「{group}」。")
+            return redirect(self.list_url_name)
+        return self.render_to_response(self.get_context_data(form=form, formset=formset))
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["object"] = self.object
+        context["formset"] = kwargs.get("formset") or self.get_formset()
+        return context
+
+
+class GroupCreate(GroupFormView):
+    pass
+
+
+class GroupUpdate(GroupFormView):
+    def dispatch(self, request, *args, **kwargs):
+        self.object = get_object_or_404(StatGroup, pk=kwargs["pk"])
+        return super().dispatch(request, *args, **kwargs)
+
+
+class GroupDelete(GroupMixin, ManageDeleteView):
+    pass
