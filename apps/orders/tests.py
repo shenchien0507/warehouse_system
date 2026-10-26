@@ -286,6 +286,24 @@ class ImportStatsTests(TestCase):
         self.assertFalse(ImportBatch.objects.exists())
         self.assertFalse(OrderLine.objects.exists())
 
+    def test_split_by_order_date(self):
+        self.upload([
+            ["friDay商城", 1, "7-11", "A", "2026/08/07 09:00:00"],
+            ["friDay商城", 2, "7-11", "A", "2026/08/08 09:00:00"],
+            ["friDay商城", 3, "7-11", "A", "2026/08/08 15:00:00"],
+            ["friDay商城", 4, "7-11", "A", ""],
+        ])
+        summary = self.response(ImportBatch.objects.get()).context["summary"]
+        self.assertEqual(
+            [(r.date and r.date.isoformat(), r.name, r.period, r.count.distinct) for r in summary.groups],
+            [("2026-08-07", "其他平台", "14:00 前", 1), ("2026-08-08", "其他平台", "14:00 前", 1),
+             ("2026-08-08", "其他平台", "14:00 後", 1), (None, "其他平台", "沒有下單時間", 1)],
+        )
+        self.assertEqual([(d and d.isoformat(), n) for d, n, _ in summary.by_day], [("2026-08-07", 1), ("2026-08-08", 2), (None, 1)])
+        response = self.response(ImportBatch.objects.get())
+        self.assertContains(response, "當天 2 張")
+        self.assertContains(response, "沒有日期")
+
     def test_blank_order_time_listed_separately(self):
         self.upload([["friDay商城", 7, "7-11", "A", ""]])
         self.assertEqual(self.stats(ImportBatch.objects.get()), {("其他平台", "沒有下單時間"): (1, None)})
