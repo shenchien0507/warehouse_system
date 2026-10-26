@@ -261,7 +261,6 @@ class ImportStatsTests(TestCase):
             # 蝦皮無包裝（含[代收]）：去重和非去重，分 14:00 前後
             ("蝦皮無包裝", "14:00 前"): (2, 2),
             ("蝦皮無包裝", "14:00 後"): (1, 2),
-            ("蝦皮隔日到貨", "14:00 前"): (0, None),  # 有切開時間的分組前後都會列出
             ("蝦皮隔日到貨", "14:00 後"): (1, None),
             ("蝦皮其他", ""): (1, None),
             ("其他平台", "14:00 前"): (1, None),  # 14:00:59 只看到分鐘，算 14:00 前
@@ -480,6 +479,9 @@ class StatGroupTests(TestCase):
         self.assertContains(response, "平台：MOMO")
         self.assertContains(response, "修改這組條件")
         self.assertContains(response, '<div class="row g-3" data-options hidden>', html=False)  # 已存的條件
+        self.assertEqual(len(response.context["formset"].forms), 1)  # 編輯時不自動多一組空白條件
+        response = self.client.get(reverse("orders_manage:group_create", args=[v2.pk]))
+        self.assertEqual(len(response.context["formset"].forms), 1)  # 新增分組先給一組空白條件
         self.assertContains(response, '<div class="row g-3" data-options>', html=False)  # 空白的條件可直接勾
 
     def test_cannot_change_source_of_locked_version(self):

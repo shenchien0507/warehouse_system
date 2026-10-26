@@ -89,7 +89,7 @@ class DetailRow:
 
 @dataclass
 class Summary:
-    groups: list  # GroupRow，依分組順序；有切開時間的分組一定列出前、後兩列
+    groups: list  # GroupRow，依分組順序；0 張的不列
     details: list  # DetailRow：分組 × 平台 × 店鋪 × 出貨類型 × 時段，供核對
     by_import_time: set  # 改用匯入時間判斷前後的訂單號
     total: int  # 全部訂單數（去重）
@@ -99,9 +99,6 @@ def summarize(lines, imported_at, groups):
     """lines：[(平台, 店鋪, 出貨類型, 下單時間, 訂單號)]；groups：依順序排好的 StatGroup（含 conditions）。"""
     groups = list(groups)
     table = {}
-    for group in groups:
-        for p in labels(group.cutoff) if group.cutoff else [""]:
-            table[(group.name, p)] = GroupRow(group.name, p, group.show_rows)
     details = {}
     by_import_time, everyone = set(), set()
     for platform, shop, ship_type, order_time, order_no in lines:

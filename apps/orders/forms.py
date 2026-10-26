@@ -110,6 +110,11 @@ class StatConditionForm(forms.ModelForm):
 
 
 class BaseConditionFormSet(forms.BaseInlineFormSet):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk and self.instance.conditions.exists():
+            self.extra = 0  # 編輯已有條件的分組不自動多一組空白，要加再按「新增一組條件」
+
     def get_form_kwargs(self, index):
         kwargs = super().get_form_kwargs(index)
         kwargs["combos"] = self.instance.version.source_combos
