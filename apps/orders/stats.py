@@ -2,7 +2,8 @@
 
 - 去重：同一個訂單號只算 1。非去重：有幾列就算幾張（分組勾選「另外列出非去重」才顯示）。
 - 每批有「作業日」（預設匯入那天）。作業日之前的訂單都算進作業日的切開時間前（跨日累計），
-  作業日當天的依下單時間分前後；頁面另外依下單日期列出每天的數字供核對，沒有下單時間的列「沒有日期」。
+  作業日當天的依下單時間分前後；沒有切開時間的分組則一天一列。
+  頁面另外依下單日期列出每天的數字供核對，沒有下單時間的列「沒有日期」。
 - 訂單依後台「統計分組」的條件歸組，符合多組時算進排最前面的那組；都不符合的列在「未分組」。
 - 分組有切開時間時，依下單時間分成前、後兩個數字；只看到分鐘，切開時間整分（含 59 秒）算前。
   分組勾選「下單時間是 00:00:00 時用匯入時間」時，作業日當天這種只有日期的訂單改用這批的匯入時間（時:分）判斷。
@@ -111,7 +112,7 @@ class DetailRow:
 
 @dataclass
 class Summary:
-    groups: list  # GroupRow：作業日跨日合計，依分組順序；0 張的不列
+    groups: list  # GroupRow：作業日跨日合計（沒切時間的分組一天一列），排序見 main_order；0 張的不列
     daily: list  # GroupRow：依下單日期分開，依日期、分組順序
     details: list  # DetailRow：日期 × 分組 × 平台 × 店鋪 × 出貨類型 × 時段，供核對
     days: dict  # 日期 → 當天訂單數（去重），依日期排
@@ -122,6 +123,17 @@ class Summary:
     def by_day(self):
         """[(日期, 當天訂單數, 當天的 GroupRow)]，給頁面一天一段顯示。"""
         return [(day, count, [r for r in self.daily if r.date == day]) for day, count in self.days.items()]
+
+
+def main_order(row, rank, by_day):
+    """主表排序：先全部的「前」（跨日累計），再全部的「後」，再來沒切時間的分組依日期一天一天排，最後沒有下單時間、未分組。"""
+    if row.period.endswith(" 前"):
+        return (0, rank(row.name))
+    if row.period.endswith(" 後"):
+        return (1, rank(row.name))
+    if row.period == "" and row.name != UNGROUPED:
+        return (2, by_day(row.date), rank(row.name))
+    return (3, rank(row.name), row.period)
 
 
 def summarize(lines, imported_at, groups, work_date=None):
@@ -140,7 +152,8 @@ def summarize(lines, imported_at, groups, work_date=None):
         day = order_date(order_time)
         if uses_import_time(group, order_time, work_date):
             by_import_time.add(order_no)
-        for rows, key in ((table, (None, name, p)), (daily, (day, name, p))):
+        split_by_day = group is not None and group.cutoff is None  # 沒切時間的分組一天一列
+        for rows, key in ((table, (day if split_by_day else None, name, p)), (daily, (day, name, p))):
             row = rows.get(key)
             if row is None:
                 row = rows[key] = GroupRow(*key, show_rows)
@@ -156,7 +169,7 @@ def summarize(lines, imported_at, groups, work_date=None):
     rank = lambda name: order.get(name, len(order))  # 未分組排最後
     by_day = lambda day: (day is None, day or date.min)  # 沒有日期排最後
     return Summary(
-        groups=sorted(table.values(), key=lambda r: (rank(r.name), r.period == NO_TIME, r.period)),
+        groups=sorted(table.values(), key=lambda r: main_order(r, rank, by_day)),
         daily=sorted(daily.values(), key=lambda r: (by_day(r.date), rank(r.name), r.period == NO_TIME, r.period)),
         details=sorted(details.values(), key=lambda r: (by_day(r.date), rank(r.group), r.platform, r.shop, r.ship_type, r.period)),
         days={day: len(per_day[day]) for day in sorted(per_day, key=by_day)},
