@@ -52,7 +52,8 @@ class TemplateEditTests(OrderImportTestCase):
         mappings = {m.field: m.source_column for m in self.template.mappings.all()}
         self.assertEqual(mappings["order_no"], "交易序號")
         self.assertEqual(mappings["quantity"], "小計數量")
-        self.assertNotIn("buyer_name", mappings)
+        self.assertEqual(len(mappings), 12)
+        self.assertNotIn("delivery_status", mappings)
 
     def test_create_saves_only_filled_mappings(self):
         response = self.client.post(reverse("orders_manage:template_create"), form_data(src_quantity=" 數量 ", req_quantity="on"))

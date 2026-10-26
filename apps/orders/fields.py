@@ -1,7 +1,7 @@
 """系統自己的訂單欄位：匯入時來源檔的欄名都對應到這些欄位。
 
 來源檔改欄名只要到後台「匯入欄位對應」改對應，不用改這裡；要讓系統多記一種資料才在 FIELDS 加一筆。
-買家姓名、電話、地址刻意不列，系統不保存個資。"""
+只列系統用得到的資料：買家個資、發票、金額、配送狀態、備註都不列，匯入時也不保存。"""
 
 from dataclasses import dataclass
 
@@ -30,7 +30,6 @@ FIELDS = [
     OrderField("product_name", "商品名稱", "text"),
     OrderField("product_spec", "商品樣式", "text"),
     OrderField("quantity", "數量", "int"),
-    OrderField("delivery_status", "配送狀態", "text"),
 ]
 
 FIELDS_BY_KEY = {f.key: f for f in FIELDS}
