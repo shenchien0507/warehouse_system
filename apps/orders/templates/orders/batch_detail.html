@@ -25,7 +25,7 @@
     <div class="alert alert-info py-2">作業日當天有 {{ by_import_time }} 張訂單的下單時間是 00:00:00，依匯入時間 {{ batch.imported_at|date:"H:i" }} 判斷前後。</div>
   {% endif %}
 
-  <h2 class="h5">作業日 {{ batch.work_date|date:"Y/m/d（D）" }}{% if first_day %}<span class="text-muted small fw-normal ms-2">訂單日期 {{ first_day|date:"m/d" }}{% if last_day != first_day %}–{{ last_day|date:"m/d" }}{% endif %}</span>{% endif %}</h2>
+  <h2 class="h5">作業日 {{ batch.work_date|date:"Y/m/d" }}{% if first_day %}<span class="text-muted small fw-normal ms-2">訂單日期 {{ first_day|date:"m/d" }}{% if last_day != first_day %}–{{ last_day|date:"m/d" }}{% endif %}</span>{% endif %}</h2>
   <div class="table-responsive">
     <table class="table table-striped align-middle" id="group-table">
       <thead class="table-light">
@@ -35,7 +35,7 @@
         {% for row in summary.groups %}
           <tr{% if row.name == "未分組" %} class="table-warning"{% endif %}>
             <td>{{ row.name }}</td>
-            <td>{% if row.date %}{{ row.date|date:"m/d（D）" }}{% else %}{{ row.period|default:"—" }}{% endif %}</td>
+            <td>{% if row.date %}{{ row.date|date:"m/d" }}{% elif row.period %}{% if row.dates %}{{ row.dates }} {% endif %}{{ row.period }}{% else %}—{% endif %}</td>
             <td class="text-end fw-bold fs-5">{{ row.count.distinct }}</td>
             <td class="text-end">{% if row.show_rows %}{{ row.count.rows }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
           </tr>
@@ -57,7 +57,7 @@
         {% for day, day_total, rows in summary.by_day %}
         <tbody>
           <tr class="table-secondary" data-day>
-            <th colspan="2">{% if day %}{{ day|date:"Y/m/d（D）" }}{% else %}沒有日期{% endif %}</th>
+            <th colspan="2">{% if day %}{{ day|date:"Y/m/d" }}{% else %}沒有日期{% endif %}</th>
             <th class="text-end">當天 {{ day_total }} 張</th><th></th>
           </tr>
           {% for row in rows %}

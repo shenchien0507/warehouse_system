@@ -329,7 +329,7 @@ class ImportStatsTests(TestCase):
         self.assertContains(self.response(batch), "作業日當天有 1 張訂單的下單時間是 00:00:00")
 
     def test_main_table_order(self):
-        """主表：全部的 14:00 前 → 全部的 14:00 後 → 沒切時間的分組一天一列、依日期排。"""
+        """主表：全部的 14:00 前 → 作業日之前沒切時間的（依日期）→ 全部的 14:00 後 → 作業日當天沒切時間的。"""
         self.upload([
             ["蝦皮購物", 1, "蝦皮店到店", "A", "2026/10/05 09:00:00"],
             ["蝦皮購物", 2, "蝦皮店到店", "A", "2026/10/03 20:00:00"],
@@ -338,15 +338,17 @@ class ImportStatsTests(TestCase):
             ["friDay商城", 5, "7-11", "A", "2026/10/05 16:00:00"],
             ["friDay商城", 6, "7-11", "A", "2026/10/02 16:00:00"],
         ], work_date="2026-10-05")
-        rows = self.response(ImportBatch.objects.get()).context["summary"].groups
-        self.assertEqual([(r.name, r.period or r.date.isoformat(), r.count.distinct) for r in rows], [
-            ("蝦皮無包裝", "14:00 前", 1),
-            ("其他平台", "14:00 前", 1),
-            ("蝦皮無包裝", "14:00 後", 1),
-            ("其他平台", "14:00 後", 1),
-            ("蝦皮其他", "2026-10-03", 1),
-            ("蝦皮其他", "2026-10-05", 1),
+        response = self.response(ImportBatch.objects.get())
+        rows = response.context["summary"].groups
+        self.assertEqual([(r.name, r.period or r.date.isoformat(), r.dates, r.count.distinct) for r in rows], [
+            ("蝦皮無包裝", "14:00 前", "10/04", 1),
+            ("其他平台", "14:00 前", "10/02", 1),
+            ("蝦皮其他", "2026-10-03", "10/03", 1),  # 作業日之前沒切時間的，接在「前」後面
+            ("蝦皮無包裝", "14:00 後", "10/05", 1),
+            ("其他平台", "14:00 後", "10/05", 1),
+            ("蝦皮其他", "2026-10-05", "10/05", 1),  # 作業日當天沒切時間的，最後
         ])
+        self.assertContains(response, "<td>10/05 14:00 後</td>", html=True)
 
     def test_work_date_defaults_to_today(self):
         self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS)})
