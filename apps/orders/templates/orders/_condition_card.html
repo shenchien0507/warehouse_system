@@ -1,0 +1,39 @@
+{# 一組條件的卡片：cform 是條件表單，number 是畫面上的編號 #}
+<div class="card mb-3" data-condition>
+  <div class="card-body">
+    <div class="d-flex align-items-center mb-2">
+      <strong class="me-auto">條件 {{ number }}</strong>
+      {% if cform.instance.pk %}
+        <div class="form-check">{{ cform.DELETE }} <label class="form-check-label" for="{{ cform.DELETE.id_for_label }}">刪除這組條件</label></div>
+      {% endif %}
+    </div>
+    {% for hidden in cform.hidden_fields %}{{ hidden }}{% endfor %}
+    {% if cform.instance.pk and not cform.errors %}
+      {# 已存的條件先鎖住，避免換了來源檔後改到；要改才展開 #}
+      <div class="d-flex flex-wrap align-items-center gap-2" data-locked>
+        <span class="me-auto">{{ cform.instance.describe }}</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                onclick="const card = this.closest('[data-condition]'); card.querySelector('[data-options]').hidden = false; this.closest('[data-locked]').remove();">修改這組條件</button>
+      </div>
+    {% endif %}
+    <div class="row g-3" data-options{% if cform.instance.pk and not cform.errors %} hidden{% endif %}>
+      {% for field in cform.visible_fields %}
+        {% if field.name != "DELETE" %}
+          <div class="col-md-4">
+            <div class="form-label">{{ field.label }}</div>
+            <div class="border rounded p-2 condition-options" data-field="{{ field.name }}" style="max-height: 14rem; overflow-y: auto">
+              {% for option in field %}
+                <div class="form-check" data-value="{{ option.data.value }}">
+                  {{ option.tag }}
+                  <label class="form-check-label" for="{{ option.id_for_label }}">{{ option.choice_label }}</label>
+                </div>
+              {% endfor %}
+              <div class="text-muted small none-left" hidden>選到的平台／店鋪沒有可選的項目</div>
+            </div>
+            {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+</div>

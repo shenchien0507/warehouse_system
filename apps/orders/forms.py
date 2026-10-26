@@ -124,5 +124,5 @@ class BaseConditionFormSet(forms.BaseInlineFormSet):
 
 
 ConditionFormSet = forms.inlineformset_factory(
-    StatGroup, StatCondition, form=StatConditionForm, formset=BaseConditionFormSet, extra=2, can_delete=True,
+    StatGroup, StatCondition, form=StatConditionForm, formset=BaseConditionFormSet, extra=1, can_delete=True,
 )
