@@ -101,3 +101,51 @@ class ColumnMapping(models.Model):
 
     def __str__(self):
         return f"{self.get_field_display()} ← {self.source_column}"
+
+
+class ImportBatch(models.Model):
+    """匯入一份檔案就是一批；訂單統計一批一批獨立計算，不同批之間不合併、不去重。"""
+
+    file_name = models.CharField("檔名", max_length=200)
+    imported_at = models.DateTimeField("匯入時間", auto_now_add=True)
+    imported_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="匯入人", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    mapping_version = models.ForeignKey(MappingVersion, verbose_name="欄位對應版本", on_delete=models.PROTECT, related_name="batches")
+    line_count = models.PositiveIntegerField("商品列數", default=0)
+    order_count = models.PositiveIntegerField("訂單數", default=0)
+
+    class Meta:
+        verbose_name = "匯入批次"
+        verbose_name_plural = "匯入批次"
+        ordering = ["-imported_at", "-pk"]
+
+    def __str__(self):
+        return f"#{self.pk} {self.file_name}"
+
+
+class OrderLine(models.Model):
+    """來源檔的一列（一個商品），欄位就是 fields.FIELDS，只存系統用得到的資料。"""
+
+    batch = models.ForeignKey(ImportBatch, verbose_name="匯入批次", on_delete=models.CASCADE, related_name="lines")
+    row_no = models.PositiveIntegerField("來源檔第幾列")
+    order_no = models.CharField("訂單號", max_length=100)
+    platform_order_no = models.CharField("平台訂單編號", max_length=100, blank=True)
+    platform = models.CharField("平台", max_length=100, blank=True)
+    shop = models.CharField("店鋪", max_length=100, blank=True)
+    order_time = models.DateTimeField("下單時間", null=True, blank=True)
+    ship_time = models.DateTimeField("出貨時間", null=True, blank=True)
+    ship_type = models.CharField("出貨方式", max_length=100, blank=True)
+    shipment_no = models.CharField("出貨單號", max_length=100, blank=True)
+    product_code = models.CharField("商品編號", max_length=100, blank=True)
+    product_name = models.CharField("商品名稱", max_length=300, blank=True)
+    product_spec = models.CharField("商品樣式", max_length=300, blank=True)
+    quantity = models.IntegerField("數量", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "訂單商品列"
+        verbose_name_plural = "訂單商品列"
+        indexes = [models.Index(fields=["batch", "order_no"])]
+
+    def __str__(self):
+        return f"{self.order_no} {self.product_code}"

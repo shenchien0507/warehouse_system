@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}訂單統計{% endblock %}
+
+{% block page_header %}
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <h1 class="h3 mb-0 me-auto">訂單統計：{{ batch.file_name }}</h1>
+    <a class="btn btn-outline-secondary" href="{% url 'orders:batch_list' %}">回匯入紀錄</a>
+    <form method="post" action="{% url 'orders:batch_delete' batch.pk %}" onsubmit="return confirm('確定刪除這一批匯入？統計也會一起刪掉。');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-danger">刪除這批</button>
+    </form>
+  </div>
+  <p class="text-muted small mb-3">
+    {{ batch.imported_at|date:"Y/m/d H:i" }} 由 {{ batch.imported_by.name|default:"（已刪除的帳號）" }} 匯入，欄位對應 {{ batch.mapping_version }}，
+    共 {{ batch.line_count }} 列、{{ batch.order_count }} 張訂單。
+  </p>
+{% endblock %}
+
+{% block content %}
+  <p class="small text-muted">
+    去重：同一個訂單號只算 1 張。非去重：有幾列就算幾張，只有蝦皮無包裝（含[代收]）列出。
+    不是蝦皮購物的訂單，以及蝦皮隔日到貨、蝦皮無包裝（含[代收]），依下單時間分 14:00 前（含 14:00 整）、14:00 後；下單時間是 00:00:00（只有日期）的，用匯入時間判斷。
+  </p>
+  {% if by_import_time %}
+    <div class="alert alert-info py-2">
+      有 {{ by_import_time }} 張訂單的下單時間是 00:00:00，依匯入時間 {{ batch.imported_at|date:"H:i" }} 算在
+      {{ import_period }}。
+    </div>
+  {% endif %}
+  <div class="table-responsive">
+    <table class="table table-striped align-middle" id="stats-table">
+      <thead class="table-light">
+        <tr><th>平台</th><th>出貨方式</th><th>時段</th><th class="text-end">訂單數（去重）</th><th class="text-end">訂單數（非去重）</th></tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.platform|default:"（空白）" }}</td>
+            <td>{{ row.ship_type|default:"（空白）" }}</td>
+            <td>{{ row.period|default:"—" }}</td>
+            <td class="text-end fw-bold">{{ row.distinct }}</td>
+            <td class="text-end">{% if row.show_rows %}{{ row.rows }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="table-light"><th colspan="3">全部（去重）</th><th class="text-end">{{ total_distinct }}</th><th></th></tr>
+      </tfoot>
+    </table>
+  </div>
+{% endblock %}

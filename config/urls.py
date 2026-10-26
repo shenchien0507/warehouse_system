@@ -25,6 +25,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),  # 僅供緊急備用，平常請用 /manage/
     path("accounts/", include("apps.accounts.urls")),
     path("attendance/", include("apps.attendance.urls")),
+    path("orders/", include("apps.orders.urls")),
     path("manage/", include("apps.backoffice.urls")),
     path("manage/accounts/", include("apps.accounts.manage_urls")),
     path("manage/personnel/", include("apps.personnel.urls")),

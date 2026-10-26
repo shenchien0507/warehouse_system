@@ -1,4 +1,4 @@
-"""讀取來源檔（xlsx、csv），依欄位對應版本轉成系統欄位。目前只用來檢查對應，不存訂單。"""
+"""讀取來源檔（xlsx、csv），依欄位對應版本轉成系統欄位：inspect 給版本頁試讀，read_lines 給匯入整份讀完。"""
 
 import csv
 import io
@@ -144,9 +144,8 @@ def read_headers(uploaded, header_row):
     return list(dict.fromkeys(h for h in headers if h))
 
 
-def inspect(version, uploaded):
-    """用這個版本的對應讀檔：找欄位、轉換前 CHECK_ROWS 列，回傳 InspectResult。"""
-    headers, data = read_rows(uploaded, version.header_row)
+def locate(version, headers):
+    """依版本的對應找出每個系統欄位在第幾欄，回傳 InspectResult（還沒讀資料列）。"""
     mappings = version.mapping_dict()
     positions = {}
     duplicates = []
@@ -164,12 +163,18 @@ def inspect(version, uploaded):
         checks.append(ColumnCheck(f, source, positions.get(source) if source else None))
 
     used = {c.source_column for c in checks if c.found}
-    result = InspectResult(
+    return InspectResult(
         headers=headers,
         checks=checks,
         duplicate_columns=sorted(set(duplicates)),
         unmapped_columns=[h for h in positions if h not in used],
     )
+
+
+def inspect(version, uploaded):
+    """用這個版本的對應讀檔：找欄位、轉換前 CHECK_ROWS 列，回傳 InspectResult。"""
+    headers, data = read_rows(uploaded, version.header_row)
+    result = locate(version, headers)
     mapped = result.mapped_checks
     for row_no, row in enumerate(data, start=version.header_row + 1):
         if result.checked_rows >= CHECK_ROWS:
@@ -189,4 +194,46 @@ def inspect(version, uploaded):
             cells.append((value, error))
         if len(result.preview) < PREVIEW_ROWS:
             result.preview.append(cells)
+    return result
+
+
+@dataclass
+class ReadResult:
+    lines: list  # [(第幾列, {系統欄位 key: 值})]，沒對應或找不到的欄位是 None
+    missing_must_map: list  # 找不到的一定要有的欄位（ColumnCheck）
+    errors: list  # [(第幾列, 欄位名稱, 原始值, 錯誤)]
+    error_count: int = 0
+
+    @property
+    def ok(self):
+        return not self.missing_must_map and not self.error_count
+
+
+def read_lines(version, uploaded, validate=None, max_errors=50):
+    """整份讀完並轉換；validate(值 dict) 回傳 [(系統欄位 key, 錯誤)]，給各功能加自己的規則（例如哪些欄不能空白）。
+    錯誤只記前 max_errors 筆，但 error_count 是全部的列數。"""
+    headers, data = read_rows(uploaded, version.header_row)
+    located = locate(version, headers)
+    result = ReadResult(lines=[], missing_must_map=located.missing_must_map, errors=[])
+    if result.missing_must_map:
+        return result
+    mapped = located.mapped_checks
+    for row_no, row in enumerate(data, start=version.header_row + 1):
+        values = {f.key: None for f in FIELDS}
+        row_errors = []
+        for c in mapped:
+            raw = row[c.index] if c.index < len(row) else None
+            value, error = convert(c.field.kind, raw)
+            if error:
+                row_errors.append((c.field.label, "" if raw is None else raw, error))
+            values[c.field.key] = value
+        if not row_errors and validate:
+            row_errors = [(FIELDS_BY_KEY[key].label, values.get(key) or "", error) for key, error in validate(values)]
+        if row_errors:
+            result.error_count += 1
+            for label, raw, error in row_errors:
+                if len(result.errors) < max_errors:
+                    result.errors.append((row_no, label, raw, error))
+            continue
+        result.lines.append((row_no, values))
     return result
