@@ -19,7 +19,7 @@
 
 {% block content %}
   <p class="small text-muted">
-    作業日 {{ batch.work_date|date:"Y/m/d" }}：作業日之前的訂單都算進切開時間前，作業日當天的依下單時間分前後。去重：同一個訂單號只算 1 張。非去重：有幾列就算幾張，分組有勾選才列出。分組和切開時間在後台「統計分組」設定，這批固定用匯入當下生效的 {{ batch.group_version }} 計算。
+    作業日 {{ batch.work_date|date:"Y/m/d" }}：作業日之前的訂單都算進切開時間前，作業日當天的依下單時間分前後；沒有切開時間的分組一天一列。去重：同一個訂單號只算 1 張。非去重：有幾列就算幾張，分組有勾選才列出。分組和切開時間在後台「統計分組」設定，這批固定用匯入當下生效的 {{ batch.group_version }} 計算。
   </p>
   {% if by_import_time %}
     <div class="alert alert-info py-2">作業日當天有 {{ by_import_time }} 張訂單的下單時間是 00:00:00，依匯入時間 {{ batch.imported_at|date:"H:i" }} 判斷前後。</div>
@@ -29,13 +29,13 @@
   <div class="table-responsive">
     <table class="table table-striped align-middle" id="group-table">
       <thead class="table-light">
-        <tr><th>分組</th><th>時段</th><th class="text-end">訂單數（去重）</th><th class="text-end">訂單數（非去重）</th></tr>
+        <tr><th>分組</th><th>時段／日期</th><th class="text-end">訂單數（去重）</th><th class="text-end">訂單數（非去重）</th></tr>
       </thead>
       <tbody>
         {% for row in summary.groups %}
           <tr{% if row.name == "未分組" %} class="table-warning"{% endif %}>
             <td>{{ row.name }}</td>
-            <td>{{ row.period|default:"—" }}</td>
+            <td>{% if row.date %}{{ row.date|date:"m/d（D）" }}{% else %}{{ row.period|default:"—" }}{% endif %}</td>
             <td class="text-end fw-bold fs-5">{{ row.count.distinct }}</td>
             <td class="text-end">{% if row.show_rows %}{{ row.count.rows }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
           </tr>
