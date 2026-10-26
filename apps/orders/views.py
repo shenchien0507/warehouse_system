@@ -14,8 +14,10 @@ from apps.backoffice.menu import MENU_BY_KEY, can_use
 from apps.backoffice.views import ManageDeleteView, ManageListView, ManageMixin
 
 from .batches import import_file
-from .forms import CheckFileForm, ConditionFormSet, GroupVersionForm, ImportForm, MappingForm, StatGroupForm, UploadForm
-from .importer import ImportFileError, inspect, read_headers
+from .forms import (
+    CheckFileForm, ConditionFormSet, GroupVersionForm, ImportForm, MappingForm, SourceFileForm, StatGroupForm, UploadForm,
+)
+from .importer import ImportFileError, inspect, read_combos, read_headers
 from .models import GroupVersion, ImportBatch, MappingVersion, StatGroup
 from .stats import batch_stats
 
@@ -283,17 +285,34 @@ class GroupVersionList(GroupVersionMixin, ManageListView):
         return context
 
 
+def load_combos(form):
+    """讀上傳的來源檔，回傳組合；讀不到時把錯誤加到表單上並回傳 None。"""
+    mapping = MappingVersion.active()
+    if mapping is None:
+        form.add_error("file", "目前沒有生效的欄位對應版本，請先到「匯入欄位對應」設定。")
+        return None
+    try:
+        return read_combos(mapping, form.cleaned_data["file"])
+    except ImportFileError as exc:
+        form.add_error("file", str(exc))
+        return None
+
+
 class GroupVersionCreate(GroupVersionMixin, ManageMixin, FormView):
-    """新增空白草稿版本，從零開始設定分組。"""
+    """新增空白草稿版本：上傳來源檔讀出選項，再從零開始設定分組。"""
 
     template_name = "backoffice/form.html"
     form_class = GroupVersionForm
 
     def form_valid(self, form):
-        version = form.save(commit=False)
-        version.number, version.created_by = GroupVersion.next_number(), self.request.user
-        version.save()
-        messages.success(self.request, f"已建立 {version}（空白草稿）。請新增分組，改好後按「生效」。")
+        combos = load_combos(form)
+        if combos is None:
+            return self.form_invalid(form)
+        version = GroupVersion.objects.create(
+            number=GroupVersion.next_number(), note=form.cleaned_data["note"], created_by=self.request.user,
+            source_file_name=form.cleaned_data["file"].name[:200], source_combos=combos,
+        )
+        messages.success(self.request, f"已建立 {version}（空白草稿），從來源檔讀到 {len(combos)} 種平台／店鋪／出貨類型組合。請新增分組，改好後按「生效」。")
         return redirect("orders_manage:group_version_detail", pk=version.pk)
 
     def get_context_data(self, **kwargs):
@@ -318,11 +337,32 @@ class GroupVersionDetail(GroupVersionObjectMixin, TemplateView):
         version = self.version
         context["object"] = version
         context["active"] = GroupVersion.active()
+        context["source_form"] = SourceFileForm()
+        context["platform_count"] = len({c[0] for c in version.source_combos if c[0]})
         context["groups"] = [
             {"group": g, "conditions": [c.describe() for c in g.conditions.all()], "cutoff": describe_cutoff(g)}
             for g in version.groups.prefetch_related("conditions")
         ]
         return context
+
+
+class GroupVersionSource(GroupVersionObjectMixin, View):
+    """草稿重新上傳來源檔，更新條件的選項。"""
+
+    def post(self, request, *args, **kwargs):
+        version = self.version
+        if version.is_locked:
+            messages.error(request, f"{version} 生效過，不能再改。請按「複製成新版本」再修改。")
+            return redirect("orders_manage:group_version_detail", pk=version.pk)
+        form = SourceFileForm(request.POST, request.FILES)
+        combos = load_combos(form) if form.is_valid() else None
+        if combos is None:
+            messages.error(request, "；".join(form.errors.get("file", ["請選擇檔案。"])))
+        else:
+            version.source_file_name, version.source_combos = form.cleaned_data["file"].name[:200], combos
+            version.save(update_fields=["source_file_name", "source_combos"])
+            messages.success(request, f"已更新 {version} 的來源檔，讀到 {len(combos)} 種組合。")
+        return redirect("orders_manage:group_version_detail", pk=version.pk)
 
 
 class GroupVersionActivate(GroupVersionObjectMixin, View):
@@ -363,7 +403,13 @@ class DraftGroupMixin(GroupVersionObjectMixin):
 
 
 class GroupFormView(DraftGroupMixin, FormView):
-    """分組本身的欄位和底下的條件一起存。"""
+    """分組本身的欄位和底下的條件一起存。條件的選項來自版本的來源檔，要先上傳。"""
+
+    def get(self, request, *args, **kwargs):
+        if not self.version.source_combos:
+            messages.warning(request, f"{self.version} 還沒有來源檔，請先上傳來源檔，條件才有選項。")
+            return redirect(self.get_success_url())
+        return super().get(request, *args, **kwargs)
 
     template_name = "orders/group_form.html"
     form_class = StatGroupForm
@@ -395,6 +441,7 @@ class GroupFormView(DraftGroupMixin, FormView):
         context["object"] = self.group
         context["formset"] = kwargs.get("formset") or self.get_formset()
         context["list_url"] = self.get_success_url()
+        context["combos"] = self.version.source_combos
         return context
 
 

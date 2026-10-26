@@ -41,9 +41,7 @@
   document.addEventListener("focusin", function (event) {
     var input = event.target;
     if (!isTime(input)) return;
-    input.value = normalize(input.value);
-    var first = input.value.indexOf("_");
-    setTimeout(function () { caret(input, first === -1 ? 0 : first); }, 0);
+    input.value = normalize(input.value); // 游標位置交給 click 和 keydown 處理
   });
 
   document.addEventListener("keydown", function (event) {
@@ -58,6 +56,8 @@
         for (var i = start; i < end; i++) if (i !== 2) setChar(input, i, "_");
       }
       pos = nextSlot(start);
+      var blank = input.value.indexOf("_");
+      if (end === start && blank !== -1 && (pos === null || pos > blank)) pos = blank; // 游標在空格後面時從第一個空格開始填
       if (pos === null) return;
       setChar(input, pos, event.key);
       var after = nextSlot(pos + 1);
@@ -76,6 +76,14 @@
     } else if (event.key.length === 1) {
       event.preventDefault(); // 其他字（包括冒號）都不接受
     }
+  });
+
+  document.addEventListener("click", function (event) {
+    // 點在空白格子後面時，游標移到第一個空格
+    var input = event.target;
+    if (!isTime(input) || input.selectionStart !== input.selectionEnd) return;
+    var blank = input.value.indexOf("_");
+    if (blank !== -1 && input.selectionStart > blank) caret(input, blank);
   });
 
   document.addEventListener("input", function (event) {

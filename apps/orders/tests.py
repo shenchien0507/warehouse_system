@@ -333,15 +333,31 @@ class ImportStatsTests(TestCase):
         self.assertEqual(self.stats(batch), {("其他平台", "14:00 前"): (1, None)})  # 沒勾：00:00 照資料算
 
 
+SOURCE_HEADERS = ["交易平台", "交易店鋪", "交易序號", "出貨類型"]
+SOURCE_ROWS = [
+    ["蝦皮購物", "蝦皮購物_0號店", 1, "蝦皮無包裝"],
+    ["蝦皮購物", "蝦皮購物_0號店", 1, "蝦皮無包裝"],
+    ["蝦皮購物", "蝦皮購物_1號店", 2, "蝦皮店到店"],
+    ["MOMO", "MOMO_1號店", 3, "宅配"],
+    ["friDay商城", "friDay商城_0號店", 4, "7-11"],
+    ["蝦皮購物", "", 5, "蝦皮隔日到貨"],
+]
+
+
 class StatGroupTests(TestCase):
     def setUp(self):
         self.client.login(username=make_user("boss", Level.ADMIN).username, password="pw12345!")
         self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="v1.xlsx")})
         self.v1 = GroupVersion.objects.get(number=1)
 
-    def new_version(self):
+    def new_version(self, source=True):
+        """從 v1 複製成 v2；預設上傳來源檔讀出條件選項。"""
         self.client.post(reverse("orders_manage:group_version_copy", args=[self.v1.pk]))
-        return GroupVersion.objects.get(number=2)
+        v2 = GroupVersion.objects.get(number=2)
+        if source:
+            self.client.post(reverse("orders_manage:group_version_source", args=[v2.pk]), {"file": xlsx(SOURCE_HEADERS, SOURCE_ROWS)})
+            v2.refresh_from_db()
+        return v2
 
     def save_group(self, url, conditions, **fields):
         data = {
@@ -403,11 +419,6 @@ class StatGroupTests(TestCase):
         self.assertEqual(self.stats("v1.xlsx")[("其他平台", "14:00 前")], 1)
         self.assertNotIn(("中午切", "14:30 前"), self.stats("v1.xlsx"))
 
-    def test_options_come_from_imported_data(self):
-        v2 = self.new_version()
-        response = self.client.get(reverse("orders_manage:group_create", args=[v2.pk]))
-        self.assertContains(response, '<option value="蝦皮無包裝[代收]">蝦皮無包裝[代收]</option>', html=True)
-
     def test_condition_required(self):
         v2 = self.new_version()
         response = self.save_group(reverse("orders_manage:group_create", args=[v2.pk]), [{}])
@@ -422,16 +433,54 @@ class StatGroupTests(TestCase):
         self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="v2.xlsx")})
         self.assertEqual(self.stats("v2.xlsx")[("未分組", "")], 2)
 
-    def test_create_blank_version(self):
+    def test_create_blank_version_reads_source_file(self):
         self.assertContains(self.client.get(reverse("orders_manage:group_version_list")), reverse("orders_manage:group_version_create"))
-        self.assertContains(self.client.get(reverse("orders_manage:group_version_create")), "空白")
-        response = self.client.post(reverse("orders_manage:group_version_create"), {"note": "從頭來"})
+        response = self.client.post(reverse("orders_manage:group_version_create"), {"note": "從頭來", "file": xlsx(SOURCE_HEADERS, SOURCE_ROWS)})
         v2 = GroupVersion.objects.get(number=2)
         self.assertRedirects(response, reverse("orders_manage:group_version_detail", args=[v2.pk]))
-        self.assertEqual((v2.status, v2.note, v2.groups.count()), ("草稿", "從頭來", 0))
+        self.assertEqual((v2.status, v2.note, v2.groups.count(), v2.source_file_name), ("草稿", "從頭來", 0, "匯出.xlsx"))
+        self.assertEqual(v2.source_combos, [
+            ["MOMO", "MOMO_1號店", "宅配"],
+            ["friDay商城", "friDay商城_0號店", "7-11"],
+            ["蝦皮購物", "", "蝦皮隔日到貨"],
+            ["蝦皮購物", "蝦皮購物_0號店", "蝦皮無包裝"],
+            ["蝦皮購物", "蝦皮購物_1號店", "蝦皮店到店"],
+        ])
+        self.assertContains(self.client.get(reverse("orders_manage:group_version_detail", args=[v2.pk])), "讀到 3 個平台、5 種")
         self.save_group(reverse("orders_manage:group_create", args=[v2.pk]), [{}], name="全部", cutoff="1200")
-        self.save_group(reverse("orders_manage:group_create", args=[v2.pk]), [{"platforms": ["蝦皮購物"]}], name="全部")
+        self.save_group(reverse("orders_manage:group_create", args=[v2.pk]), [{"platforms": ["MOMO"]}], name="全部")
         self.assertEqual(v2.groups.count(), 1)  # 沒有條件不能存；第二次可以
+
+    def test_create_version_needs_readable_file(self):
+        response = self.client.post(reverse("orders_manage:group_version_create"), {"file": xlsx(["欄A"], [[1]])})
+        self.assertContains(response, "找不到平台、店鋪、出貨方式任何一欄")
+        self.assertFalse(GroupVersion.objects.filter(number=2).exists())
+
+    def test_options_only_from_source_file(self):
+        v2 = self.new_version()
+        response = self.client.get(reverse("orders_manage:group_create", args=[v2.pk]))
+        self.assertContains(response, 'value="MOMO_1號店"')
+        self.assertNotContains(response, 'value="蝦皮無包裝[代收]"')  # 匯入過的資料有，但來源檔沒有
+        self.assertEqual(response.context["combos"], v2.source_combos)  # 連動用的組合
+        self.assertContains(response, 'id="source-combos"')
+        response = self.save_group(reverse("orders_manage:group_create", args=[v2.pk]), [{"platforms": ["不存在"]}], name="X")
+        self.assertIn("platforms", response.context["formset"].forms[0].errors)
+
+    def test_version_without_source_asks_for_upload(self):
+        v2 = self.new_version(source=False)
+        self.assertContains(self.client.get(reverse("orders_manage:group_version_detail", args=[v2.pk])), "還沒有來源檔")
+        response = self.client.get(reverse("orders_manage:group_create", args=[v2.pk]))
+        self.assertRedirects(response, reverse("orders_manage:group_version_detail", args=[v2.pk]))
+
+    def test_cannot_change_source_of_locked_version(self):
+        self.client.post(reverse("orders_manage:group_version_source", args=[self.v1.pk]), {"file": xlsx(SOURCE_HEADERS, SOURCE_ROWS)})
+        self.v1.refresh_from_db()
+        self.assertEqual(self.v1.source_combos, [])
+
+    def test_copy_keeps_source(self):
+        v2 = self.new_version()
+        self.client.post(reverse("orders_manage:group_version_copy", args=[v2.pk]))
+        self.assertEqual(GroupVersion.objects.get(number=3).source_combos, v2.source_combos)
 
     def test_cannot_activate_empty_version(self):
         v2 = self.new_version()

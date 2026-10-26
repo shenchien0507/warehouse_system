@@ -240,3 +240,25 @@ def read_lines(version, uploaded, validate=None, max_errors=50):
             continue
         result.lines.append((row_no, values))
     return result
+
+
+COMBO_FIELDS = ["platform", "shop", "ship_type"]
+
+
+def read_combos(version, uploaded):
+    """用欄位對應版本讀整份檔，回傳出現過的 [平台, 店鋪, 出貨類型] 組合（排序、不重複），給統計分組當選項。"""
+    headers, data = read_rows(uploaded, version.header_row)
+    located = {c.field.key: c for c in locate(version, headers).checks if c.found}
+    if not any(key in located for key in COMBO_FIELDS):
+        labels = "、".join(FIELDS_BY_KEY[key].label for key in COMBO_FIELDS)
+        raise ImportFileError(f"用欄位對應 {version} 在檔案裡找不到{labels}任何一欄，請確認來源檔或欄位對應。")
+    combos = set()
+    for row in data:
+        combo = []
+        for key in COMBO_FIELDS:
+            c = located.get(key)
+            raw = row[c.index] if c and c.index < len(row) else None
+            value, _ = convert("text", raw)
+            combo.append(value or "")
+        combos.add(tuple(combo))
+    return [list(c) for c in sorted(combos)]

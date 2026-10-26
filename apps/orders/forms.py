@@ -3,7 +3,7 @@ from django import forms
 from apps.attendance.forms import TIME_FORMATS, time_input
 
 from .fields import FIELDS, KIND_LABELS
-from .models import GroupVersion, MappingVersion, OrderLine, StatCondition, StatGroup
+from .models import GroupVersion, MappingVersion, StatCondition, StatGroup
 
 
 class UploadForm(forms.Form):
@@ -64,13 +64,17 @@ class ImportForm(forms.Form):
     file = forms.FileField(label="訂單檔", help_text="上傳 .xlsx 或 .csv，用目前生效的欄位對應讀取；有任何一列錯誤就整份不匯入。")
 
 
-class GroupVersionForm(forms.ModelForm):
-    """新增空白的分組版本；要沿用現有分組請在版本頁按「複製成新版本」。"""
+class GroupVersionForm(forms.Form):
+    """新增分組版本：上傳來源檔，讀出平台、店鋪、出貨類型的組合當條件的選項。"""
 
-    class Meta:
-        model = GroupVersion
-        fields = ["note"]
-        help_texts = {"note": "會建立沒有任何分組的空白草稿版本；要沿用現有分組，請到那個版本按「複製成新版本」。"}
+    file = forms.FileField(
+        label="來源檔", help_text="上傳 .xlsx 或 .csv，用目前生效的欄位對應讀出交易平台、交易店鋪、出貨類型，條件只能從檔案裡有的值選。",
+    )
+    note = forms.CharField(label="備註", max_length=200, required=False)
+
+
+class SourceFileForm(forms.Form):
+    file = forms.FileField(label="來源檔", help_text="重新上傳會換掉選項；已設定的條件值不會被刪掉。")
 
 
 class StatGroupForm(forms.ModelForm):
@@ -84,42 +88,31 @@ class StatGroupForm(forms.ModelForm):
         self.fields["cutoff"].input_formats = TIME_FORMATS
 
 
-def seen_values(field):
-    """匯入過的資料裡實際出現過的值，當條件的選項。"""
-    return list(OrderLine.objects.exclude(**{field: ""}).order_by(field).values_list(field, flat=True).distinct())
-
-
 class StatConditionForm(forms.ModelForm):
-    """一組條件：三個都可以多選，留空代表全部；選項是匯入過的資料裡出現過的值。"""
+    """一組條件：三個都可以勾多個，留空代表全部；選項來自版本的來源檔，畫面上依選到的平台、店鋪連動縮小範圍。"""
 
-    platforms = forms.MultipleChoiceField(label="交易平台", required=False)
-    shops = forms.MultipleChoiceField(label="交易店鋪", required=False)
-    ship_types = forms.MultipleChoiceField(label="出貨類型", required=False)
+    platforms = forms.MultipleChoiceField(label="交易平台", required=False, widget=forms.CheckboxSelectMultiple)
+    shops = forms.MultipleChoiceField(label="交易店鋪", required=False, widget=forms.CheckboxSelectMultiple)
+    ship_types = forms.MultipleChoiceField(label="出貨類型", required=False, widget=forms.CheckboxSelectMultiple)
 
-    CHOICE_FIELDS = {"platforms": "platform", "shops": "shop", "ship_types": "ship_type"}
+    CHOICE_FIELDS = ["platforms", "shops", "ship_types"]  # 順序同 GroupVersion.source_combos 的 [平台, 店鋪, 出貨類型]
 
     class Meta:
         model = StatCondition
         fields = ["platforms", "shops", "ship_types"]
 
-    def __init__(self, *args, seen=None, **kwargs):
+    def __init__(self, *args, combos=(), **kwargs):
         super().__init__(*args, **kwargs)
-        seen = seen or {}
-        for name, source in self.CHOICE_FIELDS.items():
+        for i, name in enumerate(self.CHOICE_FIELDS):
             current = self.initial.get(name) or []
-            values = list(dict.fromkeys(list(seen.get(source, [])) + list(current)))  # 已選但資料裡沒有的值也保留
+            values = sorted({c[i] for c in combos if c[i]} | set(current))  # 已選但來源檔沒有的值也保留
             self.fields[name].choices = [(v, v) for v in values]
-            self.fields[name].widget.attrs.update({"class": "form-select", "size": 6})
 
 
 class BaseConditionFormSet(forms.BaseInlineFormSet):
-    def __init__(self, *args, **kwargs):
-        self.seen = {source: seen_values(source) for source in StatConditionForm.CHOICE_FIELDS.values()}
-        super().__init__(*args, **kwargs)
-
     def get_form_kwargs(self, index):
         kwargs = super().get_form_kwargs(index)
-        kwargs["seen"] = self.seen
+        kwargs["combos"] = self.instance.version.source_combos
         return kwargs
 
     def clean(self):
