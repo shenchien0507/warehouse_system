@@ -1,4 +1,4 @@
-"""讀取來源檔（xlsx、csv），依範本的欄位對應轉成系統欄位。目前只用來測試對應，不存訂單。"""
+"""讀取來源檔（xlsx、csv），依欄位對應版本轉成系統欄位。目前只用來檢查對應，不存訂單。"""
 
 import csv
 import io
@@ -93,7 +93,6 @@ def convert(kind, value):
 class ColumnCheck:
     field: object  # fields.OrderField
     source_column: str = ""
-    required: bool = False
     index: int = None  # 在來源檔的第幾欄，找不到是 None
 
     @property
@@ -110,16 +109,17 @@ class InspectResult:
     preview: list = field(default_factory=list)  # 每列 [(值, 錯誤)]，順序同 mapped_checks
     error_counts: dict = field(default_factory=dict)  # 系統欄位 key → 錯誤列數
     error_samples: list = field(default_factory=list)  # [(第幾列, 欄位名稱, 原始值, 錯誤)]
+    blank_counts: dict = field(default_factory=dict)  # 系統欄位 key → 空白列數，只供參考
     checked_rows: int = 0
     more_rows: bool = False
 
     @property
-    def missing_required(self):
-        return [c for c in self.checks if c.required and not c.found]
+    def missing_must_map(self):
+        return [c for c in self.checks if c.field.must_map and not c.found]
 
     @property
     def missing_optional(self):
-        return [c for c in self.checks if c.source_column and not c.required and not c.found]
+        return [c for c in self.checks if c.source_column and not c.field.must_map and not c.found]
 
     @property
     def mapped_checks(self):
@@ -130,14 +130,24 @@ class InspectResult:
         return [(FIELDS_BY_KEY[key].label, count) for key, count in self.error_counts.items()]
 
     @property
+    def blank_summary(self):
+        return [(FIELDS_BY_KEY[key].label, count) for key, count in self.blank_counts.items()]
+
+    @property
     def ok(self):
-        return not self.missing_required and not self.error_counts
+        return not self.missing_must_map and not self.error_counts
 
 
-def inspect(template, uploaded):
-    """測試範本能不能讀這個檔：找欄位、轉換前 CHECK_ROWS 列，回傳 InspectResult。"""
-    headers, data = read_rows(uploaded, template.header_row)
-    mappings = {m.field: m for m in template.mappings.all()}
+def read_headers(uploaded, header_row):
+    """只讀欄名列，回傳不重複、非空白的欄名（照檔案順序）。"""
+    headers, _ = read_rows(uploaded, header_row)
+    return list(dict.fromkeys(h for h in headers if h))
+
+
+def inspect(version, uploaded):
+    """用這個版本的對應讀檔：找欄位、轉換前 CHECK_ROWS 列，回傳 InspectResult。"""
+    headers, data = read_rows(uploaded, version.header_row)
+    mappings = version.mapping_dict()
     positions = {}
     duplicates = []
     for i, header in enumerate(headers):
@@ -150,9 +160,8 @@ def inspect(template, uploaded):
 
     checks = []
     for f in FIELDS:
-        m = mappings.get(f.key)
-        source = m.source_column.strip() if m else ""
-        checks.append(ColumnCheck(f, source, bool(m and m.is_required) or f.always_required, positions.get(source) if source else None))
+        source = mappings.get(f.key, "")
+        checks.append(ColumnCheck(f, source, positions.get(source) if source else None))
 
     used = {c.source_column for c in checks if c.found}
     result = InspectResult(
@@ -162,7 +171,7 @@ def inspect(template, uploaded):
         unmapped_columns=[h for h in positions if h not in used],
     )
     mapped = result.mapped_checks
-    for row_no, row in enumerate(data, start=template.header_row + 1):
+    for row_no, row in enumerate(data, start=version.header_row + 1):
         if result.checked_rows >= CHECK_ROWS:
             result.more_rows = True
             break
@@ -171,8 +180,8 @@ def inspect(template, uploaded):
         for c in mapped:
             raw = row[c.index] if c.index < len(row) else None
             value, error = convert(c.field.kind, raw)
-            if not error and value is None and c.required:
-                error = "必填卻是空白"
+            if not error and value is None:
+                result.blank_counts[c.field.key] = result.blank_counts.get(c.field.key, 0) + 1
             if error:
                 result.error_counts[c.field.key] = result.error_counts.get(c.field.key, 0) + 1
                 if len(result.error_samples) < 20:
