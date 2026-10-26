@@ -19,7 +19,7 @@
 
 {% block content %}
   <p class="small text-muted">
-    去重：同一個訂單號只算 1 張。非去重：有幾列就算幾張，分組有勾選才列出。分組和切開時間在後台「統計分組」設定，這批固定用匯入當下生效的 {{ batch.group_version }} 計算。
+    依下單日期一天一段，每天各自分組、分前後（00:00:00 的訂單日期照資料、前後照設定）。去重：同一個訂單號只算 1 張。非去重：有幾列就算幾張，分組有勾選才列出。分組和切開時間在後台「統計分組」設定，這批固定用匯入當下生效的 {{ batch.group_version }} 計算。
   </p>
   {% if by_import_time %}
     <div class="alert alert-info py-2">有 {{ by_import_time }} 張訂單的下單時間是 00:00:00，依匯入時間 {{ batch.imported_at|date:"H:i" }} 判斷前後。</div>
@@ -30,8 +30,13 @@
       <thead class="table-light">
         <tr><th>分組</th><th>時段</th><th class="text-end">訂單數（去重）</th><th class="text-end">訂單數（非去重）</th></tr>
       </thead>
+      {% for day, day_total, rows in summary.by_day %}
       <tbody>
-        {% for row in summary.groups %}
+        <tr class="table-secondary" data-day>
+          <th colspan="2">{% if day %}{{ day|date:"Y/m/d（D）" }}{% else %}沒有日期{% endif %}</th>
+          <th class="text-end">當天 {{ day_total }} 張</th><th></th>
+        </tr>
+        {% for row in rows %}
           <tr{% if row.name == "未分組" %} class="table-warning"{% endif %}>
             <td>{{ row.name }}</td>
             <td>{{ row.period|default:"—" }}</td>
@@ -40,22 +45,24 @@
           </tr>
         {% endfor %}
       </tbody>
+      {% endfor %}
       <tfoot>
-        <tr class="table-light"><th colspan="2">全部（去重）</th><th class="text-end">{{ summary.total }}</th><th></th></tr>
+        <tr class="table-light"><th colspan="2">全部日期（去重）</th><th class="text-end">{{ summary.total }}</th><th></th></tr>
       </tfoot>
     </table>
   </div>
 
   <details class="mt-4">
-    <summary class="h6">明細：各分組裡的平台、店鋪、出貨類型</summary>
+    <summary class="h6">明細：每天各分組裡的平台、店鋪、出貨類型</summary>
     <div class="table-responsive mt-2">
       <table class="table table-sm table-striped align-middle" id="detail-table">
         <thead class="table-light">
-          <tr><th>分組</th><th>平台</th><th>店鋪</th><th>出貨類型</th><th>時段</th><th class="text-end">去重</th><th class="text-end">非去重</th></tr>
+          <tr><th>日期</th><th>分組</th><th>平台</th><th>店鋪</th><th>出貨類型</th><th>時段</th><th class="text-end">去重</th><th class="text-end">非去重</th></tr>
         </thead>
         <tbody>
           {% for row in summary.details %}
             <tr>
+              <td>{% if row.date %}{{ row.date|date:"Y/m/d" }}{% else %}沒有日期{% endif %}</td>
               <td>{{ row.group }}</td>
               <td>{{ row.platform|default:"（空白）" }}</td>
               <td>{{ row.shop|default:"（空白）" }}</td>
