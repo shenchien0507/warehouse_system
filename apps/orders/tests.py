@@ -202,7 +202,8 @@ STAT_ROWS = [
     ["蝦皮購物", 1, "蝦皮無包裝", "A", "2026/08/07 15:00:00"],
     ["蝦皮購物", 1, "蝦皮無包裝", "B", "2026/08/07 15:00:00"],
     ["蝦皮購物", 2, "蝦皮無包裝", "A", "2026/08/07 09:00:00"],
-    ["蝦皮購物", 3, "蝦皮無包裝[代收]", "A", ""],
+    ["蝦皮購物", 3, "蝦皮無包裝[代收]", "A", "2026/08/07 10:00:00"],
+    ["蝦皮購物", 12, "蝦皮隔日到貨", "A", "2026/08/07 20:00:00"],
     ["蝦皮購物", 4, "蝦皮店到店", "A", ""],
     ["蝦皮購物", 4, "蝦皮店到店", "B", ""],
     ["friDay商城", 5, "7-11", "A", "2026/08/07 14:00:59"],
@@ -228,11 +229,14 @@ class ImportStatsTests(TestCase):
         batch = ImportBatch.objects.get()
         self.assertRedirects(response, reverse("orders:batch_detail", args=[batch.pk]))
         self.assertEqual((batch.file_name, batch.imported_by, batch.mapping_version.number), ("今天.xlsx", self.user, 1))
-        self.assertEqual((batch.line_count, batch.order_count), (9, 6))
+        self.assertEqual((batch.line_count, batch.order_count), (10, 7))
         self.assertEqual(self.stats(batch), {
-            ("蝦皮購物", "蝦皮無包裝", ""): (2, 3),  # 去重 2 張、非去重 3 列；蝦皮不分 14:00 前後
-            ("蝦皮購物", "蝦皮無包裝[代收]", ""): (1, 1),
-            ("蝦皮購物", "蝦皮店到店", ""): (1, None),  # 其他出貨方式只有去重
+            # 蝦皮無包裝：去重和非去重，也分 14:00 前後
+            ("蝦皮購物", "蝦皮無包裝", "14:00 前"): (1, 1),
+            ("蝦皮購物", "蝦皮無包裝", "14:00 後"): (1, 2),
+            ("蝦皮購物", "蝦皮無包裝[代收]", "14:00 前"): (1, 1),
+            ("蝦皮購物", "蝦皮隔日到貨", "14:00 後"): (1, None),
+            ("蝦皮購物", "蝦皮店到店", ""): (1, None),  # 其他蝦皮出貨方式只有去重、不分前後
             ("friDay商城", "7-11", "14:00 前"): (1, None),  # 14:00:59 只看到分鐘，算 14:00 前
             ("friDay商城", "7-11", "14:00 後"): (1, None),
         })
@@ -241,16 +245,16 @@ class ImportStatsTests(TestCase):
         self.upload()
         self.upload(STAT_ROWS[:2], name="補單.xlsx")
         second = ImportBatch.objects.get(file_name="補單.xlsx")
-        self.assertEqual(self.stats(second), {("蝦皮購物", "蝦皮無包裝", ""): (1, 2)})
-        self.assertEqual(ImportBatch.objects.get(file_name="今天.xlsx").order_count, 6)
+        self.assertEqual(self.stats(second), {("蝦皮購物", "蝦皮無包裝", "14:00 後"): (1, 2)})
+        self.assertEqual(ImportBatch.objects.get(file_name="今天.xlsx").order_count, 7)
 
     def test_any_error_rejects_whole_file(self):
-        rows = STAT_ROWS + [["蝦皮購物", "", "蝦皮店到店", "A", ""], ["friDay商城", 7, "7-11", "A", ""], ["蝦皮購物", 8, "蝦皮店到店", "A", "明天"]]
+        rows = STAT_ROWS + [["蝦皮購物", "", "蝦皮店到店", "A", ""], ["friDay商城", 7, "7-11", "A", ""], ["蝦皮購物", 8, "蝦皮店到店", "A", "明天"], ["蝦皮購物", 13, "蝦皮隔日到貨[代收]", "A", ""]]
         response = self.upload(rows)
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "有 3 列資料有問題，整份沒有匯入")
+        self.assertContains(response, "有 4 列資料有問題，整份沒有匯入")
         errors = response.context["outcome"].errors
-        self.assertEqual([(row_no, label) for row_no, label, _, _ in errors], [(11, "訂單號"), (12, "下單時間"), (13, "下單時間")])
+        self.assertEqual([(row_no, label) for row_no, label, _, _ in errors], [(12, "訂單號"), (13, "下單時間"), (14, "下單時間"), (15, "下單時間")])
         self.assertFalse(ImportBatch.objects.exists())
         self.assertFalse(OrderLine.objects.exists())
 
