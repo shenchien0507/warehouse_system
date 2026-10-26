@@ -1,0 +1,105 @@
+{% extends "backoffice/base.html" %}
+
+{% block title %}{{ menu_item.label }}{% endblock %}
+
+{% block manage_header %}
+  {% include "backoffice/_breadcrumb.html" with current=object %}
+  <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+    <h1 class="h3 mb-0 me-auto">
+      欄位對應 {{ object }}
+      <span class="badge {% if object.is_active %}text-bg-success{% elif object.is_locked %}text-bg-secondary{% else %}text-bg-warning{% endif %} align-middle fs-6">{{ object.status }}</span>
+    </h1>
+    {% if not object.is_active %}
+      <form method="post" action="{% url 'orders_manage:version_activate' object.pk %}"
+            onsubmit="return confirm('確定讓 {{ object }} 生效？{% if active %}目前生效的 {{ active }} 會停用。{% endif %}{% if not object.is_locked %}生效後就不能再改。{% endif %}');">
+        {% csrf_token %}
+        <button type="submit" id="activate-button" class="btn btn-success"{% if missing_must_map %} disabled title="訂單號還沒選來源欄"{% endif %}>生效</button>
+      </form>
+    {% endif %}
+    <form method="post" action="{% url 'orders_manage:version_copy' object.pk %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-primary">複製成新版本</button>
+    </form>
+  </div>
+  <p class="text-muted small mb-3">
+    來源檔：{{ object.source_file_name|default:"（無）" }}，欄名在第 {{ object.header_row }} 列，共 {{ object.source_columns|length }} 個欄名。
+    {% if object.is_locked %}這個版本生效過，只能查看；要調整請按「複製成新版本」。{% else %}草稿：選好對應後按「儲存」，再按「生效」。{% endif %}
+  </p>
+{% endblock %}
+
+{% block manage_content %}
+  {% if missing_must_map %}
+    <div class="alert alert-warning">還沒選來源欄，不能生效：{% for f in missing_must_map %}{{ f.label }}{% if not forloop.last %}、{% endif %}{% endfor %}</div>
+  {% endif %}
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="alert alert-danger">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>
+    {% endif %}
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead class="table-light">
+          <tr><th>系統欄位</th><th>型態</th><th style="min-width: 16rem">來源欄名</th></tr>
+        </thead>
+        <tbody>
+          {% for f, kind, select in form.mapping_rows %}
+            <tr>
+              <td>{{ f.label }}{% if f.must_map %} <span class="text-danger">*</span>{% endif %}{% if f.help %}<div class="form-text mt-0">{{ f.help }}</div>{% endif %}</td>
+              <td class="text-muted small">{{ kind }}</td>
+              <td class="wh-field{% if select.errors %} has-error{% endif %}">
+                {% if object.is_locked %}{{ select.value|default:"—" }}{% else %}{{ select }}{% endif %}
+                {% for error in select.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if object.is_locked %}
+      <p>備註：{{ object.note|default:"—" }}</p>
+    {% else %}
+      <div class="row"><div class="col-lg-6">{% include "components/_form_field.html" with field=form.note %}</div></div>
+      <button type="submit" class="btn btn-primary">儲存</button>
+    {% endif %}
+    <a class="btn btn-outline-secondary ms-2" href="{{ list_url }}">回列表</a>
+  </form>
+
+  <hr class="my-4">
+  <h2 class="h5">用檔案檢查這個版本</h2>
+  <p class="text-muted small">上傳一份來源檔，照這個版本的對應試讀，看欄位找不找得到、資料能不能轉換。只是檢查，不會匯入。草稿請先儲存再檢查。</p>
+  <div class="row">
+    <div class="col-lg-6">
+      <form method="post" action="{% url 'orders_manage:version_check' object.pk %}" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+        {% include "components/_form_field.html" with field=check_form.file %}
+        <button type="submit" class="btn btn-outline-success">上傳檢查</button>
+      </form>
+    </div>
+  </div>
+  {% if result %}{% include "orders/_check_result.html" %}{% endif %}
+
+  {% if not object.is_locked %}
+    <script>
+      // 一個來源欄只能選一次：已被其他欄位選走的選項停用
+      (function () {
+        const selects = Array.from(document.querySelectorAll("select.source-column"));
+        function refresh() {
+          const taken = new Set(selects.map((s) => s.value).filter(Boolean));
+          selects.forEach((s) => {
+            Array.from(s.options).forEach((o) => {
+              o.disabled = Boolean(o.value) && o.value !== s.value && taken.has(o.value);
+            });
+          });
+        }
+        // 改了還沒儲存就不能按生效，免得生效的是舊的對應
+        const activate = document.querySelector("#activate-button");
+        selects.forEach((s) => s.addEventListener("change", () => {
+          refresh();
+          if (activate) { activate.disabled = true; activate.title = "請先儲存再生效"; }
+        }));
+        refresh();
+      })();
+    </script>
+  {% endif %}
+{% endblock %}

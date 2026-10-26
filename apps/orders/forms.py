@@ -1,64 +1,58 @@
 from django import forms
 
 from .fields import FIELDS, KIND_LABELS
-from .models import FieldMapping, ImportTemplate
+from .models import MappingVersion
 
 
-class ImportTemplateForm(forms.ModelForm):
-    """範本基本資料，加上每個系統欄位一組「來源欄名」「必填」。"""
+class UploadForm(forms.Form):
+    """新增版本的第一步：上傳來源檔，讀出欄名當下拉選單的選項。"""
 
-    class Meta:
-        model = ImportTemplate
-        fields = ["name", "header_row", "note"]
+    file = forms.FileField(label="來源檔", help_text="上傳 .xlsx（讀第一個工作表）或 .csv，系統只讀欄名，不會存檔案內容。")
+    header_row = MappingVersion._meta.get_field("header_row").formfield()
 
-    def __init__(self, *args, **kwargs):
+
+class MappingForm(forms.Form):
+    """每個系統欄位一個下拉選單，選項是來源檔的欄名；同一個來源欄名只能選一次。"""
+
+    note = forms.CharField(label="備註", max_length=200, required=False)
+
+    def __init__(self, *args, version, **kwargs):
         super().__init__(*args, **kwargs)
-        current = {m.field: m for m in self.instance.mappings.all()} if self.instance.pk else {}
-        self.mapping_rows = []
+        self.version = version
+        mapped = version.mapping_dict()
+        choices = [("", "— 不使用 —")] + [(c, c) for c in version.source_columns]
+        self.fields["note"].initial = version.note
         for f in FIELDS:
-            m = current.get(f.key)
-            source = forms.CharField(
-                label=f.label, max_length=100, required=f.always_required,
-                initial=m.source_column if m else "",
-                widget=forms.TextInput(attrs={"list": "known-columns", "autocomplete": "off", "placeholder": "不使用就留空"}),
+            initial = mapped.get(f.key, "")
+            self.fields[f.key] = forms.ChoiceField(
+                label=f.label, required=f.must_map, choices=choices,
+                initial=initial if initial in version.source_columns else "",
+                widget=forms.Select(attrs={"class": "form-select source-column"}),
             )
-            self.fields[f"src_{f.key}"] = source
-            if not f.always_required:
-                self.fields[f"req_{f.key}"] = forms.BooleanField(label="必填", required=False, initial=bool(m and m.required))
-            self.mapping_rows.append(f)
 
-    def basic_fields(self):
-        return [self[name] for name in self.Meta.fields]
-
-    def mapping_fields(self):
-        """給 template 用：[(系統欄位, 型態文字, 來源欄名欄位, 必填欄位或 None)]"""
-        return [
-            (f, KIND_LABELS[f.kind], self[f"src_{f.key}"], self[f"req_{f.key}"] if not f.always_required else None)
-            for f in self.mapping_rows
-        ]
+    def mapping_rows(self):
+        """給 template 用：[(系統欄位, 型態文字, 下拉選單)]"""
+        return [(f, KIND_LABELS[f.kind], self[f.key]) for f in FIELDS]
 
     def clean(self):
         cleaned = super().clean()
-        for f in self.mapping_rows:
-            source = (cleaned.get(f"src_{f.key}") or "").strip()
-            cleaned[f"src_{f.key}"] = source
-            if not source and cleaned.get(f"req_{f.key}"):
-                self.add_error(f"src_{f.key}", "設為必填就要填來源欄名。")
+        used = {}
+        for f in FIELDS:
+            source = cleaned.get(f.key)
+            if not source:
+                continue
+            if source in used:
+                self.add_error(f.key, f"「{source}」已經對應到「{used[source]}」，一個來源欄只能對應一個系統欄位。")
+            else:
+                used[source] = f.label
         return cleaned
 
-    def save(self, commit=True):
-        template = super().save(commit=True)
-        for f in self.mapping_rows:
-            source = self.cleaned_data[f"src_{f.key}"]
-            if source:
-                FieldMapping.objects.update_or_create(
-                    template=template, field=f.key,
-                    defaults={"source_column": source, "required": bool(self.cleaned_data.get(f"req_{f.key}"))},
-                )
-            else:
-                FieldMapping.objects.filter(template=template, field=f.key).delete()
-        return template
+    def save(self):
+        self.version.note = self.cleaned_data["note"]
+        self.version.save(update_fields=["note"])
+        self.version.set_mappings({f.key: self.cleaned_data.get(f.key) for f in FIELDS})
+        return self.version
 
 
-class TestFileForm(forms.Form):
-    file = forms.FileField(label="來源檔", help_text="上傳 .xlsx 或 .csv。只讀第一個工作表，只檢查前 500 列，不會存入任何訂單。")
+class CheckFileForm(forms.Form):
+    file = forms.FileField(label="來源檔", help_text="上傳 .xlsx 或 .csv，用這個版本試讀前 500 列，不會匯入任何訂單。")

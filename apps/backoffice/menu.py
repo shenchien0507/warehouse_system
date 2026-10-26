@@ -28,7 +28,7 @@ MENU = [
     MenuItem("manage-page-permissions", "頁面權限", "accounts_manage:page_permission_list", "帳號與權限", admin_only=True),
     MenuItem("manage-level-rules", "職級規則", "accounts_manage:level_rule_list", "帳號與權限", admin_only=True),
     MenuItem("manage-clock-setting", "上下班時間", "attendance_manage:clock_setting", "到班設定"),
-    MenuItem("manage-order-import", "匯入欄位對應", "orders_manage:template_list", "訂單匯入"),
+    MenuItem("manage-order-import", "匯入欄位對應", "orders_manage:version_list", "訂單匯入"),
 ]
 
 MENU_BY_KEY = {item.page_key: item for item in MENU}

@@ -16,7 +16,6 @@ MAPPINGS = {
     "product_name": ("商品名稱", False),
     "product_spec": ("商品樣式", False),
     "quantity": ("小計數量", True),
-    "delivery_status": ("配送狀態", False),
 }
 
 
