@@ -31,7 +31,10 @@ def read_rows(uploaded, header_row):
             workbook = load_workbook(uploaded, read_only=True, data_only=True)
         except Exception as exc:
             raise ImportFileError("檔案打不開，請確認是 Excel 的 .xlsx 檔。") from exc
-        rows = workbook.worksheets[0].iter_rows(values_only=True)
+        sheet = workbook.worksheets[0]
+        # 有些系統匯出的檔案記錄的範圍是錯的（例如只寫 A1:A1），唯讀模式會照它只讀一格，所以不採用檔案記錄的範圍
+        sheet.reset_dimensions()
+        rows = sheet.iter_rows(values_only=True)
     elif name.endswith(".csv"):
         raw = uploaded.read()
         for encoding in ("utf-8-sig", "cp950"):
