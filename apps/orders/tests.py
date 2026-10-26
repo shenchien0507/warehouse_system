@@ -422,6 +422,17 @@ class StatGroupTests(TestCase):
         self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS, name="v2.xlsx")})
         self.assertEqual(self.stats("v2.xlsx")[("未分組", "")], 2)
 
+    def test_create_blank_version(self):
+        self.assertContains(self.client.get(reverse("orders_manage:group_version_list")), reverse("orders_manage:group_version_create"))
+        self.assertContains(self.client.get(reverse("orders_manage:group_version_create")), "空白")
+        response = self.client.post(reverse("orders_manage:group_version_create"), {"note": "從頭來"})
+        v2 = GroupVersion.objects.get(number=2)
+        self.assertRedirects(response, reverse("orders_manage:group_version_detail", args=[v2.pk]))
+        self.assertEqual((v2.status, v2.note, v2.groups.count()), ("草稿", "從頭來", 0))
+        self.save_group(reverse("orders_manage:group_create", args=[v2.pk]), [{}], name="全部", cutoff="1200")
+        self.save_group(reverse("orders_manage:group_create", args=[v2.pk]), [{"platforms": ["蝦皮購物"]}], name="全部")
+        self.assertEqual(v2.groups.count(), 1)  # 沒有條件不能存；第二次可以
+
     def test_cannot_activate_empty_version(self):
         v2 = self.new_version()
         v2.groups.all().delete()

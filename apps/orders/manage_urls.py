@@ -13,6 +13,7 @@ urlpatterns = [
     path("mapping/<int:pk>/copy/", views.VersionCopy.as_view(), name="version_copy"),
     path("mapping/<int:pk>/delete/", views.VersionDelete.as_view(), name="version_delete"),
     path("groups/", views.GroupVersionList.as_view(), name="group_version_list"),
+    path("groups/new/", views.GroupVersionCreate.as_view(), name="group_version_create"),
     path("groups/<int:pk>/", views.GroupVersionDetail.as_view(), name="group_version_detail"),
     path("groups/<int:pk>/activate/", views.GroupVersionActivate.as_view(), name="group_version_activate"),
     path("groups/<int:pk>/copy/", views.GroupVersionCopy.as_view(), name="group_version_copy"),

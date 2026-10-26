@@ -14,7 +14,7 @@ from apps.backoffice.menu import MENU_BY_KEY, can_use
 from apps.backoffice.views import ManageDeleteView, ManageListView, ManageMixin
 
 from .batches import import_file
-from .forms import CheckFileForm, ConditionFormSet, ImportForm, MappingForm, StatGroupForm, UploadForm
+from .forms import CheckFileForm, ConditionFormSet, GroupVersionForm, ImportForm, MappingForm, StatGroupForm, UploadForm
 from .importer import ImportFileError, inspect, read_headers
 from .models import GroupVersion, ImportBatch, MappingVersion, StatGroup
 from .stats import batch_stats
@@ -266,6 +266,8 @@ class GroupVersionList(GroupVersionMixin, ManageListView):
         ("備註", "note"),
     ]
 
+    create_url_name = "orders_manage:group_version_create"
+
     def row_actions(self, obj):
         actions = [("編輯" if not obj.is_locked else "查看", reverse("orders_manage:group_version_detail", args=[obj.pk]), "primary")]
         if not obj.is_locked:
@@ -276,8 +278,27 @@ class GroupVersionList(GroupVersionMixin, ManageListView):
         context = super().get_context_data(**kwargs)
         context["note"] = (
             "統計分組和欄位對應一樣用版本管理：同時只有一個版本生效，匯入時用生效中的版本，每個批次會記住用的版本，之後改分組不影響舊批次。"
-            "生效過的版本不能再改，要調整請在版本頁按「複製成新版本」，改好再按「生效」。"
+            "生效過的版本不能再改。按「新增」建立空白版本從頭設定，或在版本頁按「複製成新版本」沿用現有分組，改好再按「生效」。"
         )
+        return context
+
+
+class GroupVersionCreate(GroupVersionMixin, ManageMixin, FormView):
+    """新增空白草稿版本，從零開始設定分組。"""
+
+    template_name = "backoffice/form.html"
+    form_class = GroupVersionForm
+
+    def form_valid(self, form):
+        version = form.save(commit=False)
+        version.number, version.created_by = GroupVersion.next_number(), self.request.user
+        version.save()
+        messages.success(self.request, f"已建立 {version}（空白草稿）。請新增分組，改好後按「生效」。")
+        return redirect("orders_manage:group_version_detail", pk=version.pk)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["object"] = None
         return context
 
 
