@@ -23,8 +23,8 @@
       </tbody>
       <tfoot>
         <tr class="table-light">
-          <th colspan="2">{{ title }}全部{% if summary.rows_groups %}（扣{{ summary.rows_groups|join:"、" }}）{% endif %}</th>
-          <th class="text-end">{% if summary.rows_groups %}{{ summary.counted }}{% else %}{{ summary.total }}{% endif %}</th>
+          <th colspan="2">{{ title }}全部</th>
+          <th class="text-end">{% if summary.rows_groups %}{{ summary.counted }}（扣{{ summary.rows_groups|join:"、" }}）{% else %}{{ summary.total }}{% endif %}</th>
           <th class="text-end">{% if summary.rows_groups %}{{ summary.rows_total }}{% endif %}</th>
         </tr>
       </tfoot>
