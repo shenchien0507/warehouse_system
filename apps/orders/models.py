@@ -103,9 +103,48 @@ class ColumnMapping(models.Model):
         return f"{self.get_field_display()} ← {self.source_column}"
 
 
-class ImportBatch(models.Model):
-    """匯入一份檔案就是一批；訂單統計一批一批獨立計算，不同批之間不合併、不去重。"""
+class ImportCategory(models.Model):
+    """匯入分類（例如急單、出貨中、新訂單）：一次匯入可以每個分類各放一份檔案，統計時各分類一張表。"""
 
+    name = models.CharField("分類名稱", max_length=50, unique=True)
+    sort_order = models.PositiveIntegerField("顯示順序", default=0, help_text="數字小的排前面，匯入畫面和統計頁都照這個順序。")
+    is_active = models.BooleanField("使用中", default=True, help_text="停用後匯入畫面不再出現這個分類，舊的統計紀錄照樣保留。")
+
+    class Meta:
+        verbose_name = "匯入分類"
+        verbose_name_plural = "匯入分類"
+        ordering = ["sort_order", "pk"]
+
+    def __str__(self):
+        return self.name
+
+
+class StatRun(models.Model):
+    """一筆統計紀錄：一次匯入，可同時上傳多個分類的檔案、共用作業日；每個分類的檔案各是一批。"""
+
+    work_date = models.DateField("作業日")
+    created_at = models.DateTimeField("匯入時間", auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="匯入人", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    class Meta:
+        verbose_name = "統計紀錄"
+        verbose_name_plural = "統計紀錄"
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"#{self.pk} {self.work_date:%Y/%m/%d}"
+
+
+class ImportBatch(models.Model):
+    """匯入一份檔案就是一批；每批屬於一筆統計紀錄的一個分類，各自統計，紀錄的合計再跨分類去重。"""
+
+    run = models.ForeignKey(StatRun, verbose_name="統計紀錄", on_delete=models.CASCADE, related_name="batches")
+    category = models.ForeignKey(
+        ImportCategory, verbose_name="分類", null=True, blank=True, on_delete=models.SET_NULL, related_name="batches"
+    )
+    category_name = models.CharField("分類名稱", max_length=50, blank=True)  # 匯入當下的分類名稱，分類改名或刪除也不變
     file_name = models.CharField("檔名", max_length=200)
     imported_at = models.DateTimeField("匯入時間", auto_now_add=True)
     work_date = models.DateField("作業日")  # 統計算哪一天的作業：之前日期的訂單都算進當天切開時間前

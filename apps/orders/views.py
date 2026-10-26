@@ -1,5 +1,5 @@
 """後台「匯入欄位對應」：用版本管理欄位對應，同時只有一個版本生效。
-「訂單統計」：匯入檔案，每一批獨立統計。"""
+「訂單統計」：一次匯入多個分類的檔案，各分類一張表，最後合計。後台「匯入分類」管理有哪些分類。"""
 
 from django.contrib import messages
 from django.db import transaction
@@ -11,15 +11,15 @@ from django.utils.functional import cached_property
 from django.views.generic import DetailView, FormView, ListView, TemplateView, View
 
 from apps.backoffice.menu import MENU_BY_KEY, can_use
-from apps.backoffice.views import ManageDeleteView, ManageListView, ManageMixin
+from apps.backoffice.views import ManageCreateView, ManageDeleteView, ManageListView, ManageMixin, ManageUpdateView
 
-from .batches import import_file
+from .batches import import_run
 from .forms import (
-    CheckFileForm, ConditionFormSet, GroupVersionForm, ImportForm, MappingForm, SourceFileForm, StatGroupForm, UploadForm,
+    CheckFileForm, ConditionFormSet, GroupVersionForm, ImportCategoryForm, ImportForm, MappingForm, SourceFileForm, StatGroupForm, UploadForm,
 )
 from .importer import ImportFileError, inspect, read_combos, read_headers
-from .models import GroupVersion, ImportBatch, MappingVersion, StatGroup
-from .stats import batch_stats
+from .models import GroupVersion, ImportCategory, MappingVersion, StatGroup, StatRun
+from .stats import run_stats
 
 
 def localtime_text(value):
@@ -191,58 +191,103 @@ class StatsPageMixin:
         return context
 
 
-class BatchListView(StatsPageMixin, ListView):
-    """匯入檔案與歷次匯入紀錄；匯入成功就直接到這一批的統計。"""
+class RunListView(StatsPageMixin, ListView):
+    """匯入（每個分類各放一份檔案）與歷次統計紀錄；匯入成功就直接到這筆的統計。"""
 
-    template_name = "orders/batch_list.html"
-    queryset = ImportBatch.objects.select_related("imported_by", "mapping_version", "group_version")
+    template_name = "orders/run_list.html"
+    queryset = StatRun.objects.select_related("created_by").prefetch_related("batches")
     paginate_by = 20
 
+    def categories(self):
+        return ImportCategory.objects.filter(is_active=True)
+
     def post(self, request, *args, **kwargs):
-        form = ImportForm(request.POST, request.FILES)
+        form = ImportForm(request.POST, request.FILES, categories=self.categories())
         if form.is_valid():
-            outcome = import_file(request.user, form.cleaned_data["file"], form.cleaned_data["work_date"])
-            if outcome.batch:
-                messages.success(request, f"已匯入 {outcome.batch.file_name}：{outcome.batch.line_count} 列、{outcome.batch.order_count} 張訂單。")
-                return redirect("orders:batch_detail", pk=outcome.batch.pk)
-            form.add_error("file", outcome.message)
+            outcome = import_run(request.user, form.cleaned_data["work_date"], form.files_to_import())
+            if outcome.run:
+                batches = outcome.run.batches.all()
+                text = "、".join(f"{b.category_name} {b.order_count} 張" for b in batches)
+                messages.success(request, f"已匯入 {len(batches)} 份檔案：{text}。")
+                return redirect("orders:run_detail", pk=outcome.run.pk)
+            form.add_error(None, outcome.message)
+            for category, problem in outcome.files:
+                form.add_error(form.file_field(category), problem.message)
             self.outcome = outcome
         self.form = form
         return self.get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["form"] = getattr(self, "form", None) or ImportForm()
+        context["form"] = getattr(self, "form", None) or ImportForm(categories=self.categories())
         context["outcome"] = getattr(self, "outcome", None)
         context["active_version"] = MappingVersion.active()
         context["active_groups"] = GroupVersion.active()
         return context
 
 
-class BatchDetailView(StatsPageMixin, DetailView):
-    template_name = "orders/batch_detail.html"
-    queryset = ImportBatch.objects.select_related("imported_by", "mapping_version", "group_version")
-    context_object_name = "batch"
+def summary_context(summary):
+    dated = [day for day in summary.days if day]
+    first, last = (dated[0], dated[-1]) if dated else (None, None)
+    return {"summary": summary, "by_import_time": len(summary.by_import_time), "first_day": first, "last_day": last}
+
+
+class RunDetailView(StatsPageMixin, DetailView):
+    template_name = "orders/run_detail.html"
+    queryset = StatRun.objects.select_related("created_by")
+    context_object_name = "run"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        summary = batch_stats(self.object)
-        context["summary"] = summary
-        context["by_import_time"] = len(summary.by_import_time)
-        dated = [day for day in summary.days if day]
-        context["first_day"], context["last_day"] = (dated[0], dated[-1]) if dated else (None, None)
+        sections, total = run_stats(self.object)
+        context["sections"] = [
+            {"batch": batch, "anchor": f"category-{i}", **summary_context(summary)} for i, (batch, summary) in enumerate(sections, start=1)
+        ]
+        context["total"] = summary_context(total)
+        context["first_batch"] = sections[0][0] if sections else None
         return context
 
 
-class BatchDeleteView(StatsPageMixin, View):
-    """匯入錯檔案時刪掉整批。"""
+class RunDeleteView(StatsPageMixin, View):
+    """匯入錯檔案時刪掉整筆統計紀錄（所有分類的檔案一起刪）。"""
 
     def post(self, request, *args, **kwargs):
-        batch = get_object_or_404(ImportBatch, pk=kwargs["pk"])
-        name = str(batch)
-        batch.delete()
-        messages.success(request, f"已刪除匯入批次 {name}。")
-        return redirect("orders:batch_list")
+        run = get_object_or_404(StatRun, pk=kwargs["pk"])
+        name = str(run)
+        run.delete()
+        messages.success(request, f"已刪除統計紀錄 {name}。")
+        return redirect("orders:run_list")
+
+
+class CategoryMixin:
+    model = ImportCategory
+    form_class = ImportCategoryForm
+    page_key = "manage-order-categories"
+    list_url_name = "orders_manage:category_list"
+
+
+class CategoryList(CategoryMixin, ManageListView):
+    columns = [("顯示順序", "sort_order"), ("分類名稱", "name"), ("使用中", "is_active")]
+    create_url_name = "orders_manage:category_create"
+    edit_url_name = "orders_manage:category_edit"
+    delete_url_name = "orders_manage:category_delete"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["note"] = "匯入訂單時每個使用中的分類一個上傳格，統計頁各分類一張表，最後一張是全部分類的合計（同一張訂單只算 1 張）。不用的分類可以停用，舊紀錄會保留分類名稱。"
+        return context
+
+
+class CategoryCreate(CategoryMixin, ManageCreateView):
+    pass
+
+
+class CategoryUpdate(CategoryMixin, ManageUpdateView):
+    pass
+
+
+class CategoryDelete(CategoryMixin, ManageDeleteView):
+    pass
 
 
 class GroupVersionMixin:

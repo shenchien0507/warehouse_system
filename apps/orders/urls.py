@@ -5,7 +5,7 @@ from . import views
 app_name = "orders"
 
 urlpatterns = [
-    path("", views.BatchListView.as_view(), name="batch_list"),
-    path("<int:pk>/", views.BatchDetailView.as_view(), name="batch_detail"),
-    path("<int:pk>/delete/", views.BatchDeleteView.as_view(), name="batch_delete"),
+    path("", views.RunListView.as_view(), name="run_list"),
+    path("<int:pk>/", views.RunDetailView.as_view(), name="run_detail"),
+    path("<int:pk>/delete/", views.RunDeleteView.as_view(), name="run_delete"),
 ]

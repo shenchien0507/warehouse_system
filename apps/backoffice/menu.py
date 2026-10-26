@@ -20,7 +20,7 @@ class MenuItem:
 MENU = [
     MenuItem("attendance-register", "到班登記", "attendance:register", "到班", section="feature"),
     MenuItem("attendance-stations", "工位安排", "attendance:stations", "到班", section="feature"),
-    MenuItem("order-stats", "訂單統計", "orders:batch_list", "訂單", section="feature"),
+    MenuItem("order-stats", "訂單統計", "orders:run_list", "訂單", section="feature"),
     MenuItem("manage-levels", "職級", "accounts_manage:level_list", "組織", admin_only=True),
     MenuItem("manage-departments", "部門", "accounts_manage:department_list", "組織"),
     MenuItem("manage-stations", "工位", "accounts_manage:station_list", "組織"),
@@ -31,6 +31,7 @@ MENU = [
     MenuItem("manage-clock-setting", "上下班時間", "attendance_manage:clock_setting", "到班設定"),
     MenuItem("manage-order-import", "匯入欄位對應", "orders_manage:version_list", "訂單"),
     MenuItem("manage-order-groups", "統計分組", "orders_manage:group_version_list", "訂單"),
+    MenuItem("manage-order-categories", "匯入分類", "orders_manage:category_list", "訂單"),
 ]
 
 MENU_BY_KEY = {item.page_key: item for item in MENU}
