@@ -8,7 +8,7 @@ from openpyxl import Workbook
 from apps.accounts.models import PagePermission
 from apps.accounts.testing import Level, make_user
 
-from .models import ColumnMapping, MappingVersion
+from .models import ColumnMapping, ImportBatch, MappingVersion, OrderLine
 
 HEADERS = ["交易平台", "交易序號", "買家姓名", "出貨日期", "商品編號", "小計數量", "建立時間"]
 ROWS = [
@@ -192,3 +192,80 @@ class CheckFileTests(MappingTestCase):
         result = self.check(self.v1, SimpleUploadedFile("a.csv", text.encode("cp950"))).context["result"]
         self.assertTrue(result.ok)
         self.assertEqual([v for v, _ in result.preview[0]][0], "13132187")
+
+
+STAT_HEADERS = ["交易平台", "交易序號", "出貨類型", "商品編號", "建立時間"]
+STAT_ROWS = [
+    ["蝦皮購物", 1, "蝦皮無包裝", "A", "2026/08/07 15:00:00"],
+    ["蝦皮購物", 1, "蝦皮無包裝", "B", "2026/08/07 15:00:00"],
+    ["蝦皮購物", 2, "蝦皮無包裝", "A", "2026/08/07 09:00:00"],
+    ["蝦皮購物", 3, "蝦皮無包裝[代收]", "A", ""],
+    ["蝦皮購物", 4, "蝦皮店到店", "A", ""],
+    ["蝦皮購物", 4, "蝦皮店到店", "B", ""],
+    ["friDay商城", 5, "7-11", "A", "2026/08/07 14:00:59"],
+    ["friDay商城", 5, "7-11", "B", "2026/08/07 14:00:59"],
+    ["friDay商城", 6, "7-11", "A", "2026/08/07 14:01:00"],
+]
+
+
+class ImportStatsTests(TestCase):
+    def setUp(self):
+        self.user = make_user("boss", Level.ADMIN)
+        self.client.login(username=self.user.username, password="pw12345!")
+
+    def upload(self, rows=STAT_ROWS, headers=STAT_HEADERS, name="今天.xlsx"):
+        return self.client.post(reverse("orders:batch_list"), {"file": xlsx(headers, rows, name=name)})
+
+    def stats(self, batch):
+        response = self.client.get(reverse("orders:batch_detail", args=[batch.pk]))
+        return {(r.platform, r.ship_type, r.period): (r.distinct, r.rows if r.show_rows else None) for r in response.context["rows"]}
+
+    def test_import_creates_batch_and_stats(self):
+        response = self.upload()
+        batch = ImportBatch.objects.get()
+        self.assertRedirects(response, reverse("orders:batch_detail", args=[batch.pk]))
+        self.assertEqual((batch.file_name, batch.imported_by, batch.mapping_version.number), ("今天.xlsx", self.user, 1))
+        self.assertEqual((batch.line_count, batch.order_count), (9, 6))
+        self.assertEqual(self.stats(batch), {
+            ("蝦皮購物", "蝦皮無包裝", ""): (2, 3),  # 去重 2 張、非去重 3 列；蝦皮不分 14:00 前後
+            ("蝦皮購物", "蝦皮無包裝[代收]", ""): (1, 1),
+            ("蝦皮購物", "蝦皮店到店", ""): (1, None),  # 其他出貨方式只有去重
+            ("friDay商城", "7-11", "14:00 前"): (1, None),  # 14:00:59 只看到分鐘，算 14:00 前
+            ("friDay商城", "7-11", "14:00 後"): (1, None),
+        })
+
+    def test_each_batch_counted_alone(self):
+        self.upload()
+        self.upload(STAT_ROWS[:2], name="補單.xlsx")
+        second = ImportBatch.objects.get(file_name="補單.xlsx")
+        self.assertEqual(self.stats(second), {("蝦皮購物", "蝦皮無包裝", ""): (1, 2)})
+        self.assertEqual(ImportBatch.objects.get(file_name="今天.xlsx").order_count, 6)
+
+    def test_any_error_rejects_whole_file(self):
+        rows = STAT_ROWS + [["蝦皮購物", "", "蝦皮店到店", "A", ""], ["friDay商城", 7, "7-11", "A", ""], ["蝦皮購物", 8, "蝦皮店到店", "A", "明天"]]
+        response = self.upload(rows)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "有 3 列資料有問題，整份沒有匯入")
+        errors = response.context["outcome"].errors
+        self.assertEqual([(row_no, label) for row_no, label, _, _ in errors], [(11, "訂單號"), (12, "下單時間"), (13, "下單時間")])
+        self.assertFalse(ImportBatch.objects.exists())
+        self.assertFalse(OrderLine.objects.exists())
+
+    def test_missing_order_no_column(self):
+        response = self.upload(headers=["交易平台", "訂單編號", "出貨類型", "商品編號", "建立時間"])
+        self.assertContains(response, "找不到 訂單號（「交易序號」）")
+        self.assertFalse(ImportBatch.objects.exists())
+
+    def test_delete_batch(self):
+        self.upload()
+        batch = ImportBatch.objects.get()
+        self.client.post(reverse("orders:batch_delete", args=[batch.pk]))
+        self.assertFalse(ImportBatch.objects.exists())
+        self.assertFalse(OrderLine.objects.exists())
+
+    def test_page_permission(self):
+        self.client.login(username=make_user("staff", Level.STAFF).username, password="pw12345!")
+        self.assertEqual(self.client.get(reverse("orders:batch_list")).status_code, 403)
+        self.assertEqual(self.upload().status_code, 403)
+        PagePermission.objects.create(page_key="order-stats", label="訂單統計", min_level=Level.STAFF)
+        self.assertContains(self.client.get(reverse("orders:batch_list")), "還沒有匯入過")

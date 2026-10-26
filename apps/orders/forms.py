@@ -56,3 +56,7 @@ class MappingForm(forms.Form):
 
 class CheckFileForm(forms.Form):
     file = forms.FileField(label="來源檔", help_text="上傳 .xlsx 或 .csv，用這個版本試讀前 500 列，不會匯入任何訂單。")
+
+
+class ImportForm(forms.Form):
+    file = forms.FileField(label="訂單檔", help_text="上傳 .xlsx 或 .csv，用目前生效的欄位對應讀取；有任何一列錯誤就整份不匯入。")

@@ -1,17 +1,22 @@
-"""後台「匯入欄位對應」：用版本管理欄位對應，同時只有一個版本生效。"""
+"""後台「匯入欄位對應」：用版本管理欄位對應，同時只有一個版本生效。
+「訂單統計」：匯入檔案，每一批獨立統計。"""
 
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.functional import cached_property
-from django.views.generic import FormView, View
+from django.views.generic import DetailView, FormView, ListView, View
 
+from apps.backoffice.menu import MENU_BY_KEY, can_use
 from apps.backoffice.views import ManageDeleteView, ManageListView, ManageMixin
 
-from .forms import CheckFileForm, MappingForm, UploadForm
+from .batches import import_file
+from .forms import CheckFileForm, ImportForm, MappingForm, UploadForm
 from .importer import ImportFileError, inspect, read_headers
-from .models import MappingVersion
+from .models import ImportBatch, MappingVersion
+from .stats import batch_stats
 
 
 def localtime_text(value):
@@ -167,3 +172,68 @@ class VersionDelete(VersionMixin, ManageDeleteView):
     """只能刪除沒生效過的草稿。"""
 
     queryset = MappingVersion.objects.filter(activated_at__isnull=True)
+
+
+class StatsPageMixin:
+    page_key = "order-stats"
+
+    def dispatch(self, request, *args, **kwargs):
+        if not can_use(request.user, MENU_BY_KEY[self.page_key]):
+            raise PermissionDenied
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["menu_item"] = MENU_BY_KEY[self.page_key]
+        return context
+
+
+class BatchListView(StatsPageMixin, ListView):
+    """匯入檔案與歷次匯入紀錄；匯入成功就直接到這一批的統計。"""
+
+    template_name = "orders/batch_list.html"
+    queryset = ImportBatch.objects.select_related("imported_by", "mapping_version")
+    paginate_by = 20
+
+    def post(self, request, *args, **kwargs):
+        form = ImportForm(request.POST, request.FILES)
+        if form.is_valid():
+            outcome = import_file(request.user, form.cleaned_data["file"])
+            if outcome.batch:
+                messages.success(request, f"已匯入 {outcome.batch.file_name}：{outcome.batch.line_count} 列、{outcome.batch.order_count} 張訂單。")
+                return redirect("orders:batch_detail", pk=outcome.batch.pk)
+            form.add_error("file", outcome.message)
+            self.outcome = outcome
+        self.form = form
+        return self.get(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["form"] = getattr(self, "form", None) or ImportForm()
+        context["outcome"] = getattr(self, "outcome", None)
+        context["active_version"] = MappingVersion.active()
+        return context
+
+
+class BatchDetailView(StatsPageMixin, DetailView):
+    template_name = "orders/batch_detail.html"
+    queryset = ImportBatch.objects.select_related("imported_by", "mapping_version")
+    context_object_name = "batch"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        rows = batch_stats(self.object)
+        context["rows"] = rows
+        context["total_distinct"] = self.object.order_count
+        return context
+
+
+class BatchDeleteView(StatsPageMixin, View):
+    """匯入錯檔案時刪掉整批。"""
+
+    def post(self, request, *args, **kwargs):
+        batch = get_object_or_404(ImportBatch, pk=kwargs["pk"])
+        name = str(batch)
+        batch.delete()
+        messages.success(request, f"已刪除匯入批次 {name}。")
+        return redirect("orders:batch_list")
