@@ -1,3 +1,5 @@
+import re
+import zipfile
 from datetime import datetime
 from io import BytesIO
 from unittest import mock
@@ -32,6 +34,19 @@ def xlsx(headers=HEADERS, rows=ROWS, name="匯出.xlsx", title_rows=0):
     buffer = BytesIO()
     wb.save(buffer)
     return SimpleUploadedFile(name, buffer.getvalue())
+
+
+def xlsx_wrong_dimension(**kwargs):
+    """模擬有些系統匯出的檔案：工作表記錄的範圍只寫 A1:A1。"""
+    upload = xlsx(**kwargs)
+    source, target = zipfile.ZipFile(BytesIO(upload.read())), BytesIO()
+    with zipfile.ZipFile(target, "w") as out:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "xl/worksheets/sheet1.xml":
+                data = re.sub(rb'<dimension ref="[^"]*"', b'<dimension ref="A1:A1"', data)
+            out.writestr(item, data)
+    return SimpleUploadedFile(upload.name, target.getvalue())
 
 
 class MappingTestCase(TestCase):
@@ -72,6 +87,10 @@ class VersionTests(MappingTestCase):
         )
         response = self.client.get(reverse("orders_manage:version_detail", args=[version.pk]))
         self.assertContains(response, '<option value="買家姓名">買家姓名</option>', html=True)
+
+    def test_file_with_wrong_dimension_reads_all_columns(self):
+        version = self.create_version(xlsx_wrong_dimension())
+        self.assertEqual(version.source_columns, HEADERS)
 
     def test_header_row(self):
         version = self.create_version(xlsx(title_rows=2), header_row=3)
