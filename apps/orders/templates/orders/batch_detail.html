@@ -35,7 +35,7 @@
         {% for row in summary.groups %}
           <tr{% if row.name == "未分組" %} class="table-warning"{% endif %}>
             <td>{{ row.name }}</td>
-            <td>{% if row.date %}{{ row.date|date:"m/d" }}{% elif row.period %}{% if row.dates %}{{ row.dates }} {% endif %}{{ row.period }}{% else %}—{% endif %}</td>
+            <td>{% if row.date %}{{ row.date|date:"m/d" }}{% elif row.period %}{% if row.dates %}{{ row.dates }} {% endif %}{{ row.period }}{% else %}{{ row.dates|default:"—" }}{% endif %}</td>
             <td class="text-end fw-bold fs-5">{{ row.count.distinct }}</td>
             <td class="text-end">{% if row.show_rows %}{{ row.count.rows }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
           </tr>

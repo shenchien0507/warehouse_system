@@ -350,6 +350,24 @@ class ImportStatsTests(TestCase):
         ])
         self.assertContains(response, "<td>10/05 14:00 後</td>", html=True)
 
+    def test_carry_over_and_split_by_day_can_be_turned_off(self):
+        StatGroup.objects.filter(name="其他平台").update(carry_over=False)  # v1 已鎖定，直接改資料模擬分組設定
+        StatGroup.objects.filter(name="蝦皮其他").update(split_by_day=False)
+        self.upload([
+            ["friDay商城", 1, "7-11", "A", "2026/10/03 20:00:00"],  # 不併入：照自己的時間算後
+            ["friDay商城", 2, "7-11", "A", "2026/10/05 09:00:00"],
+            ["蝦皮購物", 3, "蝦皮店到店", "A", "2026/10/03 09:00:00"],
+            ["蝦皮購物", 4, "蝦皮店到店", "A", "2026/10/05 09:00:00"],
+        ], work_date="2026-10-05")
+        response = self.response(ImportBatch.objects.get())
+        rows = response.context["summary"].groups
+        self.assertEqual([(r.name, r.period, r.dates, r.count.distinct) for r in rows], [
+            ("其他平台", "14:00 前", "10/05", 1),
+            ("其他平台", "14:00 後", "10/03", 1),
+            ("蝦皮其他", "", "10/03–10/05", 2),  # 跨日合成一列，排在作業日那段
+        ])
+        self.assertContains(response, "<td>10/03–10/05</td>", html=True)
+
     def test_work_date_defaults_to_today(self):
         self.client.post(reverse("orders:batch_list"), {"file": xlsx(STAT_HEADERS, STAT_ROWS)})
         self.assertEqual(ImportBatch.objects.get().work_date, timezone.localdate())
@@ -573,7 +591,8 @@ class StatGroupTests(TestCase):
         v2 = self.new_version()
         self.assertContains(self.client.get(reverse("orders_manage:group_version_list")), "生效中")
         response = self.client.get(reverse("orders_manage:group_version_detail", args=[self.v1.pk]))
-        self.assertContains(response, "14:00（00:00:00 用匯入時間）")
+        self.assertContains(response, "14:00（作業日之前算前、00:00:00 用匯入時間）")
+        self.assertContains(response, "不分（一天一列）")
         self.assertNotContains(response, "新增分組")
         self.assertContains(self.client.get(reverse("orders_manage:group_version_detail", args=[v2.pk])), "新增分組")
         group = v2.groups.first()
