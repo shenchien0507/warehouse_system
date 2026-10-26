@@ -472,6 +472,16 @@ class StatGroupTests(TestCase):
         response = self.client.get(reverse("orders_manage:group_create", args=[v2.pk]))
         self.assertRedirects(response, reverse("orders_manage:group_version_detail", args=[v2.pk]))
 
+    def test_saved_conditions_are_locked_in_form(self):
+        v2 = self.new_version()
+        group = v2.groups.get(name="其他平台")
+        group.conditions.update(platforms=["MOMO"])
+        response = self.client.get(reverse("orders_manage:group_edit", args=[v2.pk, group.pk]))
+        self.assertContains(response, "平台：MOMO")
+        self.assertContains(response, "修改這組條件")
+        self.assertContains(response, '<div class="row g-3" data-options hidden>', html=False)  # 已存的條件
+        self.assertContains(response, '<div class="row g-3" data-options>', html=False)  # 空白的條件可直接勾
+
     def test_cannot_change_source_of_locked_version(self):
         self.client.post(reverse("orders_manage:group_version_source", args=[self.v1.pk]), {"file": xlsx(SOURCE_HEADERS, SOURCE_ROWS)})
         self.v1.refresh_from_db()
