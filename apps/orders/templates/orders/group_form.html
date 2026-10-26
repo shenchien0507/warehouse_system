@@ -53,6 +53,31 @@
 {% block extra_js %}
   {{ combos|json_script:"source-combos" }}
   <script>
+    // 切開時間有填才能勾「算進前」，沒填才能勾「一天一列」；不能勾的照原值送出，不會被改掉。
+    (function () {
+      const cutoff = document.getElementById("id_cutoff");
+      const withCutoff = [document.getElementById("id_carry_over")];
+      const withoutCutoff = [document.getElementById("id_split_by_day")];
+
+      function toggle() {
+        const has = /\d/.test(cutoff.value);
+        withCutoff.forEach((input) => setEnabled(input, has));
+        withoutCutoff.forEach((input) => setEnabled(input, !has));
+      }
+
+      function setEnabled(input, enabled) {
+        input.disabled = !enabled;
+        input.closest(".wh-field").style.opacity = enabled ? "" : "0.5";
+      }
+
+      ["input", "keyup", "focusout"].forEach((type) => cutoff.addEventListener(type, toggle));
+      cutoff.form.addEventListener("submit", () => {
+        [...withCutoff, ...withoutCutoff].forEach((input) => { input.disabled = false; });
+      });
+      toggle();
+    })();
+  </script>
+  <script>
     // 連動選單：依勾選的平台（和店鋪）只顯示來源檔裡有出現的店鋪、出貨類型
     (function () {
       const combos = JSON.parse(document.getElementById("source-combos").textContent);  // [平台, 店鋪, 出貨類型]
