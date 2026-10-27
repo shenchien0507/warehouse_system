@@ -2,7 +2,7 @@
 一份統計：主表、依下單日期、明細。用法：{% include "orders/_summary.html" with summary=... title=... note=... anchor=... %}
 {% endcomment %}
   {% if by_import_time %}
-    <div class="alert alert-info py-2">作業日當天有 {{ by_import_time }} 張訂單的下單時間是 00:00:00，依匯入時間 {{ run.created_at|date:"H:i" }} 判斷前後。</div>
+    <div class="alert alert-info py-2">作業日當天有 {{ by_import_time }} 張訂單的下單時間是 00:00:00，{% if import_time_note %}{{ import_time_note }}{% else %}依匯入時間 {{ run.created_at|date:"H:i" }}{% endif %} 判斷前後。</div>
   {% endif %}
 
   <h2 class="h5" id="{{ anchor }}">{{ title }}<span class="text-muted small fw-normal ms-2">{% if note %}{{ note }}　{% endif %}{% if first_day %}訂單日期 {{ first_day|date:"m/d" }}{% if last_day != first_day %}–{{ last_day|date:"m/d" }}{% endif %}{% endif %}</span></h2>
