@@ -70,6 +70,19 @@ class DailyStatsTests(TestCase):
         self.assertEqual(self.table(sections[1]["summary"]), {("蝦皮隔日到貨", "14:00 後"): 1, ("其他平台", "14:00 後"): 1})
         self.assertContains(response, "重複出現在")
 
+    def test_same_file_again_is_rejected(self):
+        self.upload(MORNING, "10:00")
+        response = self.upload(MORNING, "11:00", name="改了檔名.xlsx")
+        self.assertContains(response, "內容一樣，已經匯入過")
+        self.assertEqual(DailyBatch.objects.count(), 1)
+        self.assertEqual(DailyLine.objects.count(), 4)
+
+    def test_file_with_only_known_orders_is_rejected(self):
+        self.upload(MORNING, "10:00")
+        response = self.upload(MORNING[:2], "11:00")  # 內容不同，但訂單都匯過了
+        self.assertContains(response, "全部都已在 2026/10/05 之前的批次匯入過")
+        self.assertEqual(DailyBatch.objects.count(), 1)
+
     def test_other_work_date_is_separate_pool(self):
         self.upload(MORNING)
         self.upload(MORNING, work_date="2026-10-06")

@@ -14,6 +14,7 @@ class DailyBatch(models.Model):
     work_date = models.DateField("作業日")
     seq = models.PositiveIntegerField("第幾批")
     file_name = models.CharField("檔名", max_length=200)
+    file_hash = models.CharField("檔案指紋", max_length=64, blank=True)  # SHA-256，同作業日同內容的檔案不能再匯入
     imported_at = models.DateTimeField("匯入時間", auto_now_add=True)
     imported_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, verbose_name="匯入人", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"

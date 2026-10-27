@@ -9,7 +9,7 @@
     <div class="card-body">
       <h2 class="h5">匯入一批</h2>
       <p class="text-muted small mb-3">
-        每次放一份這個時段確定要出的訂單檔，累加到作業日的資料池（不會覆蓋之前的批次）。之前批次已經有的訂單會標記為重複，不重複計算。
+        每次放一份這個時段確定要出的訂單檔，累加到作業日的資料池（不會覆蓋之前的批次）。之前批次已經有的訂單會標記為重複，不重複計算；內容一樣的檔案、或訂單全部都已匯過的檔案會被擋下。
         {% if active_version %}目前用欄位對應 {{ active_version }} 讀取{% if active_groups %}、統計分組 {{ active_groups }} 計算{% else %}，<span class="text-danger">但沒有生效的統計分組版本</span>{% endif %}（和訂單統計共用）。{% else %}<span class="text-danger">目前沒有生效的欄位對應版本，請先到後台設定。</span>{% endif %}
       </p>
       {% if form.non_field_errors %}
