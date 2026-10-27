@@ -164,19 +164,21 @@ def main_order(row, rank, by_day, work_date):
 
 
 def summarize(lines, imported_at, groups, work_date=None):
-    """lines：[(平台, 店鋪, 出貨類型, 下單時間, 訂單號)]；groups：依順序排好的 StatGroup（含 conditions）。"""
+    """lines：[(平台, 店鋪, 出貨類型, 下單時間, 訂單號)]，可再多一個這列的匯入時間（多批合在一起算時各批不同）；
+    groups：依順序排好的 StatGroup（含 conditions）。"""
     groups = list(groups)
     work_date = work_date or local(imported_at).date()
     table, daily = {}, {}
     details = {}
     by_import_time, everyone, per_day = set(), set(), {}
     counted, rows_total = set(), 0
-    for platform, shop, ship_type, order_time, order_no in lines:
+    for platform, shop, ship_type, order_time, order_no, *line_imported_at in lines:
+        at = line_imported_at[0] if line_imported_at else imported_at
         platform, shop, ship_type = platform or "", shop or "", ship_type or ""
         group = find_group(groups, platform, shop, ship_type)
         name = group.name if group else UNGROUPED
         show_rows = group.show_rows if group else False
-        p = period(group, order_time, imported_at, work_date)
+        p = period(group, order_time, at, work_date)
         day = order_date(order_time)
         if uses_import_time(group, order_time, work_date):
             by_import_time.add(order_no)

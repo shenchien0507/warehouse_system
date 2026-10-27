@@ -1,0 +1,101 @@
+from datetime import date, datetime
+from unittest import mock
+
+from django.test import TestCase
+from django.urls import reverse
+from django.utils import timezone
+
+from apps.accounts.models import PagePermission
+from apps.accounts.testing import Level, make_user
+from apps.orders.tests import xlsx
+
+from .models import DailyBatch, DailyLine, DailyOrder
+
+HEADERS = ["交易平台", "交易序號", "出貨類型", "商品編號", "建立時間"]
+MORNING = [
+    ["蝦皮購物", 1, "蝦皮無包裝", "A", "2026/10/05 09:00:00"],
+    ["蝦皮購物", 1, "蝦皮無包裝", "B", "2026/10/05 09:00:00"],
+    ["蝦皮購物", 2, "蝦皮隔日到貨", "A", "2026/10/04 20:00:00"],
+    ["friDay商城", 3, "7-11", "A", "2026/10/05 00:00:00"],
+]
+AFTERNOON = [
+    ["蝦皮購物", 2, "蝦皮隔日到貨", "A", "2026/10/04 20:00:00"],  # 上午已經有了
+    ["蝦皮購物", 4, "蝦皮隔日到貨", "A", "2026/10/05 15:00:00"],
+    ["friDay商城", 5, "7-11", "A", "2026/10/05 00:00:00"],
+]
+WORK_DATE = date(2026, 10, 5)
+
+
+class DailyStatsTests(TestCase):
+    def setUp(self):
+        self.client.login(username=make_user("boss", Level.ADMIN).username, password="pw12345!")
+
+    def upload(self, rows, clock="10:00", work_date="2026-10-05", name=None):
+        hour, minute = map(int, clock.split(":"))
+        now = timezone.make_aware(datetime(2026, 10, 5, hour, minute))
+        with mock.patch("django.utils.timezone.now", return_value=now):
+            return self.client.post(
+                reverse("daily:day_list"), {"file": xlsx(HEADERS, rows, name=name or f"{clock}.xlsx"), "work_date": work_date}
+            )
+
+    def day(self):
+        return self.client.get(reverse("daily:day_detail", args=[WORK_DATE]))
+
+    def table(self, summary):
+        return {(r.name, r.period): r.count.distinct for r in summary.groups}
+
+    def test_batches_accumulate_and_duplicates_count_once_in_first_batch(self):
+        response = self.upload(MORNING, "10:00")
+        self.assertRedirects(response, reverse("daily:day_detail", args=[WORK_DATE]))
+        self.upload(AFTERNOON, "15:00")
+        first, second = DailyBatch.objects.order_by("seq")
+        self.assertEqual((first.seq, first.order_count, first.new_order_count), (1, 3, 3))
+        self.assertEqual((second.seq, second.order_count, second.new_order_count, second.duplicate_order_count), (2, 3, 2, 1))
+        self.assertEqual(DailyOrder.objects.count(), 5)
+        self.assertEqual(DailyOrder.objects.get(order_no="2").batch, first)
+        duplicate = DailyLine.objects.get(batch=second, order_no="2")
+        self.assertTrue(duplicate.is_duplicate)
+        self.assertEqual(DailyLine.objects.count(), 7)  # 重複的列照存
+
+        response = self.day()
+        self.assertEqual(response.context["order_total"], 5)
+        self.assertEqual(response.context["duplicates"], [("2", 1, [2])])
+        # 00:00:00 的訂單用各自那批的匯入時間：3 號 10:00 → 前，5 號 15:00 → 後
+        self.assertEqual(
+            self.table(response.context["total"]["summary"]),
+            {("蝦皮無包裝", "14:00 前"): 1, ("蝦皮隔日到貨", "14:00 前"): 1, ("蝦皮隔日到貨", "14:00 後"): 1,
+             ("其他平台", "14:00 前"): 1, ("其他平台", "14:00 後"): 1},
+        )
+        sections = response.context["sections"]
+        self.assertEqual(self.table(sections[1]["summary"]), {("蝦皮隔日到貨", "14:00 後"): 1, ("其他平台", "14:00 後"): 1})
+        self.assertContains(response, "重複出現在")
+
+    def test_other_work_date_is_separate_pool(self):
+        self.upload(MORNING)
+        self.upload(MORNING, work_date="2026-10-06")
+        self.assertEqual(DailyBatch.objects.get(work_date=date(2026, 10, 6)).new_order_count, 3)
+        self.assertEqual(DailyOrder.objects.count(), 6)
+
+    def test_bad_file_not_imported(self):
+        response = self.upload([["蝦皮購物", "", "宅配", "A", "2026/10/05 09:00:00"]])
+        self.assertContains(response, "訂單號空白")
+        self.assertFalse(DailyBatch.objects.exists())
+
+    def test_only_latest_batch_can_be_deleted(self):
+        self.upload(MORNING, "10:00")
+        self.upload(AFTERNOON, "15:00")
+        first, second = DailyBatch.objects.order_by("seq")
+        self.client.post(reverse("daily:batch_delete", args=[first.pk]))
+        self.assertEqual(DailyBatch.objects.count(), 2)
+        self.client.post(reverse("daily:batch_delete", args=[second.pk]))
+        self.assertEqual(list(DailyBatch.objects.all()), [first])
+        self.assertEqual(DailyOrder.objects.count(), 3)
+        self.assertFalse(DailyLine.objects.filter(is_duplicate=True).exists())
+        self.upload(AFTERNOON, "16:00")
+        self.assertEqual(DailyBatch.objects.order_by("seq").last().seq, 2)
+
+    def test_page_permission(self):
+        self.client.login(username=make_user("staff", Level.STAFF).username, password="pw12345!")
+        self.assertEqual(self.client.get(reverse("daily:day_list")).status_code, 403)
+        PagePermission.objects.create(page_key="daily-stats", label="當日統計", min_level=Level.STAFF)
+        self.assertContains(self.client.get(reverse("daily:day_list")), "還沒有匯入過")

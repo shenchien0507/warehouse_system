@@ -1,0 +1,89 @@
+"""當日統計：每個作業日是一個資料池，當天每個時段確定要出的訂單匯入成一批，一批一批累加上去（不覆蓋）。
+同一作業日同一個訂單號只算一次，歸在第一次出現的批次；之後批次再出現的商品列照存，標記為重複。
+後續功能從 DailyOrder（當天確定要出的訂單）和 DailyLine 引用、比對資料。欄位對應、統計分組和「訂單統計」共用。"""
+
+from django.conf import settings
+from django.db import models
+
+from apps.orders.models import GroupVersion, MappingVersion
+
+
+class DailyBatch(models.Model):
+    """匯入一份檔案就是一批，屬於一個作業日，依匯入順序編號（第 1 批、第 2 批…）。"""
+
+    work_date = models.DateField("作業日")
+    seq = models.PositiveIntegerField("第幾批")
+    file_name = models.CharField("檔名", max_length=200)
+    imported_at = models.DateTimeField("匯入時間", auto_now_add=True)
+    imported_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="匯入人", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    mapping_version = models.ForeignKey(MappingVersion, verbose_name="欄位對應版本", on_delete=models.PROTECT, related_name="+")
+    group_version = models.ForeignKey(GroupVersion, verbose_name="統計分組版本", on_delete=models.PROTECT, related_name="+")
+    line_count = models.PositiveIntegerField("商品列數", default=0)
+    order_count = models.PositiveIntegerField("訂單數", default=0)  # 檔案裡的訂單數（去重）
+    new_order_count = models.PositiveIntegerField("新訂單數", default=0)  # 這批第一次出現、算進當日的訂單
+
+    class Meta:
+        verbose_name = "當日匯入批次"
+        verbose_name_plural = "當日匯入批次"
+        ordering = ["work_date", "seq"]
+        constraints = [models.UniqueConstraint(fields=["work_date", "seq"], name="unique_daily_batch_seq")]
+
+    def __str__(self):
+        return f"{self.work_date:%Y/%m/%d} 第 {self.seq} 批"
+
+    @property
+    def duplicate_order_count(self):
+        return self.order_count - self.new_order_count
+
+    @property
+    def is_latest(self):
+        return not DailyBatch.objects.filter(work_date=self.work_date, seq__gt=self.seq).exists()
+
+
+class DailyOrder(models.Model):
+    """當日資料池裡的一張訂單：同一作業日同一訂單號只有一筆，歸在第一次出現的批次。"""
+
+    work_date = models.DateField("作業日")
+    order_no = models.CharField("訂單號", max_length=100)
+    batch = models.ForeignKey(DailyBatch, verbose_name="第一次出現的批次", on_delete=models.CASCADE, related_name="orders")
+
+    class Meta:
+        verbose_name = "當日訂單"
+        verbose_name_plural = "當日訂單"
+        ordering = ["work_date", "batch__seq", "order_no"]
+        constraints = [models.UniqueConstraint(fields=["work_date", "order_no"], name="unique_daily_order")]
+
+    def __str__(self):
+        return f"{self.work_date:%Y/%m/%d} {self.order_no}"
+
+
+class DailyLine(models.Model):
+    """來源檔的一列（一個商品），欄位和訂單統計的 OrderLine 一樣。
+    is_duplicate：這張訂單已在同一作業日更早的批次出現過，這列不算進當日統計。"""
+
+    batch = models.ForeignKey(DailyBatch, verbose_name="匯入批次", on_delete=models.CASCADE, related_name="lines")
+    order = models.ForeignKey(DailyOrder, verbose_name="當日訂單", on_delete=models.CASCADE, related_name="lines")
+    is_duplicate = models.BooleanField("重複", default=False)
+    row_no = models.PositiveIntegerField("來源檔第幾列")
+    order_no = models.CharField("訂單號", max_length=100)
+    platform_order_no = models.CharField("平台訂單編號", max_length=100, blank=True)
+    platform = models.CharField("平台", max_length=100, blank=True)
+    shop = models.CharField("店鋪", max_length=100, blank=True)
+    order_time = models.DateTimeField("下單時間", null=True, blank=True)
+    ship_time = models.DateTimeField("出貨時間", null=True, blank=True)
+    ship_type = models.CharField("出貨方式", max_length=100, blank=True)
+    shipment_no = models.CharField("出貨單號", max_length=100, blank=True)
+    product_code = models.CharField("商品編號", max_length=100, blank=True)
+    product_name = models.CharField("商品名稱", max_length=300, blank=True)
+    product_spec = models.CharField("商品樣式", max_length=300, blank=True)
+    quantity = models.IntegerField("數量", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "當日商品列"
+        verbose_name_plural = "當日商品列"
+        indexes = [models.Index(fields=["batch", "order_no"])]
+
+    def __str__(self):
+        return f"{self.order_no} {self.product_code}"

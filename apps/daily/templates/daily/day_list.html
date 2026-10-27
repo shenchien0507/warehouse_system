@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}當日統計{% endblock %}
+
+{% block heading %}當日統計{% endblock %}
+
+{% block content %}
+  <div class="card mb-4">
+    <div class="card-body">
+      <h2 class="h5">匯入一批</h2>
+      <p class="text-muted small mb-3">
+        每次放一份這個時段確定要出的訂單檔，累加到作業日的資料池（不會覆蓋之前的批次）。之前批次已經有的訂單會標記為重複，不重複計算。
+        {% if active_version %}目前用欄位對應 {{ active_version }} 讀取{% if active_groups %}、統計分組 {{ active_groups }} 計算{% else %}，<span class="text-danger">但沒有生效的統計分組版本</span>{% endif %}（和訂單統計共用）。{% else %}<span class="text-danger">目前沒有生效的欄位對應版本，請先到後台設定。</span>{% endif %}
+      </p>
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger py-2">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>
+      {% endif %}
+      <form method="post" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+        <div class="row g-2 align-items-end">
+          <div class="col-md-5 wh-field{% if form.file.errors %} has-error{% endif %}">
+            <label class="form-label" for="{{ form.file.id_for_label }}">{{ form.file.label }}</label>
+            {{ form.file }}
+            {% for error in form.file.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+          </div>
+          <div class="col-md-3 wh-field{% if form.work_date.errors %} has-error{% endif %}">
+            <label class="form-label" for="{{ form.work_date.id_for_label }}">作業日</label>
+            {{ form.work_date }}
+            {% for error in form.work_date.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-primary" onclick="this.disabled=true;this.textContent='匯入中…';this.form.submit();">匯入</button>
+          </div>
+        </div>
+        <div class="form-text">上傳 .xlsx 或 .csv；有任何一列有錯，這份不匯入。大檔案要讀一陣子，按下後請稍候。</div>
+      </form>
+      {% if outcome.file.errors %}
+        <div class="table-responsive mt-3">
+          <table class="table table-sm mb-0">
+            <thead class="table-light"><tr><th>第幾列</th><th>欄位</th><th>檔案裡的值</th><th>問題</th></tr></thead>
+            <tbody>
+              {% for row_no, label, raw, error in outcome.file.errors %}
+                <tr><td>{{ row_no }}</td><td>{{ label }}</td><td>{{ raw|default:"（空白）" }}</td><td>{{ error }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% if outcome.file.error_count > outcome.file.errors|length %}<div class="form-text">只列出前 {{ outcome.file.errors|length }} 筆。</div>{% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <h2 class="h5">每日資料池</h2>
+  <div class="table-responsive">
+    <table class="table table-striped table-hover align-middle">
+      <thead class="table-light">
+        <tr><th>作業日</th><th class="text-end">批數</th><th class="text-end">訂單數</th><th>最後匯入</th><th class="text-end">操作</th></tr>
+      </thead>
+      <tbody>
+        {% for day in object_list %}
+          <tr>
+            <td>{{ day.work_date|date:"Y/m/d" }}</td>
+            <td class="text-end">{{ day.batch_count }}</td>
+            <td class="text-end">{{ day.order_count }}</td>
+            <td>{{ day.last_import|date:"Y/m/d H:i" }}</td>
+            <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'daily:day_detail' day.work_date %}">看當日統計</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="text-muted">還沒有匯入過。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "components/_pagination.html" %}
+{% endblock %}
