@@ -8,7 +8,7 @@
     <a class="btn btn-outline-secondary" href="{% url 'daily:day_list' %}">回每日資料池</a>
   </div>
   <p class="text-muted small mb-3">
-    共 {{ batches|length }} 批、{{ order_total }} 張訂單（同一張訂單出現在幾批都只算 1 張，歸在第一次出現的那批）。
+    共 {{ batches|length }} 批、{{ order_total }} 張訂單（同一張訂單出現在幾批都只算 1 張，歸在第一次出現的那批，跨作業日也一樣）。
     用第 1 批的欄位對應 {{ batches.0.mapping_version }}、統計分組 {{ batches.0.group_version }} 計算。
   </p>
 {% endblock %}
@@ -31,7 +31,7 @@
             <td class="text-end fw-bold">{{ batch.new_order_count }}</td>
             <td class="text-end">{% if batch.duplicate_order_count %}<span class="badge text-bg-warning">{{ batch.duplicate_order_count }}</span>{% else %}0{% endif %}</td>
             <td class="text-end">
-              {% if batch == latest %}
+              {% if batch == latest and not batch.referenced_later %}
                 <form method="post" action="{% url 'daily:batch_delete' batch.pk %}" onsubmit="return confirm('確定刪除{{ batch }}？這批的訂單和統計會一起刪掉。');">
                   {% csrf_token %}
                   <button type="submit" class="btn btn-sm btn-outline-danger">刪除</button>
@@ -42,7 +42,7 @@
         {% endfor %}
       </tbody>
     </table>
-    <div class="form-text">目前只能刪除最後一批。</div>
+    <div class="form-text">目前只能刪除最後一批；這批的訂單已在其他作業日重複出現時也不能刪。</div>
   </div>
 
   <section class="mb-5">
@@ -51,13 +51,13 @@
 
   {% if duplicates %}
     <details class="mb-5" id="duplicates">
-      <summary class="h5">重複的訂單<span class="text-muted small fw-normal ms-2">{{ duplicates|length }} 張，算在第一次出現的批次</span></summary>
+      <summary class="h5">重複的訂單<span class="text-muted small fw-normal ms-2">{{ duplicates|length }} 張，算在第一次出現的批次（可能是其他作業日）</span></summary>
       <div class="table-responsive mt-2">
         <table class="table table-sm table-striped align-middle">
           <thead class="table-light"><tr><th>訂單號</th><th>第一次出現</th><th>重複出現在</th></tr></thead>
           <tbody>
             {% for order_no, first, again in duplicates %}
-              <tr><td>{{ order_no }}</td><td>第 {{ first }} 批</td><td>{% for seq in again %}第 {{ seq }} 批{% if not forloop.last %}、{% endif %}{% endfor %}</td></tr>
+              <tr><td>{{ order_no }}</td><td>{{ first }}</td><td>{% for seq in again %}第 {{ seq }} 批{% if not forloop.last %}、{% endif %}{% endfor %}</td></tr>
             {% endfor %}
           </tbody>
         </table>

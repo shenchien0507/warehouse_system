@@ -26,12 +26,16 @@ def batch_stats(batch, groups):
 
 
 def duplicates(work_date):
-    """[(訂單號, 第一次出現的批次序號, [重複出現的批次序號])]，依第一次出現的批次、訂單號排。"""
+    """[(訂單號, 第一次出現在哪裡, [這天重複出現的批次序號])]，依第一次出現的作業日、批次、訂單號排。
+    第一次出現在同一天寫「第 N 批」，在其他作業日寫「08/16 第 N 批」。"""
     seen = {}
     rows = (
         DailyLine.objects.filter(batch__work_date=work_date, is_duplicate=True)
-        .values_list("order__order_no", "order__batch__seq", "batch__seq").distinct()
+        .values_list("order__order_no", "order__work_date", "order__batch__seq", "batch__seq").distinct()
     )
-    for order_no, first, again in rows:
-        seen.setdefault((first, order_no), set()).add(again)
-    return [(order_no, first, sorted(again)) for (first, order_no), again in sorted(seen.items())]
+    for order_no, first_date, first_seq, again in rows:
+        seen.setdefault((first_date, first_seq, order_no), set()).add(again)
+    return [
+        (order_no, f"第 {seq} 批" if day == work_date else f"{day:%m/%d} 第 {seq} 批", sorted(again))
+        for (day, seq, order_no), again in sorted(seen.items())
+    ]

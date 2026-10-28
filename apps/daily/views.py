@@ -101,12 +101,16 @@ class DayDetailView(DailyPageMixin, TemplateView):
 
 
 class BatchDeleteView(DailyPageMixin, View):
-    """匯錯檔時刪掉當天最後一批（之前的批次可能已被後續批次比對過，先不開放）。"""
+    """匯錯檔時刪掉當天最後一批（之前的批次可能已被後續批次比對過，先不開放）；
+    這批的訂單已被其他作業日的批次標成重複時也不能刪，否則那些批次的重複紀錄會跟著不見。"""
 
     def post(self, request, *args, **kwargs):
         batch = get_object_or_404(DailyBatch, pk=kwargs["pk"])
         if not batch.is_latest:
             messages.error(request, "只能刪除當天最後一批。")
+            return redirect("daily:day_detail", work_date=batch.work_date)
+        if batch.referenced_later:
+            messages.error(request, f"{batch}的訂單已在其他作業日的批次重複出現，要先刪掉那些批次。")
             return redirect("daily:day_detail", work_date=batch.work_date)
         work_date, name = batch.work_date, str(batch)
         batch.delete()

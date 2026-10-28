@@ -39,6 +39,11 @@ class DailyBatch(models.Model):
         return self.order_count - self.new_order_count
 
     @property
+    def referenced_later(self):
+        """這批的訂單在其他批次被標成重複。"""
+        return DailyLine.objects.filter(order__batch=self).exclude(batch=self).exists()
+
+    @property
     def is_latest(self):
         return not DailyBatch.objects.filter(work_date=self.work_date, seq__gt=self.seq).exists()
 
