@@ -56,29 +56,44 @@ def random_time(rng, start, end):
     return start + timedelta(seconds=rng.randint(0, max(span, 0)))
 
 
-def order_rows(rng, setting, order_no, platform, ship_type_weights, catalog):
-    shop = rng.choice(platform["shops"]) if platform["shops"] else ""
-    ship_type = weighted(rng, ship_type_weights)
-    created = random_time(rng, setting.start, setting.end)
+def new_order(rng, catalog, platform, ship_type_weights, created, order_no):
+    """一張假訂單（JSON 存得下的 dict）；建立時間只有日期的平台會改成當天 00:00:00。"""
     if platform["date_only"]:  # 範例裡這個平台的建立時間只有日期（00:00:00）
         created = created.replace(hour=0, minute=0, second=0)
-    shapes = platform["order_no_shapes"] or ["##############"]
-    platform_order_no = fill(rng, rng.choice(shapes))
-    shipment_no = ""
-    if setting.key in WITH_SHIPMENT_NO:
-        shipment_no = fill(rng, rng.choice(catalog["shipment_shapes"].get(ship_type) or [DEFAULT_SHIPMENT_SHAPE]))
     line_count = min(weighted(rng, LINE_COUNTS), len(catalog["products"]))
-    for code, name, spec, price in rng.sample(catalog["products"], line_count):
-        quantity = weighted(rng, QUANTITIES)
+    return {
+        "order_no": order_no,
+        "platform": platform["name"],
+        "shop": rng.choice(platform["shops"]) if platform["shops"] else "",
+        "ship_type": weighted(rng, ship_type_weights),
+        "created": created.strftime(TIME_FORMAT),
+        "platform_order_no": fill(rng, rng.choice(platform["order_no_shapes"] or ["##############"])),
+        "lines": [[code, name, spec, weighted(rng, QUANTITIES), price]
+                  for code, name, spec, price in rng.sample(catalog["products"], line_count)],
+    }
+
+
+def new_shipment_no(rng, catalog, ship_type):
+    return fill(rng, rng.choice(catalog["shipment_shapes"].get(ship_type) or [DEFAULT_SHIPMENT_SHAPE]))
+
+
+def order_rows(order, shipment_no=""):
+    for code, name, spec, quantity, price in order["lines"]:
         row = dict.fromkeys(COLUMNS, "")
         row.update({column: MASK for column in MASKED_COLUMNS})
         row.update({
-            "交易平台": platform["name"], "交易店鋪": shop, "交易序號": order_no, "出貨類型": ship_type,
-            "商品編號": code, "商品名稱": name, "商品樣式": spec, "小計數量": quantity,
-            "建立時間": created.strftime(TIME_FORMAT), "平台訂單編號": platform_order_no, "出貨單號": shipment_no,
+            "交易平台": order["platform"], "交易店鋪": order["shop"], "交易序號": order["order_no"],
+            "出貨類型": order["ship_type"], "商品編號": code, "商品名稱": name, "商品樣式": spec, "小計數量": quantity,
+            "建立時間": order["created"], "平台訂單編號": order["platform_order_no"], "出貨單號": shipment_no,
             "商品小計": price * quantity, "商品單價": price,
         })
         yield [row[column] for column in COLUMNS]
+
+
+def platform_choices(options, platforms):
+    """options：[(平台, 比例, {出貨類型: 比例}), …] → weighted() 用的 [((平台, 出貨類型比例), 比例), …]"""
+    return [((name, [(t, w) for t, w in types.items() if w > 0] or [("", 1)]), weight)
+            for name, weight, types in options if weight > 0 and name in platforms]
 
 
 def generate(settings, options, first_order_no, seed=None):
@@ -88,15 +103,17 @@ def generate(settings, options, first_order_no, seed=None):
     rng = random.Random(seed)
     catalog = load_catalog()
     platforms = {p["name"]: p for p in catalog["platforms"]}
-    choices = [((name, [(t, w) for t, w in types.items() if w > 0] or [("", 1)]), weight)
-               for name, weight, types in options if weight > 0 and name in platforms]
+    choices = platform_choices(options, platforms)
     order_no = first_order_no
     result = {}
     for setting in settings:
         rows = []
         for _ in range(setting.count):
             platform, types = weighted(rng, choices)
-            rows.extend(order_rows(rng, setting, order_no, platforms[platform], types, catalog))
+            order = new_order(rng, catalog, platforms[platform], types,
+                              random_time(rng, setting.start, setting.end), order_no)
+            shipment_no = new_shipment_no(rng, catalog, order["ship_type"]) if setting.key in WITH_SHIPMENT_NO else ""
+            rows.extend(order_rows(order, shipment_no))
             order_no += 1
         result[setting.label] = rows
     return result

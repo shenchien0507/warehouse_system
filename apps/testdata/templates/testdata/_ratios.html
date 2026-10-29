@@ -1,0 +1,41 @@
+{# 平台、出貨類型比例表（RatioFieldsMixin 的欄位） #}
+    <div class="card mb-4">
+      <div class="card-header">平台、出貨類型比例</div>
+      <div class="card-body">
+        <div class="form-text mb-2">
+          預設比例（%）來自範例檔：平台比例是 ALL、歷史紀錄各自算百分比再平均（兩份訂單量差很多，各佔一半）；出貨類型比例用比較新的那份（蝦皮、friDay 照歷史紀錄，所以無包裝不會被舊資料稀釋）。數字照相對大小換算，不用加起來剛好 100；填 0 就不會出現。
+          點平台名稱展開它的出貨類型比例。出貨類型有「無包裝」的另外拆一列，可以單獨調；Excel 裡的平台名稱不變。
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light"><tr><th>平台</th><th style="width:8rem">比例</th><th>店鋪（隨機）</th></tr></thead>
+            <tbody>
+              {% for i, label, platform, field, ship_types in form.platform_rows %}
+                <tr>
+                  <td>
+                    <a class="text-decoration-none" data-bs-toggle="collapse" href="#ship-types-{{ i }}" role="button" aria-expanded="false">
+                      {{ label }} <span class="text-muted small">（{{ ship_types|length }} 種出貨類型）</span>
+                    </a>
+                  </td>
+                  <td class="wh-field">{{ field }}{% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</td>
+                  <td class="small text-muted">{{ platform.shops|join:"、"|default:"—" }}</td>
+                </tr>
+                <tr class="collapse" id="ship-types-{{ i }}">
+                  <td colspan="3" class="bg-light">
+                    <div class="row g-2">
+                      {% for name, type_field in ship_types %}
+                        <div class="col-sm-6 col-lg-4 d-flex align-items-center gap-2 wh-field">
+                          <span class="flex-grow-1 small">{{ name }}</span><span style="width:6rem">{{ type_field }}{% for error in type_field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</span>
+                        </div>
+                      {% empty %}
+                        <div class="col small text-muted">範例裡沒有出貨類型，產生時留空。</div>
+                      {% endfor %}
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
