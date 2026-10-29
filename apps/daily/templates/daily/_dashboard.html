@@ -3,52 +3,38 @@
 {% if not batches %}
   <div class="alert alert-light border">還沒有匯入過，上面選檔案匯入第一批。</div>
 {% else %}
-  <h2 class="h4 mb-3">作業日 {{ work_date|date:"Y/m/d" }}</h2>
+  <div class="d-flex flex-wrap align-items-baseline gap-3 mb-3">
+    <h2 class="h4 mb-0">作業日 {{ work_date|date:"Y/m/d" }}</h2>
+    <span class="text-muted">當日訂單 <strong class="text-body">{{ board.total }}</strong> 張・{{ batches|length }} 批・最後匯入 {{ latest.imported_at|date:"H:i" }}</span>
+  </div>
   <div class="row g-3 mb-4">
-    <div class="col-6 col-lg-3"><div class="stat-tile">
-      <div class="stat-label">當日訂單</div>
-      <div class="stat-value">{{ board.total }}</div>
-      <div class="stat-sub">重複的只算 1 張</div>
-    </div></div>
-    <div class="col-6 col-lg-3"><div class="stat-tile">
-      <div class="stat-label"><span class="legend-swatch seg-before"></span>切單前</div>
-      <div class="stat-value">{{ board.before }}</div>
-      <div class="stat-sub">有切單時間的分組</div>
-    </div></div>
-    <div class="col-6 col-lg-3"><div class="stat-tile">
-      <div class="stat-label"><span class="legend-swatch seg-after"></span>切單後</div>
-      <div class="stat-value">{{ board.after }}</div>
-      <div class="stat-sub">有切單時間的分組</div>
-    </div></div>
-    <div class="col-6 col-lg-3"><div class="stat-tile">
-      <div class="stat-label">批數</div>
-      <div class="stat-value">{{ batches|length }}</div>
-      <div class="stat-sub">最後匯入 {{ latest.imported_at|date:"H:i" }}</div>
-    </div></div>
+    {% for card in board.groups %}
+      <div class="col-6 col-md-4 col-xl-3">
+        <div class="stat-tile{% if not card.total %} is-empty{% endif %}{% if card.name == '未分組' %} is-ungrouped{% endif %}">
+          <div class="stat-label">{{ card.name }}</div>
+          <div class="stat-value">{{ card.total }}</div>
+          {% if card.cutoff %}
+            <div class="stat-split">
+              <span><span class="legend-swatch seg-before"></span>{{ card.cutoff }} 前 <strong>{{ card.counts.before|default:0 }}</strong></span>
+              <span><span class="legend-swatch seg-after"></span>{{ card.cutoff }} 後 <strong>{{ card.counts.after|default:0 }}</strong></span>
+            </div>
+            {% if card.split %}
+              <div class="bar-track bar-thin mt-2">
+                {% for key, label, count, width in card.split %}<div class="bar-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" title="{{ card.name }}・{{ label }}：{{ count }} 張"></div>{% endfor %}
+              </div>
+            {% endif %}
+          {% else %}
+            <div class="stat-sub">不分時段</div>
+          {% endif %}
+          {% if card.counts.no_time %}<div class="stat-sub">沒有下單時間 {{ card.counts.no_time }}</div>{% endif %}
+          {% if card.show_rows %}<div class="stat-sub">非去重 {{ card.rows }}</div>{% endif %}
+        </div>
+      </div>
+    {% endfor %}
   </div>
 
   <div class="row g-4 mb-4">
     <div class="col-lg-7">
-      <h3 class="h6 mb-2">各分組訂單數</h3>
-      <div class="legend mb-2">
-        <span><span class="legend-swatch seg-before"></span>切單前</span>
-        <span><span class="legend-swatch seg-after"></span>切單後</span>
-        <span><span class="legend-swatch seg-all_day"></span>不分時段</span>
-        <span><span class="legend-swatch seg-no_time"></span>沒有下單時間</span>
-      </div>
-      {% for bar, segments in board.group_rows %}
-        <div class="bar-row">
-          <div class="bar-name" title="{{ bar.name }}">{{ bar.name }}</div>
-          <div class="bar-track">
-            {% for key, label, count, width in segments %}
-              <div class="bar-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" title="{{ bar.name }}・{{ label }}：{{ count }} 張"></div>
-            {% endfor %}
-          </div>
-          <div class="bar-total">{{ bar.total }}</div>
-        </div>
-      {% endfor %}
-    </div>
-    <div class="col-lg-5">
       <h3 class="h6 mb-2">批次累計</h3>
       <div class="legend mb-2">
         <span><span class="legend-swatch seg-earlier"></span>之前批次</span>

@@ -75,11 +75,17 @@ class DailyStatsTests(TestCase):
         self.upload(AFTERNOON, "15:00")
         response = self.client.get(reverse("daily:day_list"))  # 沒指定日期：最近一個有資料的作業日
         board = response.context["board"]
-        self.assertEqual((board.total, board.before, board.after), (5, 3, 2))
+        self.assertEqual(board.total, 5)
         self.assertEqual(
-            [(bar.name, bar.counts) for bar in board.groups],
-            [("蝦皮無包裝", {"before": 1}), ("蝦皮隔日到貨", {"before": 1, "after": 1}), ("其他平台", {"before": 1, "after": 1})],
+            [(c.name, c.total, c.counts, c.cutoff) for c in board.groups],
+            [
+                ("蝦皮無包裝", 1, {"before": 1}, "14:00"),
+                ("蝦皮隔日到貨", 2, {"before": 1, "after": 1}, "14:00"),
+                ("蝦皮其他", 0, {}, ""),  # 沒有訂單的分組也有卡片
+                ("其他平台", 2, {"before": 1, "after": 1}, "14:00"),
+            ],
         )
+        self.assertEqual(board.groups[0].rows, 2)  # 蝦皮無包裝列非去重：1 號訂單 2 列
         self.assertEqual([(b.seq, earlier, added) for b, earlier, added, *_ in board.batches], [(1, 0, 3), (2, 3, 2)])
         self.assertContains(response, 'id="daily-dashboard"')
         partial = self.client.get(reverse("daily:day_list"), {"partial": 1})
