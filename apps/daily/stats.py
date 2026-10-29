@@ -2,7 +2,7 @@
 - 當日累計：作業日全部批次，用當天第一批的統計分組版本，00:00:00 的訂單用各自那批的匯入時間判斷前後。
 - 每一批：只算這批新出現的訂單；重複的另外列出。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from apps.orders.stats import LINE_VALUES, NO_TIME, summarize, version_groups
 
@@ -49,18 +49,28 @@ class GroupCard:
 
     name: str
     counts: dict  # 區段 key（before、after、all_day、no_time）→ 訂單數（去重）
+    row_counts: dict = field(default_factory=dict)  # 同上，非去重（列數）
     total: int = 0
-    rows: int = 0  # 非去重（分組勾選「另外列出非去重」才顯示）
-    show_rows: bool = False
+    rows: int = 0  # 非去重
+    show_rows: bool = False  # 分組勾選「另外列出非去重」：卡片主要顯示非去重，去重放小字
     cutoff: str = ""  # 切單時間文字，例如 14:00；沒切時間空白
+
+    @property
+    def main(self):
+        return self.rows if self.show_rows else self.total
+
+    @property
+    def shown(self):
+        """卡片上切單前／後用的數字：和主要數字同一種（非去重或去重）。"""
+        return self.row_counts if self.show_rows else self.counts
 
     @property
     def split(self):
         """[(key, 名稱, 數字, 寬度%)]：卡片上切單前／後的小長條，沒切時間的分組不畫。"""
-        if not self.cutoff or not self.total:
+        if not self.cutoff or not self.main:
             return []
         parts = [("before", f"{self.cutoff} 前"), ("after", f"{self.cutoff} 後"), ("no_time", "沒有下單時間")]
-        return [(key, label, self.counts[key], self.counts[key] * 100 / self.total) for key, label in parts if self.counts.get(key)]
+        return [(key, label, self.shown[key], self.shown[key] * 100 / self.main) for key, label in parts if self.shown.get(key)]
 
 
 @dataclass
@@ -89,6 +99,7 @@ def dashboard(batches, summary, stat_groups):
         key = segment_key(row.period)
         card.counts[key] = card.counts.get(key, 0) + row.count.distinct
         card.total += row.count.distinct
+        card.row_counts[key] = card.row_counts.get(key, 0) + row.count.rows
         card.rows += row.count.rows
     total = sum(b.new_order_count for b in batches)
     rows, running = [], 0
