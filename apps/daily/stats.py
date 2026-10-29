@@ -66,7 +66,7 @@ class GroupCard:
 @dataclass
 class Dashboard:
     total: int  # 當日訂單數（去重）
-    groups: list  # GroupCard，依分組順序（沒有訂單的分組也列），未分組有訂單才列在最後
+    groups: list  # GroupCard，依分組順序，沒有訂單的分組不列；未分組有訂單才列在最後
     batches: list  # [(批次, 之前累計, 這批新的, 之前累計寬度%, 這批寬度%)]
 
 
@@ -96,4 +96,4 @@ def dashboard(batches, summary, stat_groups):
         scale = total or 1
         rows.append((batch, running, batch.new_order_count, running * 100 / scale, batch.new_order_count * 100 / scale))
         running += batch.new_order_count
-    return Dashboard(total=summary.total, groups=list(cards.values()), batches=rows)
+    return Dashboard(total=summary.total, groups=[c for c in cards.values() if c.total], batches=rows)

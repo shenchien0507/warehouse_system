@@ -80,8 +80,7 @@ class DailyStatsTests(TestCase):
             [(c.name, c.total, c.counts, c.cutoff) for c in board.groups],
             [
                 ("蝦皮無包裝", 1, {"before": 1}, "14:00"),
-                ("蝦皮隔日到貨", 2, {"before": 1, "after": 1}, "14:00"),
-                ("蝦皮其他", 0, {}, ""),  # 沒有訂單的分組也有卡片
+                ("蝦皮隔日到貨", 2, {"before": 1, "after": 1}, "14:00"),  # 蝦皮其他沒有訂單，不列
                 ("其他平台", 2, {"before": 1, "after": 1}, "14:00"),
             ],
         )
