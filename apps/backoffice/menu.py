@@ -22,6 +22,8 @@ MENU = [
     MenuItem("attendance-stations", "工位安排", "attendance:stations", "到班", section="feature"),
     MenuItem("order-stats", "訂單統計", "orders:run_list", "訂單", section="feature"),
     MenuItem("daily-stats", "當日統計", "daily:day_list", "訂單", section="feature"),
+    # 暫時的測試資料產生，正式開發完成後移除
+    MenuItem("test-data", "測試資料產生", "testdata:generate", "訂單", admin_only=True, section="feature"),
     MenuItem("manage-levels", "職級", "accounts_manage:level_list", "組織", admin_only=True),
     MenuItem("manage-departments", "部門", "accounts_manage:department_list", "組織"),
     MenuItem("manage-stations", "工位", "accounts_manage:station_list", "組織"),

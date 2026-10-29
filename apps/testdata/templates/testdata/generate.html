@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}測試資料產生{% endblock %}
+
+{% block heading %}測試資料產生{% endblock %}
+
+{% block content %}
+  <p class="text-muted">
+    設定好之後按「生成並下載」，會下載一個 zip，每種類型一個 Excel（歷史紀錄的 25 欄），可以直接拿去訂單統計、當日統計匯入。
+    資料不會寫進資料庫。買家資料全部遮罩、出貨日期留空，出貨單號只有正式訂單才有；店鋪、每張訂單的商品數隨機。
+  </p>
+
+  {% if form.non_field_errors %}
+    <div class="alert alert-danger py-2">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>
+  {% endif %}
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+
+    <div class="card mb-4">
+      <div class="card-header">類型、訂單數、下單時間</div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-2">
+            <thead class="table-light">
+              <tr><th>類型</th><th style="width:8rem">訂單數</th><th>開始</th><th>結束</th></tr>
+            </thead>
+            <tbody>
+              {% for key, label, fields in form.type_rows %}
+                {% with count=fields.0 start_date=fields.1 start_time=fields.2 end_date=fields.3 end_time=fields.4 %}
+                  <tr>
+                    <th>{{ label }}</th>
+                    <td class="wh-field{% if count.errors %} has-error{% endif %}">
+                      {{ count }}
+                      {% for error in count.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </td>
+                    <td>
+                      <div class="d-flex gap-2 wh-field">{{ start_date }}<span style="width:6rem">{{ start_time }}</span></div>
+                      {% for error in start_date.errors|add:start_time.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </td>
+                    <td>
+                      <div class="d-flex gap-2 wh-field">{{ end_date }}<span style="width:6rem">{{ end_time }}</span></div>
+                      {% for error in end_date.errors|add:end_time.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+                    </td>
+                  </tr>
+                {% endwith %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="form-text mb-3">訂單數填 0 的類型不產生。下單時間在開始到結束之間隨機，結束那一分鐘也算（到 :59 秒）。每種類型最多 20,000 張。</div>
+        {% include "components/_form_field.html" with field=form.first_order_no %}
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header">平台、出貨類型比例</div>
+      <div class="card-body">
+        <div class="form-text mb-2">
+          預設是範例檔（ALL、歷史紀錄）的實際比例（%）。數字照相對大小換算，不用加起來剛好 100；填 0 就不會出現。
+          點平台名稱展開它的出貨類型比例。比例 4 種類型共用。
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light"><tr><th>平台</th><th style="width:8rem">比例</th><th>店鋪（隨機）</th></tr></thead>
+            <tbody>
+              {% for i, platform, field, ship_types in form.platform_rows %}
+                <tr>
+                  <td>
+                    <a class="text-decoration-none" data-bs-toggle="collapse" href="#ship-types-{{ i }}" role="button" aria-expanded="false">
+                      {{ platform.name }} <span class="text-muted small">（{{ ship_types|length }} 種出貨類型）</span>
+                    </a>
+                  </td>
+                  <td class="wh-field">{{ field }}{% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</td>
+                  <td class="small text-muted">{{ platform.shops|join:"、"|default:"—" }}</td>
+                </tr>
+                <tr class="collapse" id="ship-types-{{ i }}">
+                  <td colspan="3" class="bg-light">
+                    <div class="row g-2">
+                      {% for name, type_field in ship_types %}
+                        <div class="col-sm-6 col-lg-4 d-flex align-items-center gap-2 wh-field">
+                          <span class="flex-grow-1 small">{{ name }}</span><span style="width:6rem">{{ type_field }}{% for error in type_field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</span>
+                        </div>
+                      {% empty %}
+                        <div class="col small text-muted">範例裡沒有出貨類型，產生時留空。</div>
+                      {% endfor %}
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">生成並下載</button>
+  </form>
+{% endblock %}
