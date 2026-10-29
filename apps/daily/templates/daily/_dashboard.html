@@ -13,7 +13,6 @@
         <div class="stat-tile{% if card.name == '未分組' %} is-ungrouped{% endif %}">
           <div class="stat-label">{{ card.name }}{% if card.show_rows %} <span class="stat-sub fw-normal">非去重</span>{% endif %}</div>
           <div class="stat-value">{{ card.main }}</div>
-          {% if card.show_rows %}<div class="stat-sub">去重 {{ card.total }}</div>{% endif %}
           {% if card.cutoff %}
             <div class="stat-split">
               <span><span class="legend-swatch seg-before"></span>{{ card.cutoff }} 前 <strong>{{ card.shown.before|default:0 }}</strong></span>
@@ -27,6 +26,7 @@
           {% else %}
             <div class="stat-sub">不分時段</div>
           {% endif %}
+          {% if card.show_rows %}<div class="stat-sub mt-1">去重 {{ card.total }}</div>{% endif %}
           {% if card.shown.no_time %}<div class="stat-sub">沒有下單時間 {{ card.shown.no_time }}</div>{% endif %}
         </div>
       </div>
