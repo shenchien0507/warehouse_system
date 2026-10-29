@@ -14,7 +14,6 @@
 .daily-board .stat-label { font-size: 1rem; font-weight: 600; color: inherit; }
 .daily-board .stat-split { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .875rem; color: var(--text-muted); }
 .daily-board .stat-split strong { color: var(--bs-body-color); font-variant-numeric: tabular-nums; }
-.daily-board .stat-tile.is-empty .stat-value { color: var(--text-muted); }
 .daily-board .stat-tile.is-ungrouped { border-color: #f0c36d; background: #fffaf0; }
 .daily-board .bar-track.bar-thin { height: .5rem; }
 

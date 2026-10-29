@@ -10,7 +10,7 @@
   <div class="row g-3 mb-4">
     {% for card in board.groups %}
       <div class="col-6 col-md-4 col-xl-3">
-        <div class="stat-tile{% if not card.total %} is-empty{% endif %}{% if card.name == '未分組' %} is-ungrouped{% endif %}">
+        <div class="stat-tile{% if card.name == '未分組' %} is-ungrouped{% endif %}">
           <div class="stat-label">{{ card.name }}</div>
           <div class="stat-value">{{ card.total }}</div>
           {% if card.cutoff %}
