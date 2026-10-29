@@ -84,7 +84,9 @@ class DailyStatsTests(TestCase):
                 ("其他平台", 2, {"before": 1, "after": 1}, "14:00"),
             ],
         )
-        self.assertEqual(board.groups[0].rows, 2)  # 蝦皮無包裝列非去重：1 號訂單 2 列
+        no_box = board.groups[0]  # 蝦皮無包裝列非去重：1 號訂單 2 列，卡片主要顯示非去重
+        self.assertEqual((no_box.main, no_box.shown, no_box.total), (2, {"before": 2}, 1))
+        self.assertEqual(board.groups[1].main, 2)  # 沒列非去重的照去重
         self.assertEqual([(b.seq, earlier, added) for b, earlier, added, *_ in board.batches], [(1, 0, 3), (2, 3, 2)])
         self.assertContains(response, 'id="daily-dashboard"')
         partial = self.client.get(reverse("daily:day_list"), {"partial": 1})

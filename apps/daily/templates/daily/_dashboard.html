@@ -11,23 +11,23 @@
     {% for card in board.groups %}
       <div class="col-6 col-md-4 col-xl-3">
         <div class="stat-tile{% if card.name == '未分組' %} is-ungrouped{% endif %}">
-          <div class="stat-label">{{ card.name }}</div>
-          <div class="stat-value">{{ card.total }}</div>
+          <div class="stat-label">{{ card.name }}{% if card.show_rows %} <span class="stat-sub fw-normal">非去重</span>{% endif %}</div>
+          <div class="stat-value">{{ card.main }}</div>
+          {% if card.show_rows %}<div class="stat-sub">去重 {{ card.total }}</div>{% endif %}
           {% if card.cutoff %}
             <div class="stat-split">
-              <span><span class="legend-swatch seg-before"></span>{{ card.cutoff }} 前 <strong>{{ card.counts.before|default:0 }}</strong></span>
-              <span><span class="legend-swatch seg-after"></span>{{ card.cutoff }} 後 <strong>{{ card.counts.after|default:0 }}</strong></span>
+              <span><span class="legend-swatch seg-before"></span>{{ card.cutoff }} 前 <strong>{{ card.shown.before|default:0 }}</strong></span>
+              <span><span class="legend-swatch seg-after"></span>{{ card.cutoff }} 後 <strong>{{ card.shown.after|default:0 }}</strong></span>
             </div>
             {% if card.split %}
               <div class="bar-track bar-thin mt-2">
-                {% for key, label, count, width in card.split %}<div class="bar-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" title="{{ card.name }}・{{ label }}：{{ count }} 張"></div>{% endfor %}
+                {% for key, label, count, width in card.split %}<div class="bar-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" title="{{ card.name }}・{{ label }}：{{ count }}{% if card.show_rows %} 列（非去重）{% else %} 張{% endif %}"></div>{% endfor %}
               </div>
             {% endif %}
           {% else %}
             <div class="stat-sub">不分時段</div>
           {% endif %}
-          {% if card.counts.no_time %}<div class="stat-sub">沒有下單時間 {{ card.counts.no_time }}</div>{% endif %}
-          {% if card.show_rows %}<div class="stat-sub">非去重 {{ card.rows }}</div>{% endif %}
+          {% if card.shown.no_time %}<div class="stat-sub">沒有下單時間 {{ card.shown.no_time }}</div>{% endif %}
         </div>
       </div>
     {% endfor %}
