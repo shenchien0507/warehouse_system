@@ -4,7 +4,7 @@
 
 from dataclasses import dataclass
 
-from apps.orders.stats import LINE_VALUES, NO_TIME, UNGROUPED, summarize, version_groups
+from apps.orders.stats import LINE_VALUES, NO_TIME, summarize, version_groups
 
 from .models import DailyBatch, DailyLine
 
@@ -43,32 +43,31 @@ def duplicates(work_date):
     ]
 
 
-SEGMENTS = [("before", "切單前"), ("after", "切單後"), ("all_day", "不分時段"), ("no_time", "沒有下單時間")]
-
-
 @dataclass
-class GroupBar:
-    name: str
-    counts: dict  # 區段 key → 訂單數（去重）
-    total: int = 0
+class GroupCard:
+    """dashboard 上一個分組的數字卡。"""
 
-    def segments(self, scale):
-        """[(key, 名稱, 數字, 寬度%)]，只列有數字的區段；scale 是最長那條的總數。"""
-        return [(key, label, self.counts[key], self.counts[key] * 100 / scale) for key, label in SEGMENTS if self.counts.get(key)]
+    name: str
+    counts: dict  # 區段 key（before、after、all_day、no_time）→ 訂單數（去重）
+    total: int = 0
+    rows: int = 0  # 非去重（分組勾選「另外列出非去重」才顯示）
+    show_rows: bool = False
+    cutoff: str = ""  # 切單時間文字，例如 14:00；沒切時間空白
+
+    @property
+    def split(self):
+        """[(key, 名稱, 數字, 寬度%)]：卡片上切單前／後的小長條，沒切時間的分組不畫。"""
+        if not self.cutoff or not self.total:
+            return []
+        parts = [("before", f"{self.cutoff} 前"), ("after", f"{self.cutoff} 後"), ("no_time", "沒有下單時間")]
+        return [(key, label, self.counts[key], self.counts[key] * 100 / self.total) for key, label in parts if self.counts.get(key)]
 
 
 @dataclass
 class Dashboard:
     total: int  # 當日訂單數（去重）
-    before: int
-    after: int
-    groups: list  # GroupBar，依分組順序，未分組最後
+    groups: list  # GroupCard，依分組順序（沒有訂單的分組也列），未分組有訂單才列在最後
     batches: list  # [(批次, 之前累計, 這批新的, 之前累計寬度%, 這批寬度%)]
-    max_group: int = 1
-
-    @property
-    def group_rows(self):
-        return [(bar, bar.segments(self.max_group)) for bar in self.groups]
 
 
 def segment_key(period):
@@ -80,27 +79,21 @@ def segment_key(period):
 
 
 def dashboard(batches, summary, stat_groups):
-    """當日累計的數字整理成 dashboard：上排數字、各分組長條（切單前／後）、批次累計。"""
-    bars = {}
+    """當日累計的數字整理成 dashboard：每個分組一張數字卡（切單前／後）、批次累計。"""
+    cards = {
+        g.name: GroupCard(g.name, {}, show_rows=g.show_rows, cutoff=g.cutoff.strftime("%H:%M") if g.cutoff else "")
+        for g in stat_groups
+    }
     for row in summary.groups:  # 主表：每張訂單只在一列，同分組各列相加就是分組總數
-        bar = bars.setdefault(row.name, GroupBar(row.name, {}))
+        card = cards.setdefault(row.name, GroupCard(row.name, {}))
         key = segment_key(row.period)
-        bar.counts[key] = bar.counts.get(key, 0) + row.count.distinct
-        bar.total += row.count.distinct
-    groups = list(bars.values())
-    order = {g.name: i for i, g in enumerate(stat_groups)}
-    groups.sort(key=lambda b: (b.name == UNGROUPED, order.get(b.name, len(order))))
+        card.counts[key] = card.counts.get(key, 0) + row.count.distinct
+        card.total += row.count.distinct
+        card.rows += row.count.rows
     total = sum(b.new_order_count for b in batches)
     rows, running = [], 0
     for batch in batches:
         scale = total or 1
         rows.append((batch, running, batch.new_order_count, running * 100 / scale, batch.new_order_count * 100 / scale))
         running += batch.new_order_count
-    return Dashboard(
-        total=summary.total,
-        before=sum(b.counts.get("before", 0) for b in groups),
-        after=sum(b.counts.get("after", 0) for b in groups),
-        groups=groups,
-        batches=rows,
-        max_group=max((b.total for b in groups), default=0) or 1,
-    )
+    return Dashboard(total=summary.total, groups=list(cards.values()), batches=rows)
