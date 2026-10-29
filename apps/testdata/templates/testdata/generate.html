@@ -58,17 +58,17 @@
       <div class="card-body">
         <div class="form-text mb-2">
           預設是範例檔（ALL、歷史紀錄）的實際比例（%）。數字照相對大小換算，不用加起來剛好 100；填 0 就不會出現。
-          點平台名稱展開它的出貨類型比例。比例 4 種類型共用。
+          點平台名稱展開它的出貨類型比例。出貨類型有「無包裝」的另外拆一列，可以單獨調；Excel 裡的平台名稱不變。比例 4 種類型共用。
         </div>
         <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
             <thead class="table-light"><tr><th>平台</th><th style="width:8rem">比例</th><th>店鋪（隨機）</th></tr></thead>
             <tbody>
-              {% for i, platform, field, ship_types in form.platform_rows %}
+              {% for i, label, platform, field, ship_types in form.platform_rows %}
                 <tr>
                   <td>
                     <a class="text-decoration-none" data-bs-toggle="collapse" href="#ship-types-{{ i }}" role="button" aria-expanded="false">
-                      {{ platform.name }} <span class="text-muted small">（{{ ship_types|length }} 種出貨類型）</span>
+                      {{ label }} <span class="text-muted small">（{{ ship_types|length }} 種出貨類型）</span>
                     </a>
                   </td>
                   <td class="wh-field">{{ field }}{% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}</td>

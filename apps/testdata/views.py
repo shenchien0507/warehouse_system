@@ -25,7 +25,7 @@ class GenerateView(FormView):
 
     def form_valid(self, form):
         data = form.cleaned_data
-        files = generate(data["settings"], data["platform_weights"], data["ship_type_weights"], data["first_order_no"])
+        files = generate(data["settings"], data["options"], data["first_order_no"])
         stamp = timezone.localtime().strftime("%Y%m%d_%H%M%S")
         response = HttpResponse(zip_bytes(files, stamp), content_type="application/zip")
         response["Content-Disposition"] = content_disposition_header(True, f"測試資料_{stamp}.zip")
