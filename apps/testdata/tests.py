@@ -30,7 +30,8 @@ def form_data(**overrides):
     for key in ("urgent", "shipping", "new", "formal"):
         data.update({f"{key}_count": 20, f"{key}_start_date": "2026-10-05", f"{key}_start_time": "08:00",
                      f"{key}_end_date": "2026-10-05", f"{key}_end_time": "14:00"})
-    data.update({"p0": 90, "p0_t0": 60, "p0_t1": 40, "p1": 10, "p1_t0": 100})
+    # 比例表：p0 蝦皮購物（店到店）、p1 蝦皮購物（無包裝）、p2 friDay商城
+    data.update({"p0": 30, "p0_t0": 100, "p1": 60, "p1_t0": 100, "p2": 10, "p2_t0": 100})
     data.update(overrides)
     return data
 
@@ -85,10 +86,21 @@ class GenerateTests(TestCase):
         self.assertEqual(all_numbers, set(range(1000, 1080)))  # 4 種類型接續編號、不重複
 
     def test_zero_ratio_and_zero_count_are_left_out(self):
-        files = self.files(self.post(p1=0, p0_t1=0, urgent_count=0, new_count=0))
+        files = self.files(self.post(p0=0, p2=0, urgent_count=0, new_count=0))
         self.assertEqual(set(files), {"出貨中", "正式訂單"})
         for _, rows in files.values():
             self.assertTrue(all(r["交易平台"] == "蝦皮購物" and r["出貨類型"] == "蝦皮無包裝" for r in rows))
+
+    def test_no_packaging_ship_types_get_their_own_row(self):
+        response = self.client.get(reverse("testdata:generate"))
+        rows = [(label, [name for name, _ in types]) for _, label, _, _, types in response.context["form"].platform_rows]
+        self.assertEqual(rows, [("蝦皮購物", ["蝦皮店到店"]), ("蝦皮購物（無包裝）", ["蝦皮無包裝"]), ("friDay商城", ["7-11"])])
+        form = response.context["form"]
+        self.assertEqual([form["p0"].initial, form["p1"].initial, form["p2"].initial], [30.0, 60.0, 10.0])
+
+        files = self.files(self.post(p1=0, p2=0))
+        for _, rows in files.values():
+            self.assertTrue(all(r["交易平台"] == "蝦皮購物" and r["出貨類型"] == "蝦皮店到店" for r in rows))
 
     def test_file_reads_with_order_importer(self):
         archive = zipfile.ZipFile(BytesIO(self.post().content))
@@ -101,9 +113,9 @@ class GenerateTests(TestCase):
     def test_invalid_settings_show_errors(self):
         response = self.post(shipping_end_time="07:00")
         self.assertContains(response, "出貨中：結束時間要晚於開始時間。")
-        response = self.post(p0=0, p1=0)
+        response = self.post(p0=0, p1=0, p2=0)
         self.assertContains(response, "平台比例至少要有一個大於 0。")
-        response = self.post(p0_t0=0, p0_t1=0)
-        self.assertContains(response, "蝦皮購物：平台比例大於 0，出貨類型的比例至少要有一個大於 0。")
+        response = self.post(p1_t0=0)
+        self.assertContains(response, "蝦皮購物（無包裝）：平台比例大於 0，出貨類型的比例至少要有一個大於 0。")
         response = self.post(urgent_count=0, shipping_count=0, new_count=0, formal_count=0)
         self.assertContains(response, "至少要有一種類型的訂單數大於 0。")

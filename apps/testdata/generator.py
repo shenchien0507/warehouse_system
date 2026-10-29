@@ -81,21 +81,22 @@ def order_rows(rng, setting, order_no, platform, ship_type_weights, catalog):
         yield [row[column] for column in COLUMNS]
 
 
-def generate(settings, platform_weights, ship_type_weights, first_order_no, seed=None):
-    """platform_weights：{平台: 比例}；ship_type_weights：{平台: {出貨類型: 比例}}。比例照相對大小換算，不用加到 100。
+def generate(settings, options, first_order_no, seed=None):
+    """options：[(平台, 比例, {出貨類型: 比例}), …]，同一個平台可以有好幾列（例如無包裝另外一列）。
+    比例照相對大小換算，不用加到 100。先照比例抽一列，再照那一列的出貨類型比例抽。
     回傳 {類型名稱: [列, …]}，交易序號從 first_order_no 起，4 種類型接續編號、不重複。"""
     rng = random.Random(seed)
     catalog = load_catalog()
     platforms = {p["name"]: p for p in catalog["platforms"]}
-    platform_pairs = [(platforms[name], w) for name, w in platform_weights.items() if w > 0 and name in platforms]
+    choices = [((name, [(t, w) for t, w in types.items() if w > 0] or [("", 1)]), weight)
+               for name, weight, types in options if weight > 0 and name in platforms]
     order_no = first_order_no
     result = {}
     for setting in settings:
         rows = []
         for _ in range(setting.count):
-            platform = weighted(rng, [(p["name"], w) for p, w in platform_pairs])
-            types = [(t, w) for t, w in ship_type_weights.get(platform, {}).items() if w > 0]
-            rows.extend(order_rows(rng, setting, order_no, platforms[platform], types or [("", 1)], catalog))
+            platform, types = weighted(rng, choices)
+            rows.extend(order_rows(rng, setting, order_no, platforms[platform], types, catalog))
             order_no += 1
         result[setting.label] = rows
     return result
