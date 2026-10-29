@@ -1,0 +1,71 @@
+{% comment %}dashboard 區塊：頁面第一次載入和定時更新（?partial=1）都用這個。{% endcomment %}
+<div class="small text-muted mb-3" id="daily-refreshed-at">更新時間 {{ refreshed_at|date:"H:i:s" }}</div>
+{% if not batches %}
+  <div class="alert alert-light border">還沒有匯入過，上面選檔案匯入第一批。</div>
+{% else %}
+  <h2 class="h4 mb-3">作業日 {{ work_date|date:"Y/m/d" }}</h2>
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3"><div class="stat-tile">
+      <div class="stat-label">當日訂單</div>
+      <div class="stat-value">{{ board.total }}</div>
+      <div class="stat-sub">重複的只算 1 張</div>
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="stat-tile">
+      <div class="stat-label"><span class="legend-swatch seg-before"></span>切單前</div>
+      <div class="stat-value">{{ board.before }}</div>
+      <div class="stat-sub">有切單時間的分組</div>
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="stat-tile">
+      <div class="stat-label"><span class="legend-swatch seg-after"></span>切單後</div>
+      <div class="stat-value">{{ board.after }}</div>
+      <div class="stat-sub">有切單時間的分組</div>
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="stat-tile">
+      <div class="stat-label">批數</div>
+      <div class="stat-value">{{ batches|length }}</div>
+      <div class="stat-sub">最後匯入 {{ latest.imported_at|date:"H:i" }}</div>
+    </div></div>
+  </div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-lg-7">
+      <h3 class="h6 mb-2">各分組訂單數</h3>
+      <div class="legend mb-2">
+        <span><span class="legend-swatch seg-before"></span>切單前</span>
+        <span><span class="legend-swatch seg-after"></span>切單後</span>
+        <span><span class="legend-swatch seg-all_day"></span>不分時段</span>
+        <span><span class="legend-swatch seg-no_time"></span>沒有下單時間</span>
+      </div>
+      {% for bar, segments in board.group_rows %}
+        <div class="bar-row">
+          <div class="bar-name" title="{{ bar.name }}">{{ bar.name }}</div>
+          <div class="bar-track">
+            {% for key, label, count, width in segments %}
+              <div class="bar-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" title="{{ bar.name }}・{{ label }}：{{ count }} 張"></div>
+            {% endfor %}
+          </div>
+          <div class="bar-total">{{ bar.total }}</div>
+        </div>
+      {% endfor %}
+    </div>
+    <div class="col-lg-5">
+      <h3 class="h6 mb-2">批次累計</h3>
+      <div class="legend mb-2">
+        <span><span class="legend-swatch seg-earlier"></span>之前批次</span>
+        <span><span class="legend-swatch seg-added"></span>這批新增</span>
+      </div>
+      {% for batch, earlier, added, earlier_width, added_width in board.batches %}
+        <div class="bar-row">
+          <div class="bar-name">第 {{ batch.seq }} 批 <span class="text-muted small d-none d-sm-inline">{{ batch.imported_at|date:"H:i" }}</span></div>
+          <div class="bar-track">
+            {% if earlier %}<div class="bar-seg seg-earlier" style="width: {{ earlier_width|floatformat:2 }}%" title="之前批次累計 {{ earlier }} 張"></div>{% endif %}
+            <div class="bar-seg seg-added" style="width: {{ added_width|floatformat:2 }}%" title="第 {{ batch.seq }} 批新增 {{ added }} 張{% if batch.duplicate_order_count %}，另有重複 {{ batch.duplicate_order_count }} 張不計{% endif %}"></div>
+          </div>
+          <div class="bar-total">+{{ added }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% include "daily/_details.html" %}
+{% endif %}
