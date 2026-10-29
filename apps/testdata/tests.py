@@ -1,22 +1,27 @@
+import tempfile
 import zipfile
 from collections import defaultdict
+from datetime import date, datetime
 from io import BytesIO
+from pathlib import Path
 from unittest import mock
 
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from openpyxl import load_workbook
 
 from apps.accounts.testing import Level, make_user
 from apps.orders.importer import read_rows
 
+from . import simulation
 from .generator import COLUMNS, MASK
 
 CATALOG = {
     "platforms": [
-        {"name": "蝦皮購物", "orders": 90, "shops": ["蝦皮購物_0號店", "蝦皮購物_1號店"],
+        {"name": "蝦皮購物", "share": 90, "shops": ["蝦皮購物_0號店", "蝦皮購物_1號店"],
          "ship_types": [["蝦皮無包裝", 60], ["蝦皮店到店", 30]], "date_only": False, "order_no_shapes": ["######NAN#D#W#"]},
-        {"name": "friDay商城", "orders": 10, "shops": ["friDay商城_3號店"],
+        {"name": "friDay商城", "share": 10, "shops": ["friDay商城_3號店"],
          "ship_types": [["7-11", 10]], "date_only": True, "order_no_shapes": ["##############"]},
     ],
     "shipment_shapes": {"蝦皮無包裝": ["TW############U"]},
@@ -119,3 +124,137 @@ class GenerateTests(TestCase):
         self.assertContains(response, "蝦皮購物（無包裝）：平台比例大於 0，出貨類型的比例至少要有一個大於 0。")
         response = self.post(urgent_count=0, shipping_count=0, new_count=0, formal_count=0)
         self.assertContains(response, "至少要有一種類型的訂單數大於 0。")
+
+
+def order(platform="蝦皮購物", ship_type="蝦皮店到店", created="2026/10/05 10:00:00", status="new", no=1):
+    return {"order_no": no, "platform": platform, "ship_type": ship_type, "created": created, "status": status}
+
+
+class DueDateTests(TestCase):
+    def test_same_day_rule_follows_sample_files(self):
+        cases = [
+            (order(ship_type="蝦皮無包裝[代收]", created="2026/10/05 14:00:59"), date(2026, 10, 5)),
+            (order(ship_type="蝦皮無包裝", created="2026/10/05 14:01:00"), date(2026, 10, 6)),
+            (order(ship_type="蝦皮隔日到貨", created="2026/10/05 09:00:00"), date(2026, 10, 5)),
+            (order(ship_type="蝦皮店到店", created="2026/10/05 09:00:00"), date(2026, 10, 6)),
+            (order(platform="自訂交易", ship_type="黑貓", created="2026/10/05 09:00:00"), date(2026, 10, 5)),
+            (order(platform="friDay商城", ship_type="7-11", created="2026/10/05 00:00:00"), date(2026, 10, 6)),
+        ]
+        for o, expected in cases:
+            self.assertEqual(simulation.due_date(o), expected, o)
+
+
+@mock.patch("apps.testdata.forms.load_catalog", lambda: CATALOG)
+@mock.patch("apps.testdata.generator.load_catalog", lambda: CATALOG)
+@mock.patch("apps.testdata.simulation.load_catalog", lambda: CATALOG)
+class SimulationTests(TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        patcher = mock.patch.object(simulation, "STATE_PATH", Path(tmp.name) / "simulation.json")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.client.login(username=make_user("boss", Level.ADMIN).username, password="pw12345!")
+        self.url = reverse("testdata:simulate")
+
+    def start(self, **overrides):
+        data = form_data(action="start", start_date="2026-10-05", start_time="08:00", live="0",
+                         orders_per_day=2400, urgent_pct=5, shipping_pct=5, first_order_no=1)
+        data.update(overrides)
+        return self.client.post(self.url, data)
+
+    def advance(self, **data):
+        return self.client.post(self.url, {"action": "advance", **data})
+
+    def pools(self):
+        archive = zipfile.ZipFile(BytesIO(self.client.get(reverse("testdata:simulate_pools")).content))
+        result = {}
+        for name in archive.namelist():
+            rows = list(load_workbook(BytesIO(archive.read(name)), read_only=True).worksheets[0].iter_rows(values_only=True))
+            result[name.split("_")[0]] = {r[2] for r in rows[1:]}
+        return result
+
+    def test_orders_flow_in_and_rounds_take_them_out(self):
+        self.assertRedirects(self.start(), self.url)
+        self.assertContains(self.client.get(self.url), "2026/10/05 08:00")
+        self.assertRedirects(self.advance(minutes=120), self.url)
+        state = simulation.load()
+        self.assertEqual(state["clock"], "2026/10/05 10:00:00")
+        orders = state["orders"]
+        self.assertGreater(len(orders), 100)  # 2400 張一天，8～10 點約 180 張
+        self.assertTrue(all("2026/10/05 08:00:00" <= o["created"] < "2026/10/05 10:00:00" or o["created"].endswith("00:00:00")
+                            for o in orders))
+
+        pools = self.pools()
+        self.assertEqual(set(pools), {"新訂單", "急單", "出貨中"})
+        self.assertEqual(sum(len(v) for v in pools.values()), len(orders))
+        urgent, shipping = len(pools["急單"]), len(pools["出貨中"])
+        self.assertGreater(urgent + shipping, 0)
+
+        self.client.post(self.url, {"action": "release", "count": urgent + shipping + 10})
+        state = simulation.load()
+        entry = state["rounds"][0]
+        self.assertEqual(entry["sources"], {"urgent": urgent, "shipping": shipping, "new": 10})
+        released = set(entry["order_nos"])
+        self.assertTrue(pools["急單"] | pools["出貨中"] <= released)  # 急單、出貨中先出
+
+        rows = list(load_workbook(BytesIO(self.client.get(reverse("testdata:simulate_round", args=[1])).content),
+                                  read_only=True).worksheets[0].iter_rows(values_only=True))
+        header = rows[0]
+        self.assertEqual({r[header.index("交易序號")] for r in rows[1:]}, released)
+        self.assertTrue(all(r[header.index("出貨單號")] for r in rows[1:]))
+
+        self.advance(minutes=60)
+        after = self.pools()
+        waiting = set().union(*after.values())
+        self.assertFalse(waiting & released)  # 出過的不會再出現
+        self.assertTrue(set().union(*pools.values()) - released <= waiting)  # 沒出的還在
+        self.assertGreater(len(waiting), len(set().union(*pools.values()) - released))  # 加上新流進來的
+
+        self.client.post(self.url, {"action": "undo"})
+        state = simulation.load()
+        self.assertEqual(state["rounds"], [])
+        self.assertFalse(any(o["status"] == "formal" for o in state["orders"]))
+
+    def test_new_orders_are_picked_by_due_date_then_created(self):
+        self.start(urgent_pct=0, shipping_pct=0)
+        self.advance(to_date="2026-10-05", to_time="16:00")
+        state = simulation.load()
+        expected = sorted(state["orders"], key=lambda o: (simulation.due_date(o), o["created"], o["order_no"]))[:20]
+        self.client.post(self.url, {"action": "release", "count": 20})
+        self.assertEqual(simulation.load()["rounds"][0]["order_nos"], [o["order_no"] for o in expected])
+
+    def test_live_mode_catches_up_to_now(self):
+        now = timezone.make_aware(datetime(2026, 10, 5, 12, 0))
+        with mock.patch("django.utils.timezone.now", return_value=now):
+            self.start(live="1")
+            self.assertEqual(simulation.load()["clock"], "2026/10/05 12:00:00")
+            self.assertNotContains(self.client.get(self.url), "時間往前推")
+        later = timezone.make_aware(datetime(2026, 10, 5, 13, 0))
+        count = len(simulation.load()["orders"])
+        with mock.patch("django.utils.timezone.now", return_value=later):
+            self.client.get(self.url)
+        state = simulation.load()
+        self.assertEqual(state["clock"], "2026/10/05 13:00:00")
+        self.assertGreater(len(state["orders"]), count)
+
+    def test_release_only_picks_orders_from_the_last_cut(self):
+        self.start()
+        self.advance(minutes=60)
+        cut = set().union(*self.pools().values())
+        self.advance(minutes=60)  # 看統計的時候又流進來的單
+        self.assertContains(self.client.get(self.url), "從 10/05 09:00 截斷的單裡挑")
+        self.client.post(self.url, {"action": "release", "count": 20000})
+        state = simulation.load()
+        entry = state["rounds"][0]
+        self.assertEqual(set(entry["order_nos"]), cut)
+        self.assertEqual(entry["time"], "2026/10/05 09:00:00")
+        self.assertTrue(all(o["status"] != "formal" for o in state["orders"] if o["order_no"] not in cut))
+
+    def test_invalid_advance_and_reset(self):
+        self.start()
+        response = self.advance(to_date="2026-10-05", to_time="07:00")
+        self.assertContains(response, "要推進到的時間要晚於目前時間。")
+        self.client.post(self.url, {"action": "reset"})
+        self.assertIsNone(simulation.load())
+        self.assertContains(self.client.get(self.url), "開始一個模擬")

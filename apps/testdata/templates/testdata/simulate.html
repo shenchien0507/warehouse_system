@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}訂單流模擬{% endblock %}
+
+{% block heading %}訂單流模擬{% endblock %}
+
+{% block content %}
+  <p class="text-muted">
+    模擬各平台的訂單一直流進「新訂單」，按比例抽一小部分到「急單」「出貨中」。你在任何時間點截斷：下載三個檔去做訂單統計，
+    再決定這輪出幾張，產生「正式訂單」；沒出的退回新訂單，下次截斷時加上新流進來的單。資料不會寫進資料庫。
+    一次產生固定的檔案請用 <a href="{% url 'testdata:generate' %}">測試資料產生</a>。
+  </p>
+
+  {% if not state %}
+    {% with form=start_form %}
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger py-2">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>
+      {% endif %}
+      <form method="post" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="start">
+        <div class="card mb-4">
+          <div class="card-header">開始一個模擬</div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-3">{% include "components/_form_field.html" with field=form.start_date %}</div>
+              <div class="col-md-2">{% include "components/_form_field.html" with field=form.start_time %}</div>
+              <div class="col-md-7">
+                <div class="mb-3 wh-field">
+                  <label class="form-label">{{ form.live.label }}</label>
+                  {% for radio in form.live %}
+                    <div class="form-check">{{ radio.tag }}<label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label></div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-md-3">{% include "components/_form_field.html" with field=form.orders_per_day %}</div>
+              <div class="col-md-3">{% include "components/_form_field.html" with field=form.urgent_pct %}</div>
+              <div class="col-md-3">{% include "components/_form_field.html" with field=form.shipping_pct %}</div>
+              <div class="col-md-3">{% include "components/_form_field.html" with field=form.first_order_no %}</div>
+            </div>
+          </div>
+        </div>
+        {% include "testdata/_ratios.html" %}
+        <button type="submit" class="btn btn-primary">開始模擬</button>
+      </form>
+    {% endwith %}
+  {% else %}
+    <div class="card mb-4">
+      <div class="card-body">
+        <div class="d-flex flex-wrap align-items-baseline gap-3 mb-3">
+          <div>
+            <div class="small text-muted">目前時間（截斷時間）</div>
+            <div class="fs-3 fw-bold">{{ summary.clock|date:"Y/m/d H:i" }}</div>
+          </div>
+          <div class="small text-muted">
+            {% if state.live %}跟著現在時間走，每次打開或更新頁面會補上新流進來的單。{% else %}手動推進。{% endif %}
+            從 {{ summary.started|date:"Y/m/d H:i" }} 開始，每天大約 {{ state.orders_per_day }} 張，
+            急單 {{ state.urgent_pct }}%、出貨中 {{ state.shipping_pct }}%。
+          </div>
+        </div>
+        <div class="row g-3">
+          {% for label, count in summary.counts %}
+            <div class="col-6 col-md-3">
+              <div class="border rounded p-2"><div class="small text-muted">{{ label }}</div><div class="fs-4">{{ count }}</div></div>
+            </div>
+          {% endfor %}
+          <div class="col-6 col-md-3">
+            <div class="border rounded p-2"><div class="small text-muted">已出（正式訂單）</div><div class="fs-4">{{ summary.formal_count }}</div></div>
+          </div>
+        </div>
+        <div class="small text-muted mt-2">
+          還沒出的單裡，預計今天（或更早）該出的 {{ summary.due_today }} 張{% if summary.oldest %}，最早一張是 {{ summary.oldest|date:"m/d H:i" }} 建立的{% endif %}。
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+      {% if not state.live %}
+        <div class="col-lg-6">
+          <div class="card h-100">
+            <div class="card-header">1. 時間往前推</div>
+            <div class="card-body">
+              {% if advance_form.non_field_errors %}
+                <div class="alert alert-danger py-2">{% for error in advance_form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>
+              {% endif %}
+              <form method="post" class="mb-2" novalidate>
+                {% csrf_token %}
+                <input type="hidden" name="action" value="advance">
+                <div class="d-flex flex-wrap gap-2">
+                  {% for minutes, label in quick_minutes %}
+                    <button type="submit" name="minutes" value="{{ minutes }}" class="btn btn-outline-secondary">{{ label }}</button>
+                  {% endfor %}
+                </div>
+              </form>
+              <form method="post" novalidate>
+                {% csrf_token %}
+                <input type="hidden" name="action" value="advance">
+                <div class="d-flex flex-wrap align-items-center gap-2 wh-field">
+                  <span>推到</span>{{ advance_form.to_date }}<span style="width:6rem">{{ advance_form.to_time }}</span>
+                  <button type="submit" class="btn btn-secondary">推進</button>
+                </div>
+              </form>
+              <div class="form-text">一次最多推 7 天。</div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+      <div class="col-lg-6">
+        <div class="card h-100">
+          <div class="card-header">{% if not state.live %}2{% else %}1{% endif %}. 截斷：下載新訂單、急單、出貨中</div>
+          <div class="card-body">
+            <p class="mb-2">下載到目前時間為止，三個位置各自的訂單（zip，每個位置一個 Excel），拿去訂單統計匯入。</p>
+            <a class="btn btn-primary" href="{% url 'testdata:simulate_pools' %}">下載三個檔</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header">{% if not state.live %}3{% else %}2{% endif %}. 產生正式訂單</div>
+      <div class="card-body">
+        <form method="post" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="action" value="release">
+          <p class="mb-2">
+            {% if summary.cut %}從 {{ summary.cut|date:"m/d H:i" }} 截斷的單裡挑（還沒出的 {{ summary.cut_count }} 張）。截斷之後才流進來的單留到下一次截斷。
+            {% else %}還沒截斷過，會從目前時間為止的單裡挑（{{ summary.cut_count }} 張）。建議先下載三個檔看完統計再產生。{% endif %}
+          </p>
+          <div class="d-flex flex-wrap align-items-end gap-2 wh-field{% if release_form.count.errors %} has-error{% endif %}">
+            <div>
+              <label class="form-label" for="{{ release_form.count.id_for_label }}">{{ release_form.count.label }}</label>
+              {{ release_form.count }}
+            </div>
+            <button type="submit" class="btn btn-primary">產生正式訂單</button>
+          </div>
+          {% for error in release_form.count.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+        </form>
+        <div class="form-text">
+          挑單順序：急單 → 出貨中 → 新訂單（預計出貨日越早、建立越早越先）。預計出貨日照範例的規律：蝦皮無包裝、隔日到貨，
+          以及自訂交易、生活市集，14:00 前建立的當天出，其他隔天出。沒挑到的急單、出貨中退回新訂單，剩下的新訂單再按比例重新抽急單、出貨中。
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header">各輪正式訂單</div>
+      <div class="card-body">
+        {% if summary.rounds %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead class="table-light"><tr><th>輪</th><th>截斷時間</th><th class="text-end">張數</th><th>從哪裡來</th><th></th></tr></thead>
+              <tbody>
+                {% for entry in summary.rounds %}
+                  <tr>
+                    <td>第 {{ entry.no }} 輪</td>
+                    <td>{{ entry.time|date:"m/d H:i" }}</td>
+                    <td class="text-end">{{ entry.count }}</td>
+                    <td class="small">{% for label, count in entry.sources %}{% if count %}{{ label }} {{ count }}{% if not forloop.last %}、{% endif %}{% endif %}{% endfor %}</td>
+                    <td class="text-end"><a href="{% url 'testdata:simulate_round' entry.no %}">下載</a></td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <form method="post" onsubmit="return confirm('撤銷最後一輪？那些單會退回原本的位置。');">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="undo">
+            <button type="submit" class="btn btn-outline-secondary btn-sm">撤銷上一輪</button>
+          </form>
+        {% else %}
+          <p class="text-muted mb-0">還沒有產生過正式訂單。</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <form method="post" onsubmit="return confirm('清掉整個模擬重新開始？');">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="reset">
+      <button type="submit" class="btn btn-outline-danger btn-sm">清掉重新開始</button>
+    </form>
+  {% endif %}
+{% endblock %}
