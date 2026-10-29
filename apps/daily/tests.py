@@ -58,8 +58,8 @@ class DailyStatsTests(TestCase):
         self.assertEqual(DailyLine.objects.count(), 7)  # 重複的列照存
 
         response = self.day()
-        self.assertEqual(response.context["order_total"], 5)
-        self.assertEqual(response.context["duplicates"], [("2", 1, [2])])
+        self.assertEqual(response.context["board"].total, 5)
+        self.assertEqual(response.context["duplicates"], [("2", "第 1 批", [2])])
         # 00:00:00 的訂單用各自那批的匯入時間：3 號 10:00 → 前，5 號 15:00 → 後
         self.assertEqual(
             self.table(response.context["total"]["summary"]),
@@ -69,6 +69,22 @@ class DailyStatsTests(TestCase):
         sections = response.context["sections"]
         self.assertEqual(self.table(sections[1]["summary"]), {("蝦皮隔日到貨", "14:00 後"): 1, ("其他平台", "14:00 後"): 1})
         self.assertContains(response, "重複出現在")
+
+    def test_dashboard_numbers_and_partial_refresh(self):
+        self.upload(MORNING, "10:00")
+        self.upload(AFTERNOON, "15:00")
+        response = self.client.get(reverse("daily:day_list"))  # 沒指定日期：最近一個有資料的作業日
+        board = response.context["board"]
+        self.assertEqual((board.total, board.before, board.after), (5, 3, 2))
+        self.assertEqual(
+            [(bar.name, bar.counts) for bar in board.groups],
+            [("蝦皮無包裝", {"before": 1}), ("蝦皮隔日到貨", {"before": 1, "after": 1}), ("其他平台", {"before": 1, "after": 1})],
+        )
+        self.assertEqual([(b.seq, earlier, added) for b, earlier, added, *_ in board.batches], [(1, 0, 3), (2, 3, 2)])
+        self.assertContains(response, 'id="daily-dashboard"')
+        partial = self.client.get(reverse("daily:day_list"), {"partial": 1})
+        self.assertContains(partial, "作業日 2026/10/05")
+        self.assertNotContains(partial, 'id="daily-import"')
 
     def test_same_file_again_is_rejected(self):
         self.upload(MORNING, "10:00")
@@ -80,14 +96,32 @@ class DailyStatsTests(TestCase):
     def test_file_with_only_known_orders_is_rejected(self):
         self.upload(MORNING, "10:00")
         response = self.upload(MORNING[:2], "11:00")  # 內容不同，但訂單都匯過了
-        self.assertContains(response, "全部都已在 2026/10/05 之前的批次匯入過")
+        self.assertContains(response, "全部都已在之前的批次匯入過")
         self.assertEqual(DailyBatch.objects.count(), 1)
 
-    def test_other_work_date_is_separate_pool(self):
+    def test_same_file_on_another_work_date_is_rejected(self):
         self.upload(MORNING)
-        self.upload(MORNING, work_date="2026-10-06")
-        self.assertEqual(DailyBatch.objects.get(work_date=date(2026, 10, 6)).new_order_count, 3)
-        self.assertEqual(DailyOrder.objects.count(), 6)
+        response = self.upload(MORNING, work_date="2026-10-06")
+        self.assertContains(response, "內容一樣，已經匯入過")
+        self.assertFalse(DailyBatch.objects.filter(work_date=date(2026, 10, 6)).exists())
+
+    def test_orders_from_another_work_date_count_once_on_first_day(self):
+        self.upload(MORNING, "10:00")  # 10/05：1、2、3
+        self.upload(AFTERNOON, "15:00", work_date="2026-10-06")  # 10/06：2 重複，4、5 新的
+        batch = DailyBatch.objects.get(work_date=date(2026, 10, 6))
+        self.assertEqual((batch.order_count, batch.new_order_count), (3, 2))
+        self.assertEqual(DailyOrder.objects.count(), 5)
+        self.assertEqual(DailyOrder.objects.get(order_no="2").work_date, WORK_DATE)
+        response = self.client.get(reverse("daily:day_detail", args=[date(2026, 10, 6)]))
+        self.assertEqual(response.context["board"].total, 2)
+        self.assertEqual(response.context["duplicates"], [("2", "10/05 第 1 批", [1])])
+        # 10/05 那批的訂單已在 10/06 重複出現，不能刪
+        first = DailyBatch.objects.get(work_date=WORK_DATE)
+        self.client.post(reverse("daily:batch_delete", args=[first.pk]))
+        self.assertTrue(DailyBatch.objects.filter(pk=first.pk).exists())
+        self.client.post(reverse("daily:batch_delete", args=[batch.pk]))
+        self.client.post(reverse("daily:batch_delete", args=[first.pk]))
+        self.assertFalse(DailyBatch.objects.exists())
 
     def test_bad_file_not_imported(self):
         response = self.upload([["蝦皮購物", "", "宅配", "A", "2026/10/05 09:00:00"]])

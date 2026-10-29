@@ -1,12 +1,13 @@
-"""「當日統計」：每批單一檔案匯入，累加到作業日的資料池；當日累計一張表，下面是每批的明細與重複的訂單。"""
+"""「當日統計」：同一頁匯入（單一檔案一批，累加到作業日的資料池）和 dashboard。
+dashboard 顯示最近一個有資料的作業日（或網址指定的作業日），每分鐘自動更新；明細表格收在下面可展開。"""
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
-from django.db.models import Count, Max, Sum
+from django.db.models import Max
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
-from django.views.generic import ListView, TemplateView, View
+from django.views.generic import TemplateView, View
 
 from apps.backoffice.menu import MENU_BY_KEY, can_use
 from apps.orders.models import GroupVersion, MappingVersion
@@ -16,7 +17,9 @@ from apps.orders.views import summary_context
 from .batches import import_batch
 from .forms import ImportForm
 from .models import DailyBatch
-from .stats import batch_stats, day_stats, duplicates
+from .stats import batch_stats, dashboard, day_stats, duplicates
+
+REFRESH_SECONDS = 60
 
 
 class DailyPageMixin:
@@ -33,18 +36,13 @@ class DailyPageMixin:
         return context
 
 
-class DayListView(DailyPageMixin, ListView):
-    """匯入一批（單一檔案）與每個作業日的累計；匯入成功就到那天的當日統計。"""
+class DashboardView(DailyPageMixin, TemplateView):
+    """GET ?partial=1 只回 dashboard 區塊，給頁面定時更新用。"""
 
-    template_name = "daily/day_list.html"
-    paginate_by = 20
+    template_name = "daily/dashboard.html"
 
-    def get_queryset(self):
-        return (
-            DailyBatch.objects.values("work_date")
-            .annotate(batch_count=Count("pk"), order_count=Sum("new_order_count"), last_import=Max("imported_at"))
-            .order_by("-work_date")
-        )
+    def get_template_names(self):
+        return ["daily/_dashboard.html"] if self.request.GET.get("partial") else [self.template_name]
 
     def post(self, request, *args, **kwargs):
         form = ImportForm(request.POST, request.FILES)
@@ -62,29 +60,34 @@ class DayListView(DailyPageMixin, ListView):
         self.form = form
         return self.get(request, *args, **kwargs)
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["form"] = getattr(self, "form", None) or ImportForm()
-        context["outcome"] = getattr(self, "outcome", None)
-        context["active_version"] = MappingVersion.active()
-        context["active_groups"] = GroupVersion.active()
-        return context
-
-
-class DayDetailView(DailyPageMixin, TemplateView):
-    template_name = "daily/day_detail.html"
+    def work_date(self):
+        if "work_date" in self.kwargs:
+            return self.kwargs["work_date"]
+        return DailyBatch.objects.aggregate(day=Max("work_date"))["day"]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        work_date = kwargs["work_date"]
-        batches, total = day_stats(work_date)
+        context.update(
+            form=getattr(self, "form", None) or ImportForm(),
+            outcome=getattr(self, "outcome", None),
+            active_version=MappingVersion.active(),
+            active_groups=GroupVersion.active(),
+            refresh_seconds=REFRESH_SECONDS,
+            refreshed_at=timezone.localtime(),
+            partial_url=f"{self.request.path}?partial=1",
+        )
+        work_date = self.work_date()
+        batches, total = day_stats(work_date) if work_date else ([], None)
         if not batches:
-            raise Http404("這天沒有匯入過")
+            if "work_date" in self.kwargs:
+                raise Http404("這天沒有匯入過")
+            return context
         groups = version_groups(batches[0].group_version)
         context.update(
             work_date=work_date,
             batches=batches,
             latest=batches[-1],
+            board=dashboard(batches, total, groups),
             total=summary_context(total),
             sections=[
                 {
@@ -95,18 +98,21 @@ class DayDetailView(DailyPageMixin, TemplateView):
                 for batch in batches
             ],
             duplicates=duplicates(work_date),
-            order_total=sum(b.new_order_count for b in batches),
         )
         return context
 
 
 class BatchDeleteView(DailyPageMixin, View):
-    """匯錯檔時刪掉當天最後一批（之前的批次可能已被後續批次比對過，先不開放）。"""
+    """匯錯檔時刪掉當天最後一批（之前的批次可能已被後續批次比對過，先不開放）；
+    這批的訂單已被其他作業日的批次標成重複時也不能刪，否則那些批次的重複紀錄會跟著不見。"""
 
     def post(self, request, *args, **kwargs):
         batch = get_object_or_404(DailyBatch, pk=kwargs["pk"])
         if not batch.is_latest:
             messages.error(request, "只能刪除當天最後一批。")
+            return redirect("daily:day_detail", work_date=batch.work_date)
+        if batch.referenced_later:
+            messages.error(request, f"{batch}的訂單已在其他作業日的批次重複出現，要先刪掉那些批次。")
             return redirect("daily:day_detail", work_date=batch.work_date)
         work_date, name = batch.work_date, str(batch)
         batch.delete()

@@ -20,7 +20,7 @@ register_converter(DateConverter, "date")
 app_name = "daily"
 
 urlpatterns = [
-    path("", views.DayListView.as_view(), name="day_list"),
-    path("<date:work_date>/", views.DayDetailView.as_view(), name="day_detail"),
+    path("", views.DashboardView.as_view(), name="day_list"),
+    path("<date:work_date>/", views.DashboardView.as_view(), name="day_detail"),
     path("batch/<int:pk>/delete/", views.BatchDeleteView.as_view(), name="batch_delete"),
 ]

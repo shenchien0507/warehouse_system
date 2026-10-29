@@ -1,21 +1,8 @@
-{% extends "base.html" %}
-
-{% block title %}當日統計{% endblock %}
-
-{% block page_header %}
-  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-    <h1 class="h3 mb-0 me-auto">當日統計：作業日 {{ work_date|date:"Y/m/d" }}</h1>
-    <a class="btn btn-outline-secondary" href="{% url 'daily:day_list' %}">回每日資料池</a>
-  </div>
-  <p class="text-muted small mb-3">
-    共 {{ batches|length }} 批、{{ order_total }} 張訂單（同一張訂單出現在幾批都只算 1 張，歸在第一次出現的那批）。
-    用第 1 批的欄位對應 {{ batches.0.mapping_version }}、統計分組 {{ batches.0.group_version }} 計算。
-  </p>
-{% endblock %}
-
-{% block content %}
-  <h2 class="h5">批次</h2>
-  <div class="table-responsive mb-4">
+{% comment %}dashboard 下方的明細：批次、當日累計表格、重複訂單、每一批，都可展開收合。{% endcomment %}
+<h3 class="h5 border-top pt-4 mb-3">明細</h3>
+<details class="mb-3" id="d-batches" open>
+  <summary class="h6">批次（{{ batches|length }} 批，用第 1 批的欄位對應 {{ batches.0.mapping_version }}、統計分組 {{ batches.0.group_version }} 計算）</summary>
+  <div class="table-responsive mt-2">
     <table class="table table-striped align-middle">
       <thead class="table-light">
         <tr><th>批次</th><th>匯入時間</th><th>匯入人</th><th>檔名</th><th class="text-end">訂單數</th><th class="text-end">新訂單</th><th class="text-end">重複</th><th class="text-end">操作</th></tr>
@@ -23,7 +10,7 @@
       <tbody>
         {% for batch in batches %}
           <tr>
-            <td><a href="#batch-{{ batch.seq }}">第 {{ batch.seq }} 批</a></td>
+            <td>第 {{ batch.seq }} 批</td>
             <td>{{ batch.imported_at|date:"H:i" }}</td>
             <td>{{ batch.imported_by.name|default:"" }}</td>
             <td>{{ batch.file_name }}</td>
@@ -31,7 +18,7 @@
             <td class="text-end fw-bold">{{ batch.new_order_count }}</td>
             <td class="text-end">{% if batch.duplicate_order_count %}<span class="badge text-bg-warning">{{ batch.duplicate_order_count }}</span>{% else %}0{% endif %}</td>
             <td class="text-end">
-              {% if batch == latest %}
+              {% if batch == latest and not batch.referenced_later %}
                 <form method="post" action="{% url 'daily:batch_delete' batch.pk %}" onsubmit="return confirm('確定刪除{{ batch }}？這批的訂單和統計會一起刪掉。');">
                   {% csrf_token %}
                   <button type="submit" class="btn btn-sm btn-outline-danger">刪除</button>
@@ -42,22 +29,26 @@
         {% endfor %}
       </tbody>
     </table>
-    <div class="form-text">目前只能刪除最後一批。</div>
+    <div class="form-text">目前只能刪除最後一批；這批的訂單已在其他作業日重複出現時也不能刪。</div>
   </div>
+</details>
 
-  <section class="mb-5">
+  <details class="mb-3" id="d-total">
+    <summary class="h6">當日累計表格</summary>
+    <div class="mt-2">
     {% include "orders/_summary.html" with summary=total.summary by_import_time=total.by_import_time first_day=total.first_day last_day=total.last_day title="當日累計" anchor="day-total" note="全部批次，重複的不算" import_time_note="依各自那批的匯入時間" %}
-  </section>
+    </div>
+  </details>
 
   {% if duplicates %}
-    <details class="mb-5" id="duplicates">
-      <summary class="h5">重複的訂單<span class="text-muted small fw-normal ms-2">{{ duplicates|length }} 張，算在第一次出現的批次</span></summary>
+    <details class="mb-3" id="duplicates">
+      <summary class="h6">重複的訂單<span class="text-muted small fw-normal ms-2">{{ duplicates|length }} 張，算在第一次出現的批次（可能是其他作業日）</span></summary>
       <div class="table-responsive mt-2">
         <table class="table table-sm table-striped align-middle">
           <thead class="table-light"><tr><th>訂單號</th><th>第一次出現</th><th>重複出現在</th></tr></thead>
           <tbody>
             {% for order_no, first, again in duplicates %}
-              <tr><td>{{ order_no }}</td><td>第 {{ first }} 批</td><td>{% for seq in again %}第 {{ seq }} 批{% if not forloop.last %}、{% endif %}{% endfor %}</td></tr>
+              <tr><td>{{ order_no }}</td><td>{{ first }}</td><td>{% for seq in again %}第 {{ seq }} 批{% if not forloop.last %}、{% endif %}{% endfor %}</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -65,7 +56,6 @@
     </details>
   {% endif %}
 
-  <h2 class="h5 border-top pt-4">每一批</h2>
   {% for section in sections %}
     <details class="mb-3" id="batch-{{ section.batch.seq }}">
       <summary class="h6">第 {{ section.batch.seq }} 批　{{ section.batch.imported_at|date:"H:i" }}　新訂單 {{ section.batch.new_order_count }} 張{% if section.batch.duplicate_order_count %}（另有重複 {{ section.batch.duplicate_order_count }} 張不計）{% endif %}</summary>
@@ -74,4 +64,3 @@
       </div>
     </details>
   {% endfor %}
-{% endblock %}

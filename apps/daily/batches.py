@@ -1,5 +1,6 @@
 """匯入一批到當日資料池：用目前生效的欄位對應、統計分組版本（和訂單統計共用）；有錯整份不匯入。
-避免重複匯入製造垃圾資料：同一作業日已匯入過內容一樣的檔案、或檔案裡的訂單全部都已在之前的批次，整份擋掉。"""
+一張訂單只屬於一個作業日（當天出完，不留到隔天）：比對重複時看全部作業日。
+避免重複匯入製造垃圾資料：任何一天匯入過內容一樣的檔案、或檔案裡的訂單全部都已匯入過，整份擋掉。"""
 
 import hashlib
 from dataclasses import dataclass, field
@@ -39,14 +40,20 @@ def file_hash(uploaded):
     return digest.hexdigest()
 
 
+def known_orders(order_nos):
+    """{訂單號: DailyOrder}，已匯入過的訂單；以前同一張出現在幾天的，取最早那天。"""
+    orders = DailyOrder.objects.filter(order_no__in=order_nos).order_by("-work_date", "-batch__seq")
+    return {o.order_no: o for o in orders}
+
+
 def import_batch(user, work_date, uploaded):
-    """匯入一份檔案成為作業日的下一批。已在當天更早批次出現的訂單照存但標記重複，不算進當日統計。"""
+    """匯入一份檔案成為作業日的下一批。已在之前批次（含其他作業日）出現的訂單照存但標記重複，不算進當日統計。"""
     version, group_version, message = check_versions()
     if message:
         return BatchOutcome(message=message)
     work_date = work_date or timezone.localdate()
     fingerprint = file_hash(uploaded)
-    same = DailyBatch.objects.filter(work_date=work_date, file_hash=fingerprint).first()
+    same = DailyBatch.objects.filter(file_hash=fingerprint).first()
     if same:
         return BatchOutcome(message=f"這份檔案和{same}（{same.file_name}）內容一樣，已經匯入過，這次沒有匯入。")
     result, outcome = read_file(version, uploaded)
@@ -54,17 +61,15 @@ def import_batch(user, work_date, uploaded):
         return BatchOutcome(message=outcome.message, file=outcome)
     max_length = DailyOrder._meta.get_field("order_no").max_length
     order_nos = list(dict.fromkeys(values["order_no"][:max_length] for _, values in result.lines))
-    if DailyOrder.objects.filter(work_date=work_date, order_no__in=order_nos).count() == len(order_nos):
-        return BatchOutcome(
-            message=f"檔案裡的 {len(order_nos)} 張訂單全部都已在 {work_date:%Y/%m/%d} 之前的批次匯入過，沒有新訂單，這次沒有匯入。"
-        )
+    if len(known_orders(order_nos)) == len(order_nos):
+        return BatchOutcome(message=f"檔案裡的 {len(order_nos)} 張訂單全部都已在之前的批次匯入過，沒有新訂單，這次沒有匯入。")
     with transaction.atomic():
         last = DailyBatch.objects.filter(work_date=work_date).aggregate(seq=Max("seq"))["seq"]
         batch = DailyBatch.objects.create(
             work_date=work_date, seq=(last or 0) + 1, file_name=uploaded.name[:200], file_hash=fingerprint, imported_by=user,
             mapping_version=version, group_version=group_version, line_count=len(result.lines), order_count=len(order_nos),
         )
-        existing = {o.order_no: o for o in DailyOrder.objects.filter(work_date=work_date, order_no__in=order_nos)}
+        existing = known_orders(order_nos)
         new_orders = DailyOrder.objects.bulk_create(
             DailyOrder(work_date=work_date, order_no=no, batch=batch) for no in order_nos if no not in existing
         )
