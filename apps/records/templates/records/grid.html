@@ -6,7 +6,7 @@
 {% block page_header %}
   <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
     <h1 class="h3 mb-0 me-auto">{% if bulk_edit %}批量修改{% else %}新增{% endif %}{{ menu_item.label }}</h1>
-    <a class="btn btn-outline-secondary" href="{% url 'records:list' %}">回列表</a>
+    <a class="btn btn-outline-secondary" href="{% url 'records:list' %}{% if kind %}?kind={{ kind|urlencode }}{% endif %}">回列表</a>
   </div>
 {% endblock %}
 

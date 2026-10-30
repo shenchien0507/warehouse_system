@@ -234,3 +234,10 @@ class RecordTests(TestCase):
         self.client.post(reverse("records:edit", args=[record.pk]), {"kind": KIND, "number": record.number, "date_text": "", "name": "紙箱", "quantity": "1"})
         record.refresh_from_db()
         self.assertEqual(record.kind, KIND)
+
+    def test_new_button_and_back_link_carry_the_chosen_kind(self):
+        new_url = reverse("records:new") + "?kind=" + quote(KIND)
+        self.assertContains(self.client.get(reverse("records:list"), {"kind": KIND}), f'href="{new_url}"')
+        response = self.client.get(new_url)
+        self.assertContains(response, f'<option value="{KIND}" selected>')
+        self.assertContains(response, 'href="' + reverse("records:list") + "?kind=" + quote(KIND))

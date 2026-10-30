@@ -6,7 +6,7 @@
 {% block page_header %}
   <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
     <h1 class="h3 mb-0 me-auto">{{ menu_item.label }}</h1>
-    <a class="btn btn-primary" href="{% url 'records:new' %}">新增紀錄</a>
+    <a class="btn btn-primary" href="{% url 'records:new' %}{% if chosen %}?kind={{ chosen|urlencode }}{% endif %}">新增紀錄</a>
   </div>
 {% endblock %}
 
