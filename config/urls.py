@@ -29,6 +29,7 @@ urlpatterns = [
     path("daily/", include("apps.daily.urls")),
     path("records/", include("apps.records.urls")),
     path("worklog/", include("apps.worklog.urls")),
+    path("tower/", include("apps.tower.urls")),
     path("test-data/", include("apps.testdata.urls")),  # 暫時的測試資料產生，正式開發完成後移除
     path("manage/", include("apps.backoffice.urls")),
     path("manage/accounts/", include("apps.accounts.manage_urls")),

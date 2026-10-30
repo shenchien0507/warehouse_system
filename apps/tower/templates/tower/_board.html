@@ -1,0 +1,87 @@
+{% comment %}數據塔內容：頁面第一次載入和定時更新（?partial=1）都用這個。{% endcomment %}
+<div class="small text-muted mb-3" id="tower-refreshed-at">更新時間 {{ refreshed_at|date:"H:i:s" }}</div>
+{% if not work_date %}
+  <div class="alert alert-light border">登記紀錄裡還沒有符合格式的編號（<code>yymmdd-001</code> 或 <code>yymmdd-W01</code>）。{% if skipped %}有 {{ skipped }} 筆格式不符，未計入。{% endif %}</div>
+{% else %}
+  <div class="d-flex flex-wrap align-items-baseline gap-3 mb-3">
+    <h2 class="h4 mb-0">{{ work_date|date:"Y/m/d" }}</h2>
+    {% if skipped %}<span class="text-muted small">另有 {{ skipped }} 筆編號格式不符，未計入</span>{% endif %}
+  </div>
+
+  <div class="row g-3 mb-4">
+    {% for kind in kinds %}
+      <div class="col-lg-6">
+        <div class="tower-card">
+          <div class="d-flex justify-content-between align-items-baseline">
+            <div class="tower-label">{{ kind.label }} <span class="tower-sub fw-normal">{{ kind.count }} 份撿貨單・單位 {{ kind.unit }}</span></div>
+            <div class="tower-sub">完成 {{ kind.percent|floatformat:0 }}%</div>
+          </div>
+          <div class="tower-value">{{ kind.remaining }} <span class="tower-sub fw-normal">剩餘 / 總數 {{ kind.total }}</span></div>
+          <div class="tower-track my-2">
+            {% for key, label, quantity, count, width in kind.rows %}
+              {% if quantity > 0 %}<div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" title="{{ label }}：{{ quantity }}（{{ count }} 份）"></div>{% endif %}
+            {% endfor %}
+          </div>
+          <table class="table table-sm mb-0 tower-states">
+            <tbody>
+              {% for key, label, quantity, count, width in kind.rows %}
+                <tr>
+                  <td><span class="tower-swatch seg-{{ key }}"></span>{{ label }}</td>
+                  <td class="text-end">{{ count }} 份</td>
+                  <td class="text-end fw-semibold">{{ quantity }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-lg-7">
+      <h3 class="h6 mb-2">目前進行中</h3>
+      {% if active %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead class="table-light"><tr><th>階段</th><th>編號</th><th>員工</th><th>開始</th></tr></thead>
+            <tbody>
+              {% for entry, stage in active %}
+                <tr>
+                  <td>{{ stage }}</td>
+                  <td>{{ entry.number }}</td>
+                  <td>{{ entry.start_employee.employee_no }} {{ entry.start_employee.name }}</td>
+                  <td>{{ entry.started_at|date:"H:i:s" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="text-muted small">現在沒有進行中的撿貨或配貨。</div>
+      {% endif %}
+    </div>
+    <div class="col-lg-5">
+      <h3 class="h6 mb-2">最近配貨完成</h3>
+      {% for entry in recent %}
+        <div class="small py-1 border-bottom">{{ entry.ended_at|date:"H:i:s" }}　{{ entry.number }}</div>
+      {% empty %}
+        <div class="text-muted small">還沒有配貨完成的編號。</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <details>
+    <summary class="mb-2">全部編號（{{ numbers|length }}）</summary>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead class="table-light"><tr><th>編號</th><th>類別</th><th class="text-end">數量</th><th>狀態</th></tr></thead>
+        <tbody>
+          {% for number, label, quantity, state_label, state in numbers %}
+            <tr><td>{{ number }}</td><td>{{ label }}</td><td class="text-end">{{ quantity }}</td><td><span class="tower-swatch seg-{{ state }}"></span>{{ state_label }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+{% endif %}
