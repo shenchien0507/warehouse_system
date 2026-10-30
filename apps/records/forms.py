@@ -39,3 +39,6 @@ class BaseGridFormSet(forms.BaseFormSet):
 
 
 GridFormSet = forms.formset_factory(GridRowForm, formset=BaseGridFormSet, extra=10, max_num=500, validate_max=True)
+
+# 批量修改：勾選的紀錄一列一列列出來改，不能加列；同一批編號重複由 model formset 本身檢查
+BulkEditFormSet = forms.modelformset_factory(Record, form=GridRowForm, extra=0, max_num=500, validate_max=True)

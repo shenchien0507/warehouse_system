@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}新增{{ menu_item.label }}{% endblock %}
+{% block title %}{% if bulk_edit %}批量修改{% else %}新增{% endif %}{{ menu_item.label }}{% endblock %}
 
 {% block page_header %}
   <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-    <h1 class="h3 mb-0 me-auto">新增{{ menu_item.label }}</h1>
+    <h1 class="h3 mb-0 me-auto">{% if bulk_edit %}批量修改{% else %}新增{% endif %}{{ menu_item.label }}</h1>
     <a class="btn btn-outline-secondary" href="{% url 'records:list' %}">回列表</a>
   </div>
 {% endblock %}
@@ -13,7 +13,7 @@
 {% block content %}
   <div class="alert alert-light border small py-2">
     像 Excel 一樣一格一格打，<kbd>Enter</kbd> 跳到下一列。點一格後拖曳右下角的小方塊往下拉可以填滿：<strong>編號、名稱</strong>結尾的數字會接續（A001 → A002、A003，隔-1 → 隔-2），日期、數量照抄。
-    也可以從 Excel 複製多列直接貼上。整列空白的不會存；編號不能重複；操作人帳號自動記成你（{{ user.username }}）。
+    也可以從 Excel 複製多列直接貼上。{% if bulk_edit %}共 {{ form.forms|length }} 筆，沒改的列不會動；編號不能重複；操作人不變，另外記下你是最後修改人。{% else %}整列空白的不會存；編號不能重複；操作人帳號自動記成你（{{ user.username }}）。{% endif %}
   </div>
 
   <form method="post" id="record-grid" novalidate>
@@ -29,19 +29,19 @@
             <th>日期</th>
             <th>名稱 <span class="text-danger">*</span></th>
             <th class="col-qty">數量 <span class="text-danger">*</span></th>
-            <th class="row-tools"></th>
+            {% if not bulk_edit %}<th class="row-tools"></th>{% endif %}
           </tr>
         </thead>
         <tbody>
           {% for row in form %}
-            {% include "records/_grid_row.html" with row=row index=forloop.counter %}
+            {% include "records/_grid_row.html" with row=row index=forloop.counter clearable=bulk_edit|yesno:",1" %}
           {% endfor %}
         </tbody>
       </table>
     </div>
-    <template id="empty-row">{% include "records/_grid_row.html" with row=form.empty_form index="" %}</template>
+    {% if not bulk_edit %}<template id="empty-row">{% include "records/_grid_row.html" with row=form.empty_form index="" clearable="1" %}</template>{% endif %}
     <div class="d-flex flex-wrap gap-2">
-      <button type="button" class="btn btn-outline-secondary" data-add-rows="10">多加 10 列</button>
+      {% if not bulk_edit %}<button type="button" class="btn btn-outline-secondary" data-add-rows="10">多加 10 列</button>{% endif %}
       <button type="submit" class="btn btn-primary ms-auto">儲存</button>
     </div>
   </form>

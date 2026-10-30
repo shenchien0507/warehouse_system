@@ -18,15 +18,26 @@
     {% if query %}<div class="col-auto"><a class="btn btn-link" href="{% url 'records:list' %}">清除</a></div>{% endif %}
   </form>
 
+  <form method="post" action="{% url 'records:bulk_delete' %}" id="bulk-form" data-edit-url="{% url 'records:bulk_edit' %}"
+        onsubmit="return confirm('確定要刪除勾選的 ' + document.querySelectorAll('input[name=ids][form=bulk-form]:checked').length + ' 筆紀錄？刪除後無法復原。');">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+  </form>
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2" id="bulk-bar">
+    <span class="small text-muted" data-bulk-count>勾選要批量操作的紀錄</span>
+    <button type="button" class="btn btn-sm btn-outline-primary" data-bulk-edit disabled>批量修改</button>
+    <button type="submit" form="bulk-form" class="btn btn-sm btn-outline-danger" data-bulk-delete disabled>批量刪除</button>
+  </div>
   <div class="table-responsive">
     <table class="table table-sm table-hover align-middle">
       <thead class="table-light">
-        <tr><th>編號</th><th>日期</th><th>名稱</th><th class="text-end">數量</th><th>操作人帳號</th><th>登記時間</th><th></th></tr>
+        <tr><th class="text-center" style="width: 2.5rem;"><input type="checkbox" class="form-check-input" data-select-all aria-label="全選這頁可修改的紀錄"></th><th>編號</th><th>日期</th><th>名稱</th><th class="text-end">數量</th><th>操作人帳號</th><th>登記時間</th><th></th></tr>
       </thead>
       <tbody>
         {% for row in rows %}
           {% with record=row.record %}
             <tr>
+              <td class="text-center">{% if row.can_edit %}<input type="checkbox" class="form-check-input" name="ids" value="{{ record.pk }}" form="bulk-form" aria-label="勾選 {{ record.number }}">{% endif %}</td>
               <td>{{ record.number }}</td>
               <td>{{ record.date_text }}</td>
               <td>{{ record.name }}</td>
@@ -49,10 +60,45 @@
             </tr>
           {% endwith %}
         {% empty %}
-          <tr><td colspan="7" class="text-muted">{% if query %}找不到符合「{{ query }}」的紀錄。{% else %}還沒有紀錄，按右上角「新增紀錄」開始。{% endif %}</td></tr>
+          <tr><td colspan="8" class="text-muted">{% if query %}找不到符合「{{ query }}」的紀錄。{% else %}還沒有紀錄，按右上角「新增紀錄」開始。{% endif %}</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% include "components/_pagination.html" %}
+{% endblock %}
+
+{% block extra_js %}
+  <script>
+    // 列表勾選：全選、顯示勾了幾筆；批量修改帶著勾選的編號到修改頁
+    (function () {
+      var form = document.getElementById("bulk-form");
+      var boxes = Array.prototype.slice.call(document.querySelectorAll("input[name=ids][form=bulk-form]"));
+      var all = document.querySelector("[data-select-all]");
+      var count = document.querySelector("[data-bulk-count]");
+      var buttons = document.querySelectorAll("[data-bulk-edit], [data-bulk-delete]");
+      if (!boxes.length) { all.disabled = true; }
+
+      function checked() { return boxes.filter(function (box) { return box.checked; }); }
+
+      function refresh() {
+        var n = checked().length;
+        count.textContent = n ? "已勾選 " + n + " 筆" : "勾選要批量操作的紀錄";
+        buttons.forEach(function (button) { button.disabled = !n; });
+        all.checked = n > 0 && n === boxes.length;
+        all.indeterminate = n > 0 && n < boxes.length;
+      }
+
+      all.addEventListener("change", function () {
+        boxes.forEach(function (box) { box.checked = all.checked; });
+        refresh();
+      });
+      boxes.forEach(function (box) { box.addEventListener("change", refresh); });
+      document.querySelector("[data-bulk-edit]").addEventListener("click", function () {
+        var query = checked().map(function (box) { return "ids=" + encodeURIComponent(box.value); }).join("&");
+        window.location = form.dataset.editUrl + "?" + query;
+      });
+      refresh();
+    })();
+  </script>
 {% endblock %}
