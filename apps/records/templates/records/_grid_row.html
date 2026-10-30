@@ -1,10 +1,10 @@
 <tr data-row>
-  <td class="row-no text-muted">{{ index }}</td>
+  <td class="row-no text-muted">{{ index }}{% for field in row.hidden_fields %}{{ field }}{% endfor %}</td>
   {% for field in row.visible_fields %}
     <td class="grid-cell{% if field.errors %} has-error{% endif %}">
       {{ field }}
       {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
     </td>
   {% endfor %}
-  <td class="row-tools"><button type="button" class="btn btn-sm btn-link text-secondary p-0" data-clear-row title="清空這列" aria-label="清空這列">✕</button></td>
+  {% if clearable %}<td class="row-tools"><button type="button" class="btn btn-sm btn-link text-secondary p-0" data-clear-row title="清空這列" aria-label="清空這列">✕</button></td>{% endif %}
 </tr>

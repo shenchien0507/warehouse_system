@@ -119,3 +119,61 @@ class RecordTests(TestCase):
         self.assertContains(self.client.post(reverse("records:edit", args=[mine.pk]), data), "這個編號已經登記過了")
         data["number"] = "M1"  # 改其他欄、編號不變可以存
         self.assertRedirects(self.client.post(reverse("records:edit", args=[mine.pk]), data), reverse("records:list"))
+
+    def bulk_edit_data(self, records, **changes):
+        """批量修改的表單資料；changes 是 {紀錄: {欄位: 值}}。"""
+        data = {"form-TOTAL_FORMS": len(records), "form-INITIAL_FORMS": len(records), "form-MIN_NUM_FORMS": 0, "form-MAX_NUM_FORMS": 500}
+        for i, record in enumerate(records):
+            values = {"id": record.pk, "number": record.number, "date_text": record.date_text, "name": record.name, "quantity": record.quantity}
+            values.update(changes.get(record.number, {}))
+            data.update({f"form-{i}-{key}": value for key, value in values.items()})
+        return data
+
+    def bulk_edit_url(self, *records):
+        return reverse("records:bulk_edit") + "?" + "&".join(f"ids={r.pk}" for r in records)
+
+    def test_bulk_edit_changes_only_changed_rows(self):
+        a, b = self.record(self.staff, number="A1"), self.record(self.staff, number="A2")
+        url = self.bulk_edit_url(a, b)
+        self.assertContains(self.client.get(url), "批量修改")
+        response = self.client.post(url, self.bulk_edit_data([a, b], A2={"name": "改名", "quantity": "9"}))
+        self.assertRedirects(response, reverse("records:list"))
+        a.refresh_from_db(), b.refresh_from_db()
+        self.assertEqual((b.name, b.quantity, b.updated_by, b.created_by), ("改名", 9, self.staff, self.staff))
+        self.assertIsNone(a.updated_by)
+
+    def test_bulk_edit_rejects_duplicate_numbers_in_batch(self):
+        a, b = self.record(self.staff, number="A1"), self.record(self.staff, number="A2")
+        url = self.bulk_edit_url(a, b)
+        response = self.client.post(url, self.bulk_edit_data([a, b], A2={"number": "A1"}))
+        self.assertEqual(response.status_code, 200)
+        b.refresh_from_db()
+        self.assertEqual(b.number, "A2")
+
+    def test_bulk_edit_only_lists_own_records_for_staff(self):
+        mine, theirs = self.record(self.staff, number="M1"), self.record(self.other, number="T1")
+        response = self.client.get(self.bulk_edit_url(mine, theirs))
+        self.assertContains(response, 'value="M1"')
+        self.assertNotContains(response, 'value="T1"')
+        self.assertRedirects(self.client.get(self.bulk_edit_url(theirs)), reverse("records:list"))
+
+    def test_bulk_delete(self):
+        a, b, c = (self.record(self.staff, number=n) for n in ("A1", "A2", "A3"))
+        response = self.client.post(reverse("records:bulk_delete"), {"ids": [a.pk, b.pk]})
+        self.assertRedirects(response, reverse("records:list"))
+        self.assertEqual(list(Record.objects.values_list("number", flat=True)), ["A3"])
+
+    def test_bulk_delete_refuses_others_records(self):
+        mine, theirs = self.record(self.staff), self.record(self.other)
+        response = self.client.post(reverse("records:bulk_delete"), {"ids": [mine.pk, theirs.pk]})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(Record.objects.count(), 2)
+        self.login(self.director)
+        self.client.post(reverse("records:bulk_delete"), {"ids": [mine.pk, theirs.pk]})
+        self.assertFalse(Record.objects.exists())
+
+    def test_list_has_checkboxes_only_for_editable_records(self):
+        mine, theirs = self.record(self.staff), self.record(self.other)
+        response = self.client.get(reverse("records:list"))
+        self.assertContains(response, f'name="ids" value="{mine.pk}"')
+        self.assertNotContains(response, f'name="ids" value="{theirs.pk}"')

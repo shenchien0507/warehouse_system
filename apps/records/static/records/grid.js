@@ -23,6 +23,7 @@
 
   function addRows(count) {
     var added = 0;
+    if (!template) return added; // 批量修改不能加列
     while (added < count && rows().length < maxRows) {
       var index = parseInt(total.value, 10);
       var html = template.innerHTML.replace(/__prefix__/g, index);

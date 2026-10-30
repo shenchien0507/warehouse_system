@@ -3,16 +3,16 @@ from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import FormView, ListView, UpdateView
 
 from apps.backoffice.menu import MENU_BY_KEY, can_use
 
-from .forms import GridFormSet, RecordForm
+from .forms import BulkEditFormSet, GridFormSet, RecordForm
 from .models import Record
-from .rules import can_edit
+from .rules import can_edit, editable_records
 
 
 class RecordPageMixin:
@@ -77,6 +77,68 @@ class RecordGridView(RecordPageMixin, FormView):
         return super().form_invalid(formset)
 
 
+def selected_ids(data):
+    return [int(pk) for pk in data.getlist("ids") if pk.isdigit()]
+
+
+class RecordBulkEditView(RecordPageMixin, FormView):
+    """列表勾選的紀錄（?ids=1&ids=2…）用同樣的 Excel 表格一次修改；只列出自己可以改的，沒改的列不動。"""
+
+    template_name = "records/grid.html"
+    form_class = BulkEditFormSet
+    success_url = reverse_lazy("records:list")
+
+    def get_queryset(self):
+        ids = selected_ids(self.request.GET)
+        return editable_records(self.request.user).filter(pk__in=ids).order_by("number", "pk")
+
+    def get(self, request, *args, **kwargs):
+        if not self.get_queryset().exists():
+            messages.error(request, "請先在列表勾選要修改的紀錄。")
+            return redirect("records:list")
+        return super().get(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        return {**super().get_form_kwargs(), "queryset": self.get_queryset()}
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(bulk_edit=True, **kwargs)
+
+    def form_valid(self, formset):
+        changed = [form for form in formset if form.has_changed()]
+        with transaction.atomic():
+            for form in changed:
+                form.instance.updated_by = self.request.user
+                form.save()
+        messages.success(self.request, f"已修改 {len(changed)} 筆。" if changed else "沒有任何變更。")
+        return super().form_valid(formset)
+
+    def form_invalid(self, formset):
+        messages.error(self.request, "有欄位不正確，請檢查標紅的地方；這次全部都還沒存。")
+        return super().form_invalid(formset)
+
+
+class RecordBulkDeleteView(RecordPageMixin, View):
+    """刪除列表勾選的紀錄；不能改的紀錄不會被刪。"""
+
+    def post(self, request, *args, **kwargs):
+        ids = selected_ids(request.POST)
+        records = editable_records(request.user).filter(pk__in=ids)
+        count = records.count()
+        if count != len(set(ids)):
+            raise PermissionDenied
+        records.delete()
+        messages.success(request, f"已刪除 {count} 筆。" if count else "沒有勾選任何紀錄。")
+        return redirect(safe_next(request))
+
+
+def safe_next(request):
+    back = request.POST.get("next", "")
+    if not url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}):
+        return reverse("records:list")
+    return back
+
+
 class RecordObjectMixin(RecordPageMixin):
     def get_object(self, queryset=None):
         record = get_object_or_404(Record, pk=self.kwargs["pk"])
@@ -101,7 +163,4 @@ class RecordDeleteView(RecordObjectMixin, View):
         record = self.get_object()
         record.delete()
         messages.success(request, f"已刪除「{record}」。")
-        back = request.POST.get("next", "")
-        if not url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}):
-            back = "records:list"
-        return redirect(back)
+        return redirect(safe_next(request))
