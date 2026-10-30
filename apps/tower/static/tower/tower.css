@@ -30,23 +30,15 @@
 .tower-board .tower-register.is-over { color: #b42318; font-weight: 600; }
 .tower-board .seg-unregistered { background: #f3f2ef; box-shadow: inset 0 0 0 1px #d6d5d0; }
 
-/* 緊湊數字卡：停在上面一下（0.5 秒）才跳出詳細小窗，點卡片進單獨頁 */
+/* 緊湊數字卡：停在上面一下（0.5 秒）才跳出詳細小窗（位置由 tower.js 算，開在卡片旁邊，不會超出畫面），點卡片進單獨頁 */
 .tower-board .tower-tile { position: relative; border: 1px solid #e3e2de; border-radius: .5rem; padding: .6rem 1rem; height: 100%; background: #fff; }
 .tower-board .tower-tile:hover { border-color: #b9b8b2; }
 .tower-board .tower-tile .tower-value { font-size: 1.75rem; }
 .tower-board .tower-thin { height: .5rem; }
 .tower-board .tower-pop {
-  position: absolute; z-index: 20; top: 100%; left: 50%; width: 22rem; max-width: 90vw;
-  transform: translateX(-50%) scale(.96); transform-origin: top center;
-  opacity: 0; visibility: hidden; pointer-events: none;
+  position: fixed; z-index: 1050; top: 0; left: 0; width: 22rem; max-width: calc(100vw - 1rem);
+  opacity: 0; visibility: hidden; pointer-events: none; transform: scale(.96);
   box-shadow: 0 .5rem 1.5rem rgba(0, 0, 0, .18); border-radius: .5rem; background: #fff;
   transition: opacity .15s ease, transform .15s ease, visibility 0s .15s;
 }
-.tower-board .tower-tile:hover .tower-pop {
-  opacity: 1; visibility: visible; transform: translateX(-50%) scale(1);
-  transition: opacity .15s ease .5s, transform .15s ease .5s, visibility 0s .5s;
-}
-/* 最右邊一欄的小窗靠右對齊，不要超出畫面 */
-@media (min-width: 1200px) { .tower-board .tower-col:nth-child(4n) .tower-pop { left: auto; right: 0; transform: scale(.96); transform-origin: top right; } .tower-board .tower-col:nth-child(4n) .tower-tile:hover .tower-pop { transform: scale(1); } }
-@media (min-width: 768px) and (max-width: 1199.98px) { .tower-board .tower-col:nth-child(3n) .tower-pop { left: auto; right: 0; transform: scale(.96); transform-origin: top right; } .tower-board .tower-col:nth-child(3n) .tower-tile:hover .tower-pop { transform: scale(1); } }
-@media (max-width: 767.98px) { .tower-board .tower-col:nth-child(2n) .tower-pop { left: auto; right: 0; transform: scale(.96); transform-origin: top right; } .tower-board .tower-col:nth-child(2n) .tower-tile:hover .tower-pop { transform: scale(1); } }
+.tower-board .tower-tile.is-open .tower-pop { opacity: 1; visibility: visible; transform: scale(1); transition: opacity .15s ease, transform .15s ease; }
