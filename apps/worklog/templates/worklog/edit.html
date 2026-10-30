@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}修改{{ menu_item.label }}{% endblock %}
+{% block heading %}修改{{ menu_item.label }}：{{ object.number }}{% endblock %}
+
+{% block content %}
+  <p class="text-muted small">
+    開始時間 {{ object.started_at|date:"Y-m-d H:i:s" }}，結束時間 {% if object.is_open %}（還沒結束）{% else %}{{ object.ended_at|date:"Y-m-d H:i:s" }}{% endif %}；時間由系統記錄，不能修改。
+  </p>
+  <div class="row">
+    <div class="col-lg-6">
+      {% include "components/_form.html" with form=form submit_text="儲存" cancel_url=page_url %}
+    </div>
+  </div>
+{% endblock %}

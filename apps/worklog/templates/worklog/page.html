@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}{{ menu_item.label }}{% endblock %}
+{% block heading %}{{ menu_item.label }}{% endblock %}
+
+{% block content %}
+  <form method="post" class="card mb-4" novalidate data-scan-form>
+    {% csrf_token %}
+    <div class="card-body">
+      <div class="row g-2 align-items-end">
+        <div class="col-sm-5 col-lg-3">
+          <label class="form-label" for="{{ form.number.id_for_label }}">{{ form.number.label }}</label>
+          {{ form.number }}
+        </div>
+        <div class="col-sm-5 col-lg-3">
+          <label class="form-label" for="{{ form.employee_no.id_for_label }}">{{ form.employee_no.label }}</label>
+          {{ form.employee_no }}
+        </div>
+        <div class="col-auto"><button type="submit" class="btn btn-primary">登記</button></div>
+      </div>
+      <div class="form-text">同一個編號第一次登記是開始，再登記一次是結束；開始、結束時間由系統記錄。編號要{% if stage == "picking" %}登記紀錄{% else %}撿貨{% endif %}有，員工編號要人員資料有，否則不能登記。</div>
+    </div>
+  </form>
+
+  <form method="get" class="row g-2 align-items-center mb-3">
+    <div class="col-sm-6 col-lg-4">
+      <input type="search" name="q" value="{{ query }}" class="form-control" placeholder="搜尋編號、員工編號或姓名" aria-label="搜尋">
+    </div>
+    {% if show_anomaly %}
+      <div class="col-auto form-check ms-2">
+        <input type="checkbox" class="form-check-input" name="anomaly" value="1" id="only-anomaly" {% if only_anomaly %}checked{% endif %}>
+        <label class="form-check-label" for="only-anomaly">只看異常</label>
+      </div>
+    {% endif %}
+    <div class="col-auto"><button type="submit" class="btn btn-outline-secondary">搜尋</button></div>
+    {% if query or only_anomaly %}<div class="col-auto"><a class="btn btn-link" href="{{ page_url }}">清除</a></div>{% endif %}
+  </form>
+
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>編號</th><th>開始員工</th><th>開始時間</th><th>結束員工</th><th>結束時間</th>
+          {% if show_anomaly %}<th>異常</th>{% endif %}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          {% with entry=row.entry %}
+            <tr{% if show_anomaly and entry.anomaly %} class="table-danger"{% endif %}>
+              <td>{{ entry.number }}</td>
+              <td>{{ entry.start_employee.employee_no }} {{ entry.start_employee.name }}</td>
+              <td class="text-nowrap">{{ entry.started_at|date:"Y-m-d H:i:s" }}</td>
+              {% if entry.is_open %}
+                <td colspan="2"><span class="badge text-bg-warning">進行中</span></td>
+              {% else %}
+                <td>{{ entry.end_employee.employee_no }} {{ entry.end_employee.name }}</td>
+                <td class="text-nowrap">{{ entry.ended_at|date:"Y-m-d H:i:s" }}</td>
+              {% endif %}
+              {% if show_anomaly %}<td>{% if entry.anomaly %}<span class="badge text-bg-danger" title="配貨開始時，撿貨同編號還沒刷結束">撿貨未結束</span>{% endif %}</td>{% endif %}
+              <td class="text-end text-nowrap">
+                {% if entry.edited %}<span class="small text-muted me-2" title="{{ entry.updated_at|date:'Y-m-d H:i' }}">{{ entry.updated_by.name|default:entry.updated_by.username }} 修改過</span>{% endif %}
+                {% if row.edit_url %}
+                  <a class="btn btn-sm btn-outline-secondary" href="{{ row.edit_url }}">修改</a>
+                  <form method="post" action="{{ row.delete_url }}" class="d-inline" onsubmit="return confirm('確定要刪除「{{ entry|escapejs }}」這筆登記？刪除後無法復原。');">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">刪除</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endwith %}
+        {% empty %}
+          <tr><td colspan="7" class="text-muted">{% if query or only_anomaly %}找不到符合的紀錄。{% else %}還沒有登記。{% endif %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "components/_pagination.html" %}
+{% endblock %}
+
+{% block extra_js %}
+  <script>
+    // 編號按 Enter 跳到員工編號（刷條碼槍會自動送 Enter），員工編號按 Enter 才送出；有錯時游標停在第一個錯的格子
+    (function () {
+      var form = document.querySelector("[data-scan-form]");
+      var number = form.querySelector("[data-scan=number]");
+      var employee = form.querySelector("[data-scan=employee]");
+      number.addEventListener("keydown", function (event) {
+        if (event.key !== "Enter") { return; }
+        event.preventDefault();
+        if (number.value.trim()) { employee.focus(); employee.select(); }
+      });
+      employee.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" && !number.value.trim()) { event.preventDefault(); number.focus(); }
+      });
+      var invalid = form.querySelector(".is-invalid");
+      if (invalid) { invalid.focus(); invalid.select(); }
+    })();
+  </script>
+{% endblock %}
