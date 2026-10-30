@@ -96,7 +96,7 @@ def tower(limit_recent=5, kind=None):
     """kind 有值只看那個種類（單獨頁）：卡片、進行中、最近完成、編號清單都只留這個種類的；沒有這個種類回傳 None。"""
     day = work_date()
     totals, order = totals_by_kind(day)
-    records = list(Record.objects.filter(created_at__date=day).only("number", "quantity", "kind"))
+    records = list(Record.objects.created_on(day).only("number", "quantity", "kind"))
     numbers = [r.number for r in records]
     picking = latest_by_number(Stage.PICKING, numbers)
     allocation = latest_by_number(Stage.ALLOCATION, numbers)
