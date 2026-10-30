@@ -23,6 +23,8 @@ MENU = [
     MenuItem("order-stats", "訂單統計", "orders:run_list", "訂單", section="feature"),
     MenuItem("daily-stats", "當日統計", "daily:day_list", "訂單", section="feature"),
     MenuItem("records", "登記紀錄", "records:list", "紀錄", section="feature"),
+    MenuItem("worklog-picking", "撿貨登記", "worklog:picking", "作業登記", section="feature"),
+    MenuItem("worklog-allocation", "配貨登記", "worklog:allocation", "作業登記", section="feature"),
     # 暫時的測試資料產生，正式開發完成後移除
     MenuItem("test-data", "測試資料產生", "testdata:generate", "訂單", admin_only=True, section="feature"),
     MenuItem("manage-levels", "職級", "accounts_manage:level_list", "組織", admin_only=True),
