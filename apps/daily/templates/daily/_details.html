@@ -36,7 +36,7 @@
   <details class="mb-3" id="d-total">
     <summary class="h6">當日累計表格</summary>
     <div class="mt-2">
-    {% include "orders/_summary.html" with summary=total.summary by_import_time=total.by_import_time first_day=total.first_day last_day=total.last_day title="當日累計" anchor="day-total" note="全部批次，重複的不算" import_time_note="依各自那批的匯入時間" %}
+    {% include "orders/_summary.html" with summary=total.summary by_import_time=total.by_import_time first_day=total.first_day last_day=total.last_day title="當日累計" anchor="day-total" note="全部批次，重複的、抽起的不算" import_time_note="依各自那批的匯入時間" %}
     </div>
   </details>
 

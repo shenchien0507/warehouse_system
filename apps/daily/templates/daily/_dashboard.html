@@ -5,7 +5,7 @@
 {% else %}
   <div class="d-flex flex-wrap align-items-baseline gap-3 mb-3">
     <h2 class="h4 mb-0">作業日 {{ work_date|date:"Y/m/d" }}</h2>
-    <span class="text-muted">當日訂單 <strong class="text-body">{{ board.total }}</strong> 張・{{ batches|length }} 批・最後匯入 {{ latest.imported_at|date:"H:i" }}</span>
+    <span class="text-muted">當日訂單 <strong class="text-body">{{ board.total }}</strong> 張{% if board.held %}（另有抽起 <strong class="text-danger">{{ board.held }}</strong> 張不算）{% endif %}・{{ batches|length }} 批・最後匯入 {{ latest.imported_at|date:"H:i" }}</span>
   </div>
   <div class="row g-3 mb-4">
     {% for card in board.groups %}
@@ -28,6 +28,7 @@
           {% endif %}
           <div class="register-line register-{{ card.register_state }} mt-1">已登記 <strong>{{ card.registered }}</strong> / {{ card.main }}{% if card.register_state == "over" %}（多 {{ card.over_by }}）{% endif %}</div>
           {% if card.show_rows %}<div class="stat-sub mt-1">去重 {{ card.total }}</div>{% endif %}
+          {% if card.held %}<div class="stat-held mt-1">抽起 {{ card.held }}（不算）</div>{% endif %}
           {% if card.shown.no_time %}<div class="stat-sub">沒有下單時間 {{ card.shown.no_time }}</div>{% endif %}
         </div>
       </div>
@@ -53,6 +54,34 @@
       {% endfor %}
     </div>
   </div>
+
+  {% if holds %}
+    <h3 class="h6 mb-2" id="daily-holds">抽起的訂單</h3>
+    <div class="table-responsive mb-4">
+      <table class="table table-sm align-middle">
+        <thead class="table-light"><tr><th>訂單號</th><th>批次</th><th>抽起</th><th>原因</th><th>狀態</th><th class="text-end">操作</th></tr></thead>
+        <tbody>
+          {% for hold in holds %}
+            <tr{% if not hold.is_held %} class="text-muted"{% endif %}>
+              <td>{{ hold.order.order_no }}</td>
+              <td>第 {{ hold.order.batch.seq }} 批</td>
+              <td>{{ hold.held_at|date:"H:i" }} {{ hold.held_by.name|default:"" }}</td>
+              <td>{{ hold.reason }}</td>
+              <td>{% if hold.is_held %}<span class="badge text-bg-danger">抽起中</span>{% else %}{{ hold.released_at|date:"m/d H:i" }} {{ hold.released_by.name|default:"" }} {{ hold.outcome }}{% endif %}</td>
+              <td class="text-end">
+                {% if hold.can_release %}
+                  <form method="post" action="{% url 'daily:release' hold.pk %}" onsubmit="if (!confirm('放回訂單 {{ hold.order.order_no }}？放回後算回當日統計。')) return false; this.querySelector('button').disabled = true; return true;">
+                    {% csrf_token %}<button type="submit" class="btn btn-sm btn-success">放回</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="form-text">手動放回只限作業日當天。抽起的訂單出現在之後的批次檔：同一作業日自動放回，其他作業日就轉到那天算。</div>
+    </div>
+  {% endif %}
 
   {% include "daily/_details.html" %}
 {% endif %}

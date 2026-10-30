@@ -47,3 +47,4 @@
   .daily-board .bar-row { grid-template-columns: 5rem 1fr 3.5rem; gap: .5rem; }
   .daily-board .stat-value { font-size: 1.5rem; }
 }
+.daily-board .stat-held { font-size: .875rem; color: #b42318; font-variant-numeric: tabular-nums; }

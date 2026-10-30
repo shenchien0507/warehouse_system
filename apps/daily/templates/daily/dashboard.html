@@ -51,6 +51,79 @@
     </div>
   </div>
 
+  {% if batches %}
+    <div class="card mb-4" id="daily-search">
+      <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end">
+          <div class="col-md-6">
+            <label class="form-label" for="daily-q">查訂單（作業日 {{ work_date|date:"Y/m/d" }}）</label>
+            <input type="search" name="q" id="daily-q" value="{{ keyword }}" class="form-control" placeholder="訂單號、平台訂單編號或出貨單號，打一部分也可以">
+          </div>
+          <div class="col-auto"><button type="submit" class="btn btn-outline-primary">搜尋</button></div>
+          {% if keyword %}<div class="col-auto"><a href="{{ request.path }}" class="btn btn-link">清除</a></div>{% endif %}
+        </form>
+        {% if keyword %}
+          {% if not found %}
+            <div class="alert alert-light border mt-3 mb-0">
+              這個作業日找不到「{{ keyword }}」。
+              {% for order in elsewhere %}<div>訂單 {{ order.order_no }} 在 <a href="{% url 'daily:day_detail' order.work_date %}?q={{ order.order_no|urlencode }}#daily-search">{{ order.work_date|date:"Y/m/d" }} 第 {{ order.batch.seq }} 批</a>。</div>{% endfor %}
+            </div>
+          {% else %}
+            <div class="small text-muted mt-3 mb-2">找到 {{ found|length }} 張{% if found_more %}，只列出前 {{ search_limit }} 張，請打完整一點{% endif %}。</div>
+            {% for order in found %}
+              <div class="border rounded p-3 mb-2{% if order.current_hold or order.moved_hold %} bg-light{% endif %}">
+                <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2">
+                  <strong>訂單 {{ order.order_no }}</strong>
+                  <span class="text-muted">第 {{ order.batch.seq }} 批（{{ order.batch.imported_at|date:"H:i" }} 匯入）</span>
+                  {% if order.place.0 %}<span class="badge text-bg-secondary">{{ order.place.0 }}{% if order.place.1 %}・{{ order.place.1 }}{% endif %}</span>{% endif %}
+                  {% if order.current_hold %}<span class="badge text-bg-danger">抽起中，不算</span>
+                  {% elif order.moved_hold %}<span class="badge text-bg-warning">{{ order.moved_hold.outcome }}，這天不算</span>
+                  {% else %}<span class="badge text-bg-success">算在當日統計</span>{% endif %}
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-sm mb-2">
+                    <thead class="table-light"><tr><th>批次</th><th>平台</th><th>店鋪</th><th>出貨方式</th><th>平台訂單編號</th><th>出貨單號</th><th>商品編號</th><th>商品名稱</th><th>樣式</th><th class="text-end">數量</th><th>下單時間</th></tr></thead>
+                    <tbody>
+                      {% for line in order.found_lines %}
+                        <tr{% if line.is_duplicate %} class="text-muted"{% endif %}>
+                          <td>第 {{ line.batch.seq }} 批{% if line.is_duplicate %} <span class="badge text-bg-warning">重複</span>{% endif %}</td>
+                          <td>{{ line.platform }}</td><td>{{ line.shop }}</td><td>{{ line.ship_type }}</td>
+                          <td>{{ line.platform_order_no }}</td><td>{{ line.shipment_no }}</td>
+                          <td>{{ line.product_code }}</td><td>{{ line.product_name }}</td><td>{{ line.product_spec }}</td>
+                          <td class="text-end">{{ line.quantity|default_if_none:"" }}</td><td>{{ line.order_time|date:"m/d H:i"|default:"" }}</td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                {% if order.current_hold %}
+                  <form method="post" action="{% url 'daily:release' order.current_hold.pk %}" class="d-flex flex-wrap align-items-center gap-2">
+                    {% csrf_token %}<input type="hidden" name="q" value="{{ keyword }}">
+                    <span class="small">{{ order.current_hold.held_at|date:"H:i" }} {{ order.current_hold.held_by.name|default:"" }} 抽起：{{ order.current_hold.reason }}</span>
+                    {% if order.current_hold.can_release %}<button type="submit" class="btn btn-sm btn-success" onclick="this.disabled=true;this.form.submit();">放回</button>{% else %}<span class="small text-muted">作業日已過，等之後的訂單檔出現會自動轉過去</span>{% endif %}
+                  </form>
+                {% elif not order.moved_hold %}
+                  <form method="post" action="{% url 'daily:hold' order.pk %}" class="d-flex flex-wrap gap-2">
+                    {% csrf_token %}<input type="hidden" name="q" value="{{ keyword }}">
+                    <input type="text" name="reason" class="form-control form-control-sm w-auto flex-grow-1" maxlength="200" required placeholder="抽起原因，例如：缺貨、地址有問題">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">抽起</button>
+                  </form>
+                {% endif %}
+                {% with history=order.holds.all %}
+                  {% if history %}
+                    <div class="small text-muted mt-2">
+                      {% for hold in history %}{% if not hold.is_held %}<div>{{ hold.held_at|date:"m/d H:i" }} {{ hold.held_by.name|default:"" }} 抽起（{{ hold.reason }}）→ {{ hold.released_at|date:"m/d H:i" }} {{ hold.released_by.name|default:"" }} {{ hold.outcome }}</div>{% endif %}{% endfor %}
+                    </div>
+                  {% endif %}
+                {% endwith %}
+              </div>
+            {% endfor %}
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
   <div class="d-flex justify-content-end align-items-center gap-2 small text-muted mb-2">
     <div class="form-check form-switch mb-0">
       <input class="form-check-input" type="checkbox" role="switch" id="daily-auto-refresh" checked>
