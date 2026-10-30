@@ -1,12 +1,12 @@
 """登記紀錄：單純打什麼記什麼的表格，暫時不和其他資料表關聯（之後的功能確定後再考慮）。
-日期存成純文字，輸入什麼就存什麼，不轉換、不檢查格式；操作人取自登入的帳號。"""
+編號不能重複；日期存成純文字，輸入什麼就存什麼，不轉換、不檢查格式；操作人取自登入的帳號。"""
 
 from django.conf import settings
 from django.db import models
 
 
 class Record(models.Model):
-    number = models.CharField("編號", max_length=50)
+    number = models.CharField("編號", max_length=50, unique=True, error_messages={"unique": "這個編號已經登記過了。"})
     date_text = models.CharField("日期", max_length=50, blank=True)
     name = models.CharField("名稱", max_length=200)
     quantity = models.IntegerField("數量")

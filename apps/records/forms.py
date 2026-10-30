@@ -24,4 +24,18 @@ class GridRowForm(RecordForm):
         self.fields["quantity"].widget.attrs["inputmode"] = "numeric"
 
 
-GridFormSet = forms.formset_factory(GridRowForm, extra=10, max_num=500, validate_max=True)
+class BaseGridFormSet(forms.BaseFormSet):
+    def clean(self):
+        """同一次輸入裡編號重複的列標紅（和已登記的重複由欄位本身檢查）；有錯的列會讓整批不存。"""
+        seen = {}
+        for row, form in enumerate(self.forms, start=1):
+            number = getattr(form, "cleaned_data", {}).get("number")
+            if not number:
+                continue
+            if number in seen:
+                form.add_error("number", f"和第 {seen[number]} 列的編號重複。")
+            else:
+                seen[number] = row
+
+
+GridFormSet = forms.formset_factory(GridRowForm, formset=BaseGridFormSet, extra=10, max_num=500, validate_max=True)
