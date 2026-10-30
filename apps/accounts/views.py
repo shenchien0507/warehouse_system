@@ -1,7 +1,6 @@
 from django.shortcuts import render
 
-from .permissions import accessible_pages
-
 
 def home(request):
-    return render(request, "home.html", {"pages": accessible_pages(request.user)})
+    """首頁：依導覽列同樣的分組列出能用的功能（資料來自 backoffice context processor）。"""
+    return render(request, "home.html")

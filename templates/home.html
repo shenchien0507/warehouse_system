@@ -4,9 +4,36 @@
 {% block heading %}倉儲系統{% endblock %}
 
 {% block content %}
-  {% if pages %}
-    <p class="lead">你可使用的功能：</p>
-    <ul>{% for page in pages %}<li>{{ page.label }}</li>{% endfor %}</ul>
+  {% if feature_groups or can_use_backoffice or tool_menu %}
+    <div class="row g-3">
+      {% for group, items in feature_groups.items %}
+        <div class="col-sm-6 col-lg-4 col-xl-3">
+          <div class="card h-100">
+            <div class="card-header">{{ group }}</div>
+            <div class="list-group list-group-flush">
+              {% for item in items %}
+                <a class="list-group-item list-group-item-action" href="{% url item.url_name %}">{{ item.label }}</a>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+      {% if can_use_backoffice or tool_menu %}
+        <div class="col-sm-6 col-lg-4 col-xl-3">
+          <div class="card h-100">
+            <div class="card-header">管理</div>
+            <div class="list-group list-group-flush">
+              {% if can_use_backoffice %}
+                <a class="list-group-item list-group-item-action" href="{% url 'backoffice:dashboard' %}">後台管理</a>
+              {% endif %}
+              {% for item in tool_menu %}
+                <a class="list-group-item list-group-item-action" href="{% url item.url_name %}">{{ item.label }}</a>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      {% endif %}
+    </div>
   {% else %}
     <p class="lead">目前沒有開放給你的功能。</p>
   {% endif %}

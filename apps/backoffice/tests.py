@@ -307,3 +307,28 @@ class UserLevelLimitTests(BackofficeTestCase):
         self.assertEqual(response.status_code, 200)
         leader.refresh_from_db()
         self.assertEqual(leader.level, Level.LEADER)
+
+
+class NavbarTests(BackofficeTestCase):
+    def test_groups_become_dropdowns_and_single_items_plain_links(self):
+        self.login(make_user("boss", Level.ADMIN))
+        response = self.client.get(reverse("home"))
+        groups = response.context["feature_groups"]
+        self.assertEqual(list(groups), ["到班", "訂單", "作業", "數據"])
+        self.assertEqual([item.label for item in groups["作業"]], ["登記紀錄", "撿貨登記", "配貨登記"])
+        self.assertContains(response, 'data-bs-toggle="dropdown" aria-expanded="false">作業</a>', html=False)
+        self.assertNotContains(response, 'aria-expanded="false">數據</a>')
+        self.assertEqual([item.label for item in response.context["tool_menu"]], ["測試資料產生"])
+
+    def test_only_one_page_in_group_shows_plain_link(self):
+        PagePermission.objects.create(page_key="worklog-picking", label="撿貨登記", min_level=Level.STAFF)
+        self.login(make_user("e1"))
+        response = self.client.get(reverse("home"))
+        self.assertEqual(list(response.context["feature_groups"]), ["作業"])
+        self.assertContains(response, f'<a class="nav-link" href="{reverse("worklog:picking")}">撿貨登記</a>', html=True)
+        self.assertEqual(response.context["tool_menu"], [])
+
+    def test_group_is_active_on_its_pages(self):
+        self.login(make_user("boss", Level.ADMIN))
+        self.assertEqual(self.client.get(reverse("worklog:picking")).context["active_group"], "作業")
+        self.assertIsNone(self.client.get(reverse("home")).context["active_group"])
