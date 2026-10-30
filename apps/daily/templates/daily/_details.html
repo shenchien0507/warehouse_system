@@ -19,7 +19,7 @@
             <td class="text-end">{% if batch.duplicate_order_count %}<span class="badge text-bg-warning">{{ batch.duplicate_order_count }}</span>{% else %}0{% endif %}</td>
             <td class="text-end">
               {% if batch == latest and not batch.referenced_later %}
-                <form method="post" action="{% url 'daily:batch_delete' batch.pk %}" onsubmit="return confirm('確定刪除{{ batch }}？這批的訂單和統計會一起刪掉。');">
+                <form method="post" action="{% url 'daily:batch_delete' batch.pk %}" onsubmit="if (!confirm('確定刪除{{ batch }}？這批的訂單和統計會一起刪掉。')) return false; this.querySelector('button').disabled = true; return true;">
                   {% csrf_token %}
                   <button type="submit" class="btn btn-sm btn-outline-danger">刪除</button>
                 </form>
