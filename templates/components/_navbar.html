@@ -1,4 +1,5 @@
-{# 導覽列：新增 app 時，在下方 ul 加入該 app 的連結 #}
+{# 導覽列：功能頁面來自 apps/backoffice/menu.py 的 MENU，同一 group 收成下拉；group 只看得到一項時直接顯示連結 #}
+{% with view_name=request.resolver_match.view_name %}
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
   <div class="container">
     <a class="navbar-brand" href="{% url 'home' %}">倉儲系統</a>
@@ -11,23 +12,43 @@
         <li class="nav-item">
           <a class="nav-link{% if request.resolver_match.url_name == 'home' %} active{% endif %}" href="{% url 'home' %}">首頁</a>
         </li>
-        {% for item in feature_menu %}
-          <li class="nav-item"><a class="nav-link{% if request.resolver_match.view_name == item.url_name %} active{% endif %}" href="{% url item.url_name %}">{{ item.label }}</a></li>
+        {% for group, items in feature_groups.items %}
+          {% if items|length == 1 %}
+            {% with item=items.0 %}
+              <li class="nav-item"><a class="nav-link{% if group == active_group %} active{% endif %}" href="{% url item.url_name %}">{{ item.label }}</a></li>
+            {% endwith %}
+          {% else %}
+            <li class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle{% if group == active_group %} active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">{{ group }}</a>
+              <ul class="dropdown-menu">
+                {% for item in items %}
+                  <li><a class="dropdown-item{% if view_name == item.url_name %} active{% endif %}" href="{% url item.url_name %}">{{ item.label }}</a></li>
+                {% endfor %}
+              </ul>
+            </li>
+          {% endif %}
         {% endfor %}
-        {# 範例：<li class="nav-item"><a class="nav-link" href="{% url 'inventory:list' %}">庫存</a></li> #}
       </ul>
       <ul class="navbar-nav">
         {% if user.is_authenticated %}
-          <li class="nav-item"><span class="navbar-text me-3">{{ user.name|default:user.get_username }}（{{ user.level_display }}）</span></li>
-          {% if can_use_backoffice %}
-            <li class="nav-item"><a class="nav-link{% if request.path|slice:":8" == "/manage/" %} active{% endif %}" href="{% url 'backoffice:dashboard' %}">後台管理</a></li>
-          {% endif %}
-          <li class="nav-item"><a class="nav-link" href="{% url 'password_change' %}">修改密碼</a></li>
-          <li class="nav-item">
-            <form method="post" action="{% url 'logout' %}">
-              {% csrf_token %}
-              <button type="submit" class="nav-link btn btn-link">登出</button>
-            </form>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle{% if request.path|slice:":8" == "/manage/" %} active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">{{ user.name|default:user.get_username }}（{{ user.level_display }}）</a>
+            <ul class="dropdown-menu dropdown-menu-end">
+              {% if can_use_backoffice %}
+                <li><a class="dropdown-item{% if request.path|slice:":8" == "/manage/" %} active{% endif %}" href="{% url 'backoffice:dashboard' %}">後台管理</a></li>
+              {% endif %}
+              {% for item in tool_menu %}
+                <li><a class="dropdown-item{% if view_name == item.url_name %} active{% endif %}" href="{% url item.url_name %}">{{ item.label }}</a></li>
+              {% endfor %}
+              <li><a class="dropdown-item" href="{% url 'password_change' %}">修改密碼</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                <form method="post" action="{% url 'logout' %}">
+                  {% csrf_token %}
+                  <button type="submit" class="dropdown-item">登出</button>
+                </form>
+              </li>
+            </ul>
           </li>
         {% else %}
           <li class="nav-item"><a class="nav-link" href="{% url 'login' %}">登入</a></li>
@@ -36,3 +57,4 @@
     </div>
   </div>
 </nav>
+{% endwith %}

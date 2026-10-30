@@ -87,9 +87,10 @@ class PagePermissionTests(TestCase):
             V().dispatch(request)
 
     def test_home_lists_only_accessible_pages(self):
-        PagePermission.objects.create(page_key="punch", label="上下班打卡", min_level=Level.STAFF)
+        PagePermission.objects.create(page_key="data-tower", label="數據塔", min_level=Level.STAFF)
+        PagePermission.objects.create(page_key="records", label="登記紀錄", min_level=Level.LEADER)
         make_user("c", Level.STAFF, self.orders)
         self.client.login(username="c", password="pw12345!")
         content = self.client.get(reverse("home")).content.decode()
-        self.assertIn("上下班打卡", content)
-        self.assertNotIn("訂單整理", content)
+        self.assertIn(f'href="{reverse("tower:index")}"', content)
+        self.assertNotIn(f'href="{reverse("records:list")}"', content)

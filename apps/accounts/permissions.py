@@ -12,10 +12,6 @@ def can_access(user, page_key):
     return page is not None and page.allows(user)
 
 
-def accessible_pages(user):
-    return [p for p in PagePermission.objects.select_related("min_level").order_by("label") if p.allows(user)]
-
-
 class PageAccessMixin:
     """class-based view 使用：設定 page_key，無權限回 403。需先登入（全站已預設需登入）。"""
 
