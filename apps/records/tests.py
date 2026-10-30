@@ -177,3 +177,19 @@ class RecordTests(TestCase):
         response = self.client.get(reverse("records:list"))
         self.assertContains(response, f'name="ids" value="{mine.pk}"')
         self.assertNotContains(response, f'name="ids" value="{theirs.pk}"')
+
+    def test_quick_add_saves_one_record_and_returns_to_list(self):
+        url = reverse("records:list") + "?q=A"
+        response = self.client.post(url, {"number": "A1", "date_text": "早班", "name": "紙箱", "quantity": "3"})
+        self.assertRedirects(response, url)
+        record = Record.objects.get()
+        self.assertEqual((record.number, record.date_text, record.quantity, record.created_by), ("A1", "早班", 3, self.staff))
+
+    def test_quick_add_errors_stay_on_page(self):
+        self.record(self.other, number="A1")
+        response = self.client.post(reverse("records:list"), {"number": "A1", "date_text": "", "name": "紙箱", "quantity": "x"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "這個編號已經登記過了")
+        self.assertContains(response, "數量只能輸入整數")
+        self.assertContains(response, 'value="紙箱"')
+        self.assertEqual(Record.objects.count(), 1)

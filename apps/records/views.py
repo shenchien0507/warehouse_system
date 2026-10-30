@@ -10,7 +10,7 @@ from django.views.generic import FormView, ListView, UpdateView
 
 from apps.backoffice.menu import MENU_BY_KEY, can_use
 
-from .forms import BulkEditFormSet, GridFormSet, RecordForm
+from .forms import BulkEditFormSet, GridFormSet, QuickAddForm, RecordForm
 from .models import Record
 from .rules import can_edit, editable_records
 
@@ -30,10 +30,21 @@ class RecordPageMixin:
 
 
 class RecordListView(RecordPageMixin, ListView):
-    """所有人的紀錄都看得到，最新的在最上面；?q= 用編號、名稱、日期或操作人搜尋。"""
+    """所有人的紀錄都看得到，最新的在最上面；?q= 用編號、名稱、日期或操作人搜尋。
+    上方固定一列輸入（POST）：一次登記一筆，存好回到同一頁、輸入列清空；有錯留在原頁標紅。"""
 
     template_name = "records/list.html"
     paginate_by = 50
+
+    def post(self, request, *args, **kwargs):
+        form = QuickAddForm(request.POST)
+        if form.is_valid():
+            form.instance.created_by = request.user
+            record = form.save()
+            messages.success(request, f"已登記「{record}」。")
+            return redirect(request.get_full_path())
+        self.quick_form = form
+        return self.get(request, *args, **kwargs)
 
     def get_queryset(self):
         records = Record.objects.select_related("created_by", "updated_by")
@@ -48,6 +59,7 @@ class RecordListView(RecordPageMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["query"] = self.query
+        context["quick_form"] = getattr(self, "quick_form", None) or QuickAddForm()
         context["rows"] = [{"record": r, "can_edit": can_edit(self.request.user, r)} for r in context["object_list"]]
         return context
 
