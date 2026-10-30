@@ -23,4 +23,6 @@ urlpatterns = [
     path("", views.DashboardView.as_view(), name="day_list"),
     path("<date:work_date>/", views.DashboardView.as_view(), name="day_detail"),
     path("batch/<int:pk>/delete/", views.BatchDeleteView.as_view(), name="batch_delete"),
+    path("order/<int:pk>/hold/", views.HoldView.as_view(), name="hold"),
+    path("hold/<int:pk>/release/", views.ReleaseView.as_view(), name="release"),
 ]

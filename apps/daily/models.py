@@ -4,6 +4,7 @@
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from apps.orders.models import GroupVersion, MappingVersion
 
@@ -93,3 +94,74 @@ class DailyLine(models.Model):
 
     def __str__(self):
         return f"{self.order_no} {self.product_code}"
+
+
+class DailyHold(models.Model):
+    """抽單：當日訂單有問題先抽起來，不算進當日統計，之後放回。一張訂單可以抽、放好幾次，每次一筆紀錄。
+    放回有兩種：手動按「放回」，或之後匯入的批次檔裡又出現這張訂單（同一作業日自動放回；
+    其他作業日的檔案出現，代表改到那天出，訂單算進那天，原本那天繼續不算）。
+    過了作業日才手動放回（例如只抽了現場面單、ERP 沒抽，之後的訂單檔不會再出現）：算進今天，掛在今天最新一批。"""
+
+    HELD, RELEASED, RETURNED, MOVED, CARRIED = "held", "released", "returned", "moved", "carried"
+    STATUS_CHOICES = [
+        (HELD, "抽起中"), (RELEASED, "手動放回"), (RETURNED, "批次出現，自動放回"),
+        (MOVED, "批次出現，轉到其他作業日"), (CARRIED, "手動放回，轉到其他作業日"),
+    ]
+    GONE = (MOVED, CARRIED)  # 訂單已轉到其他作業日
+    EXCLUDED = (HELD, *GONE)  # 原本那天不算的狀態
+
+    order = models.ForeignKey(DailyOrder, verbose_name="當日訂單", on_delete=models.CASCADE, related_name="holds")
+    reason = models.CharField("原因", max_length=200)
+    status = models.CharField("狀態", max_length=10, choices=STATUS_CHOICES, default=HELD)
+    held_at = models.DateTimeField("抽起時間", auto_now_add=True)
+    held_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="抽起人", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    released_at = models.DateTimeField("放回時間", null=True, blank=True)
+    released_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="放回人", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    released_batch = models.ForeignKey(
+        DailyBatch, verbose_name="出現在哪一批", null=True, blank=True, on_delete=models.SET_NULL, related_name="released_holds"
+    )
+
+    class Meta:
+        verbose_name = "抽單紀錄"
+        verbose_name_plural = "抽單紀錄"
+        ordering = ["-held_at", "-pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["order"], condition=models.Q(status="held"), name="unique_daily_hold_held"),
+        ]
+
+    def __str__(self):
+        return f"{self.order} {self.get_status_display()}"
+
+    @property
+    def is_held(self):
+        return self.status == self.HELD
+
+    @property
+    def is_gone(self):
+        return self.status in self.GONE
+
+    @property
+    def release_moves(self):
+        """過了作業日：手動放回會轉到今天算，不改已經過去那天的數字。"""
+        return timezone.localdate() > self.order.work_date
+
+    @property
+    def outcome(self):
+        """放回的說明，例如「第 3 批出現，自動放回」「轉到 10/31 第 1 批」。"""
+        batch = self.released_batch
+        if self.status == self.RETURNED and batch:
+            return f"第 {batch.seq} 批出現，自動放回"
+        if self.status == self.MOVED and batch:
+            return f"轉到 {batch.work_date:%m/%d} 第 {batch.seq} 批"
+        if self.status == self.CARRIED and batch:
+            return f"手動放回，轉到 {batch.work_date:%m/%d} 第 {batch.seq} 批"
+        return self.get_status_display()
+
+    def close(self, status, user, batch=None):
+        self.status, self.released_by, self.released_batch = status, user, batch
+        self.released_at = timezone.now()
+        self.save(update_fields=["status", "released_by", "released_batch", "released_at"])
