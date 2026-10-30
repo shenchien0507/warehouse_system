@@ -2,9 +2,11 @@ from urllib.parse import quote
 
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.models import PagePermission
 from apps.accounts.testing import Level, make_user
+from apps.orders.tests import xlsx
 
 from .forms import FIELDS
 from .models import Record
@@ -27,7 +29,15 @@ class RecordTests(TestCase):
         self.staff = make_user("S001", Level.STAFF)
         self.other = make_user("S002", Level.STAFF)
         self.director = make_user("D001", Level.DIRECTOR)
+        self.import_today()
         self.login(self.staff)
+
+    def import_today(self):
+        """今天的當日統計有 蝦皮其他 一張訂單，種類才選得到。"""
+        self.login(make_user("importer", Level.ADMIN))
+        today = timezone.localdate()
+        rows = [["蝦皮購物", 1, "7-11", "A", f"{today:%Y/%m/%d} 09:00:00"]]
+        self.client.post(reverse("daily:day_list"), {"file": xlsx(["交易平台", "交易序號", "出貨類型", "商品編號", "建立時間"], rows, name="a.xlsx"), "work_date": f"{today:%Y-%m-%d}"})
 
     def login(self, user):
         self.client.login(username=user.username, password="pw12345!")

@@ -133,13 +133,10 @@ def tower(limit_recent=5):
 
 
 def kind_cards():
-    """登記紀錄頁最上面的種類卡：(今天, [(種類, 已登記, 總數或 None)])。
-    今天有當日統計就照它的種類和總數；沒有就列生效中的統計分組，只看登記數量。"""
-    from apps.records.rules import kind_names, registered_by_kind
+    """登記紀錄頁最上面的種類卡：(今天, [(種類, 已登記, 總數)])，只有當日統計今天有數字的種類。"""
+    from apps.records.rules import registered_by_kind
 
     day = work_date()
     totals, order = totals_by_kind(day)
     registered = registered_by_kind(day)
-    if order:
-        return day, [(name, registered.get(name, 0), totals[name]) for name in order]
-    return day, [(name, registered.get(name, 0), None) for name in kind_names()]
+    return day, [(name, registered.get(name, 0), totals[name]) for name in order]

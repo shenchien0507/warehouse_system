@@ -127,3 +127,23 @@ class TowerPageTests(TestCase):
     def test_needs_page_permission(self):
         PagePermission.objects.all().delete()
         self.assertEqual(self.client.get(URL).status_code, 403)
+
+
+class KindNamesTests(TowerTests):
+    """登記時可選的種類只有今天當日統計有數字卡的；沒有數字卡的不能選。"""
+
+    def test_only_kinds_with_cards_today_are_listed(self):
+        from apps.records.rules import kind_names
+
+        self.assertEqual(kind_names(), [])  # 今天還沒匯入當日統計
+        self.import_day()
+        self.assertEqual(sorted(kind_names()), sorted([NEXT_DAY, NO_PACK]))
+
+    def test_registering_a_kind_without_a_card_is_rejected(self):
+        PagePermission.objects.create(page_key="records", label="登記紀錄", min_level=Level.STAFF)
+        self.import_day()
+        response = self.client.post(reverse("records:list"), {"kind": "其他平台", "number": "A1", "date_text": "", "name": "x", "quantity": "1"})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Record.objects.exists())
+        self.client.post(reverse("records:list"), {"kind": NEXT_DAY, "number": "A1", "date_text": "", "name": "x", "quantity": "1"})
+        self.assertEqual(Record.objects.get().kind, NEXT_DAY)
