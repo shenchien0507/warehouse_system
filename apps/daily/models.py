@@ -99,11 +99,16 @@ class DailyLine(models.Model):
 class DailyHold(models.Model):
     """抽單：當日訂單有問題先抽起來，不算進當日統計，之後放回。一張訂單可以抽、放好幾次，每次一筆紀錄。
     放回有兩種：手動按「放回」，或之後匯入的批次檔裡又出現這張訂單（同一作業日自動放回；
-    其他作業日的檔案出現，代表改到那天出，訂單算進那天，原本那天繼續不算）。"""
+    其他作業日的檔案出現，代表改到那天出，訂單算進那天，原本那天繼續不算）。
+    過了作業日才手動放回（例如只抽了現場面單、ERP 沒抽，之後的訂單檔不會再出現）：算進今天，掛在今天最新一批。"""
 
-    HELD, RELEASED, RETURNED, MOVED = "held", "released", "returned", "moved"
-    STATUS_CHOICES = [(HELD, "抽起中"), (RELEASED, "手動放回"), (RETURNED, "批次出現，自動放回"), (MOVED, "轉到其他作業日")]
-    EXCLUDED = (HELD, MOVED)  # 原本那天不算的狀態
+    HELD, RELEASED, RETURNED, MOVED, CARRIED = "held", "released", "returned", "moved", "carried"
+    STATUS_CHOICES = [
+        (HELD, "抽起中"), (RELEASED, "手動放回"), (RETURNED, "批次出現，自動放回"),
+        (MOVED, "批次出現，轉到其他作業日"), (CARRIED, "手動放回，轉到其他作業日"),
+    ]
+    GONE = (MOVED, CARRIED)  # 訂單已轉到其他作業日
+    EXCLUDED = (HELD, *GONE)  # 原本那天不算的狀態
 
     order = models.ForeignKey(DailyOrder, verbose_name="當日訂單", on_delete=models.CASCADE, related_name="holds")
     reason = models.CharField("原因", max_length=200)
@@ -136,9 +141,13 @@ class DailyHold(models.Model):
         return self.status == self.HELD
 
     @property
-    def can_release(self):
-        """手動放回只限作業日當天（含之前）；過了作業日要等之後的批次檔出現，自動轉到那天算，不改已經過去那天的數字。"""
-        return self.is_held and timezone.localdate() <= self.order.work_date
+    def is_gone(self):
+        return self.status in self.GONE
+
+    @property
+    def release_moves(self):
+        """過了作業日：手動放回會轉到今天算，不改已經過去那天的數字。"""
+        return timezone.localdate() > self.order.work_date
 
     @property
     def outcome(self):
@@ -148,6 +157,8 @@ class DailyHold(models.Model):
             return f"第 {batch.seq} 批出現，自動放回"
         if self.status == self.MOVED and batch:
             return f"轉到 {batch.work_date:%m/%d} 第 {batch.seq} 批"
+        if self.status == self.CARRIED and batch:
+            return f"手動放回，轉到 {batch.work_date:%m/%d} 第 {batch.seq} 批"
         return self.get_status_display()
 
     def close(self, status, user, batch=None):

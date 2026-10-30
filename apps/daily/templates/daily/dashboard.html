@@ -100,7 +100,7 @@
                   <form method="post" action="{% url 'daily:release' order.current_hold.pk %}" class="d-flex flex-wrap align-items-center gap-2">
                     {% csrf_token %}<input type="hidden" name="q" value="{{ keyword }}">
                     <span class="small">{{ order.current_hold.held_at|date:"H:i" }} {{ order.current_hold.held_by.name|default:"" }} 抽起：{{ order.current_hold.reason }}</span>
-                    {% if order.current_hold.can_release %}<button type="submit" class="btn btn-sm btn-success" onclick="this.disabled=true;this.form.submit();">放回</button>{% else %}<span class="small text-muted">作業日已過，等之後的訂單檔出現會自動轉過去</span>{% endif %}
+                    <button type="submit" class="btn btn-sm btn-success" onclick="this.disabled=true;this.form.submit();">放回</button>{% if order.current_hold.release_moves %}<span class="small text-muted">作業日已過，放回會算進今天最新一批</span>{% endif %}
                   </form>
                 {% elif not order.moved_hold %}
                   <form method="post" action="{% url 'daily:hold' order.pk %}" class="d-flex flex-wrap gap-2">

@@ -190,9 +190,6 @@ class DailyStatsTests(TestCase):
         self.assertEqual(self.hold("3", reason=" ").status_code, 302)  # 沒填原因不抽
         self.assertEqual(DailyHold.objects.count(), 1)
         hold = DailyHold.objects.get()
-        self.client.post(reverse("daily:release", args=[hold.pk]))  # 今天已經過了作業日，不能手動放回
-        hold.refresh_from_db()
-        self.assertEqual(hold.status, DailyHold.HELD)
         with mock.patch("django.utils.timezone.localdate", return_value=WORK_DATE):
             self.client.post(reverse("daily:release", args=[hold.pk]))
         hold.refresh_from_db()
@@ -250,6 +247,34 @@ class DailyStatsTests(TestCase):
         hold.refresh_from_db()
         self.assertEqual(hold.status, DailyHold.HELD)
         self.assertEqual(self.cards()[:2], (2, 1))
+
+    def test_release_after_work_date_carries_to_today(self):
+        self.upload(MORNING, "10:00")  # 10/05
+        self.hold("1")  # 只抽了現場面單，之後的訂單檔不會再出現
+        hold = DailyHold.objects.get()
+        tomorrow = date(2026, 10, 6)
+        with mock.patch("django.utils.timezone.localdate", return_value=tomorrow):
+            response = self.client.post(reverse("daily:release", args=[hold.pk]), follow=True)
+            self.assertContains(response, "今天還沒匯入")
+            hold.refresh_from_db()
+            self.assertEqual(hold.status, DailyHold.HELD)
+            self.upload(AFTERNOON, "09:00", work_date="2026-10-06")
+            response = self.client.post(reverse("daily:release", args=[hold.pk]))
+            self.assertRedirects(response, reverse("daily:day_detail", args=[tomorrow]), fetch_redirect_response=False)
+        hold.refresh_from_db()
+        self.assertEqual((hold.status, hold.outcome), (DailyHold.CARRIED, "手動放回，轉到 10/06 第 1 批"))
+        self.assertEqual(self.cards()[:2], (2, 0))  # 10/05 不算
+        total, held, cards = self.cards(tomorrow)
+        self.assertEqual((total, held), (3, 0))  # 10/06：4、5 加上轉過來的 1
+        self.assertEqual(cards["蝦皮無包裝"], (2, 0))
+        # 之後再出現 1 號：算在 10/06 那筆的重複
+        self.upload([MORNING[0], ["蝦皮購物", 7, "宅配", "A", "2026/10/07 09:00:00"]], "10:00", work_date="2026-10-07")
+        self.assertEqual(DailyLine.objects.get(batch__work_date=date(2026, 10, 7), order_no="1").order.work_date, tomorrow)
+        # 刪掉 10/07、10/06 的批次：10/05 又變回抽起中
+        DailyBatch.objects.get(work_date=date(2026, 10, 7)).delete()
+        self.client.post(reverse("daily:batch_delete", args=[DailyBatch.objects.get(work_date=tomorrow).pk]))
+        hold.refresh_from_db()
+        self.assertEqual(hold.status, DailyHold.HELD)
 
     def test_page_permission(self):
         self.client.login(username=make_user("staff", Level.STAFF).username, password="pw12345!")

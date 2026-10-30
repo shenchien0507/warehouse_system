@@ -44,7 +44,7 @@ def file_hash(uploaded):
 def known_orders(order_nos):
     """{訂單號: DailyOrder}，已匯入過的訂單；以前同一張出現在幾天的，取最早那天。已轉到其他作業日的不算（看轉過去的那筆）。"""
     orders = (
-        DailyOrder.objects.filter(order_no__in=order_nos).exclude(holds__status=DailyHold.MOVED)
+        DailyOrder.objects.filter(order_no__in=order_nos).exclude(holds__status__in=DailyHold.GONE)
         .order_by("-work_date", "-batch__seq")
     )
     return {o.order_no: o for o in orders}
@@ -108,3 +108,21 @@ def import_batch(user, work_date, uploaded):
         for no, hold in holds.items():
             hold.close(DailyHold.RETURNED if no in existing else DailyHold.MOVED, user, batch)
     return BatchOutcome(batch=batch)
+
+
+def carry_to_today(hold, user):
+    """過了作業日才手動放回：訂單轉到今天，算進今天最新一批（商品列複製過去，原本那天繼續不算）。
+    今天還沒匯入回傳 None，不放回。"""
+    today = timezone.localdate()
+    with transaction.atomic():
+        batch = DailyBatch.objects.filter(work_date=today).order_by("-seq").first()
+        if batch is None:
+            return None
+        old = hold.order
+        order = DailyOrder.objects.create(work_date=today, order_no=old.order_no, batch=batch)
+        lines = list(old.lines.filter(is_duplicate=False))
+        for line in lines:
+            line.pk, line.batch, line.order = None, batch, order
+        DailyLine.objects.bulk_create(lines)
+        hold.close(DailyHold.CARRIED, user, batch)
+    return batch

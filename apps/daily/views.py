@@ -21,7 +21,7 @@ from apps.orders.stats import version_groups
 from apps.orders.views import summary_context
 from apps.records.rules import registered_by_kind
 
-from .batches import import_batch
+from .batches import carry_to_today, import_batch
 from .forms import ImportForm
 from .models import DailyBatch, DailyHold, DailyOrder
 from .stats import batch_stats, dashboard, day_stats, duplicates, held_stats, order_place, other_days, search_orders
@@ -129,7 +129,7 @@ class DashboardView(DailyPageMixin, TemplateView):
             order.place = order_place(order, groups)
             order.found_lines = list(order.lines.select_related("batch").order_by("batch__seq", "row_no"))
             order.current_hold = next((h for h in order.holds.all() if h.is_held), None)
-            order.moved_hold = next((h for h in order.holds.all() if h.status == DailyHold.MOVED), None)
+            order.moved_hold = next((h for h in order.holds.all() if h.is_gone), None)
         return {
             "keyword": keyword, "found": orders, "found_more": more, "search_limit": SEARCH_LIMIT,
             "elsewhere": [] if orders else other_days(keyword, work_date),
@@ -137,7 +137,7 @@ class DashboardView(DailyPageMixin, TemplateView):
 
 
 def reopen_holds(batch):
-    """刪掉的批次讓抽起的訂單自動放回（或轉過來）的，改回抽起中；那張訂單已經又抽起一次的就不動。"""
+    """刪掉的批次讓抽起的訂單自動放回、轉過來（含手動放回轉過來）的，改回抽起中；那張訂單已經又抽起一次的就不動。"""
     for hold in DailyHold.objects.filter(released_batch=batch).exclude(status=DailyHold.RELEASED):
         if not hold.order.holds.filter(status=DailyHold.HELD).exists():
             hold.status, hold.released_at, hold.released_by, hold.released_batch = DailyHold.HELD, None, None, None
@@ -193,18 +193,23 @@ class HoldView(DailyPageMixin, View):
 
 
 class ReleaseView(DailyPageMixin, View):
-    """手動放回抽起中的訂單，數字算回原本的批次和分組。"""
+    """手動放回抽起中的訂單：作業日當天算回原本的批次和分組；過了作業日就算進今天最新一批。"""
 
     def post(self, request, *args, **kwargs):
         hold = get_object_or_404(DailyHold.objects.select_related("order"), pk=kwargs["pk"])
         keyword = request.POST.get("q", "")
-        if hold.is_held and not hold.can_release:
-            messages.error(
-                request, f"訂單 {hold.order.order_no} 的作業日已經過了，不能手動放回；之後的訂單檔出現這張單時，會自動轉到那天算。"
-            )
-        elif hold.is_held:
+        if not hold.is_held:
+            messages.warning(request, f"訂單 {hold.order.order_no} 已經不是抽起中（{hold.outcome}）。")
+        elif not hold.release_moves:
             hold.close(DailyHold.RELEASED, request.user)
             messages.success(request, f"已放回訂單 {hold.order.order_no}。")
+        elif DailyOrder.objects.filter(work_date=timezone.localdate(), order_no=hold.order.order_no).exists():
+            messages.error(request, f"訂單 {hold.order.order_no} 今天已經有了，不能再放回到今天。")
         else:
-            messages.warning(request, f"訂單 {hold.order.order_no} 已經不是抽起中（{hold.outcome}）。")
+            batch = carry_to_today(hold, request.user)
+            if batch is None:
+                messages.error(request, f"訂單 {hold.order.order_no} 的作業日已經過了，放回會算進今天，但今天還沒匯入；請先匯入今天第一批再放回。")
+            else:
+                messages.success(request, f"已放回訂單 {hold.order.order_no}，作業日已過，算進今天（{batch}）。")
+                return back_to_day(batch.work_date, keyword)
         return back_to_day(hold.order.work_date, keyword)

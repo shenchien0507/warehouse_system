@@ -69,8 +69,8 @@
               <td>{{ hold.reason }}</td>
               <td>{% if hold.is_held %}<span class="badge text-bg-danger">抽起中</span>{% else %}{{ hold.released_at|date:"m/d H:i" }} {{ hold.released_by.name|default:"" }} {{ hold.outcome }}{% endif %}</td>
               <td class="text-end">
-                {% if hold.can_release %}
-                  <form method="post" action="{% url 'daily:release' hold.pk %}" onsubmit="if (!confirm('放回訂單 {{ hold.order.order_no }}？放回後算回當日統計。')) return false; this.querySelector('button').disabled = true; return true;">
+                {% if hold.is_held %}
+                  <form method="post" action="{% url 'daily:release' hold.pk %}" onsubmit="if (!confirm('放回訂單 {{ hold.order.order_no }}？{% if hold.release_moves %}作業日已過，放回後算進今天最新一批。{% else %}放回後算回當日統計。{% endif %}')) return false; this.querySelector('button').disabled = true; return true;">
                     {% csrf_token %}<button type="submit" class="btn btn-sm btn-success">放回</button>
                   </form>
                 {% endif %}
@@ -79,7 +79,7 @@
           {% endfor %}
         </tbody>
       </table>
-      <div class="form-text">手動放回只限作業日當天。抽起的訂單出現在之後的批次檔：同一作業日自動放回，其他作業日就轉到那天算。</div>
+      <div class="form-text">手動放回：作業日當天算回原本那批；過了作業日就算進今天最新一批。抽起的訂單出現在之後的批次檔：同一作業日自動放回，其他作業日就轉到那天算。</div>
     </div>
   {% endif %}
 
