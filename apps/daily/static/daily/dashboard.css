@@ -15,6 +15,14 @@
 .daily-board .stat-split { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .875rem; color: var(--text-muted); }
 .daily-board .stat-split strong { color: var(--bs-body-color); font-variant-numeric: tabular-nums; }
 .daily-board .stat-tile.is-ungrouped { border-color: #f0c36d; background: #fffaf0; }
+.daily-board .stat-tile { position: relative; }
+.daily-board .stat-tile:hover { border-color: #b9b8b2; }
+.daily-board .stat-tile.is-chosen { border-color: #2a78d6; box-shadow: 0 0 0 2px #2a78d633; }
+.daily-board .register-line { font-size: .875rem; font-variant-numeric: tabular-nums; }
+.daily-board .register-short { color: #a15c07; }
+.daily-board .register-even { color: #11704c; }
+.daily-board .register-over { color: #b42318; font-weight: 600; }
+.daily-board .stat-value.register-short { color: inherit; }
 .daily-board .bar-track.bar-thin { height: .5rem; }
 
 .daily-board .bar-row { display: grid; grid-template-columns: 7rem 1fr 4.5rem; align-items: center; gap: .75rem; padding: .3rem 0; }

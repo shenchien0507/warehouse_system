@@ -1,108 +1,127 @@
-from datetime import date
-
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import PagePermission
 from apps.accounts.testing import Level, make_user
+from apps.orders.tests import xlsx
 from apps.personnel.models import Employee
 from apps.records.models import Record
 from apps.worklog.models import Stage, WorkEntry
 
-from .stats import ALLOCATING, DONE, NOT_STARTED, PICKING, WAIT_ALLOCATION, parse_number, tower
+from .stats import ALLOCATING, DONE, NOT_STARTED, PICKING, UNREGISTERED, WAIT_ALLOCATION, tower
 
 URL = reverse("tower:index")
+NEXT_DAY, NO_PACK = "蝦皮隔日到貨", "蝦皮無包裝"
+HEADERS = ["交易平台", "交易序號", "出貨類型", "商品編號", "建立時間"]
 
 
-class ParseNumberTests(TestCase):
-    def test_formats(self):
-        self.assertEqual(parse_number("261030-001"), (date(2026, 10, 30), "normal"))
-        self.assertEqual(parse_number("261030-W01"), (date(2026, 10, 30), "unpackaged"))
-        self.assertEqual(parse_number("261030-w12"), (date(2026, 10, 30), "unpackaged"))
-
-    def test_bad_formats_are_none(self):
-        for number in ["N001", "261030001", "261330-001", "261030-A01", "261030-"]:
-            self.assertIsNone(parse_number(number), number)
+def day_rows():
+    now = f"{timezone.localdate():%Y/%m/%d} 09:00:00"
+    rows = [["蝦皮購物", n, "蝦皮隔日到貨", "A", now] for n in (1, 2, 3, 4)]  # 隔日到 4 張訂單
+    rows += [["蝦皮購物", n, "蝦皮無包裝", p, now] for n in (5, 6) for p in "AB"]  # 無包裝 2 張訂單、4 列（非去重 4）
+    return rows
 
 
-class TowerStatsTests(TestCase):
+class TowerTests(TestCase):
     def setUp(self):
         self.employee = Employee.objects.create(employee_no="E001", name="小明")
-        for number, quantity in [
-            ("261029-001", 99),  # 前一天，不算
-            ("261030-001", 10),
-            ("261030-002", 20),
-            ("261030-003", 30),
-            ("261030-004", 40),
-            ("261030-005", 50),
-            ("261030-W01", 300),
-            ("261030-W02", 200),
-            ("BAD", 5),
-        ]:
-            Record.objects.create(number=number, quantity=quantity, name="x")
+        self.client.login(username=make_user("boss", Level.ADMIN).username, password="pw12345!")
+
+    def import_day(self):
+        response = self.client.post(
+            reverse("daily:day_list"), {"file": xlsx(HEADERS, day_rows(), name="a.xlsx"), "work_date": f"{timezone.localdate():%Y-%m-%d}"}
+        )
+        self.assertEqual(response.status_code, 302)
+
+    def record(self, number, quantity, kind):
+        return Record.objects.create(number=number, name="x", quantity=quantity, kind=kind)
 
     def entry(self, stage, number, ended=False):
         return WorkEntry.objects.create(
             stage=stage, number=number, start_employee=self.employee, ended_at=timezone.now() if ended else None
         )
 
-    def states(self, board):
-        return {key: tuple(value) for key, value in board.states.items()}
+    def board(self, name):
+        return {b.name: b for b in tower()["kinds"]}[name]
 
-    def test_states_and_totals_per_kind(self):
-        self.entry(Stage.PICKING, "261030-002")  # 撿貨進行中
-        self.entry(Stage.PICKING, "261030-003", ended=True)  # 未配貨
-        self.entry(Stage.PICKING, "261030-004", ended=True)
-        self.entry(Stage.ALLOCATION, "261030-004")  # 配貨進行中
-        self.entry(Stage.PICKING, "261030-005", ended=True)
-        self.entry(Stage.ALLOCATION, "261030-005", ended=True)  # 完成
-        self.entry(Stage.PICKING, "261030-W01", ended=True)
-        self.entry(Stage.ALLOCATION, "261030-W01", ended=True)
+    def test_totals_come_from_daily_stats_and_unregistered_is_the_gap(self):
+        self.import_day()
+        self.record("X1", 3, NEXT_DAY)
+        board = self.board(NEXT_DAY)
+        self.assertEqual((board.total, board.registered, board.states[UNREGISTERED][0], board.over_by), (4, 3, 1, 0))
+        self.assertEqual(self.board(NO_PACK).total, 4)  # 無包裝顯示非去重（列數）
 
-        data = tower()
-        self.assertEqual(data["work_date"], date(2026, 10, 30))
-        self.assertEqual(data["skipped"], 1)
-        normal, unpackaged = data["kinds"]
-        self.assertEqual((normal.total, normal.count, normal.done, normal.remaining), (150, 5, 50, 100))
+    def test_new_batch_raises_total_and_registering_catches_up(self):
+        self.import_day()
+        self.record("X1", 4, NEXT_DAY)
+        self.assertEqual(self.board(NEXT_DAY).states[UNREGISTERED][0], 0)
+
+    def test_states_by_number_ignore_number_format(self):
+        self.import_day()
+        for number, quantity in [("甲", 1), ("乙", 1), ("丙", 1), ("丁", 1)]:
+            self.record(number, quantity, NEXT_DAY)
+        self.entry(Stage.PICKING, "乙")  # 撿貨進行中
+        self.entry(Stage.PICKING, "丙", ended=True)  # 未配貨
+        self.entry(Stage.PICKING, "丁", ended=True)
+        self.entry(Stage.ALLOCATION, "丁", ended=True)  # 完成
+        board = self.board(NEXT_DAY)
         self.assertEqual(
-            self.states(normal),
-            {NOT_STARTED: (10, 1), PICKING: (20, 1), WAIT_ALLOCATION: (30, 1), ALLOCATING: (40, 1), DONE: (50, 1)},
+            {k: tuple(v) for k, v in board.states.items()},
+            {UNREGISTERED: (0, 0), NOT_STARTED: (1, 1), PICKING: (1, 1), WAIT_ALLOCATION: (1, 1), ALLOCATING: (0, 0), DONE: (1, 1)},
         )
-        self.assertEqual((unpackaged.total, unpackaged.done, unpackaged.remaining), (500, 300, 200))
-        self.assertEqual(unpackaged.states[NOT_STARTED], [200, 1])
+        self.assertEqual((board.done, board.remaining, board.percent), (1, 3, 25))
 
-    def test_repeated_registration_uses_latest_entry(self):
-        self.entry(Stage.PICKING, "261030-001", ended=True)
-        self.entry(Stage.PICKING, "261030-001")  # 又刷了一次，現在是進行中
-        board = tower()["kinds"][0]
-        self.assertEqual(board.states[PICKING], [10, 1])
-        self.assertEqual(board.states[WAIT_ALLOCATION], [0, 0])
+    def test_allocation_open_and_repeated_registration_use_latest(self):
+        self.import_day()
+        self.record("甲", 2, NEXT_DAY)
+        self.entry(Stage.PICKING, "甲", ended=True)
+        self.entry(Stage.ALLOCATION, "甲")
+        self.assertEqual(self.board(NEXT_DAY).states[ALLOCATING], [2, 1])
+        self.entry(Stage.ALLOCATION, "甲", ended=True)
+        self.assertEqual(self.board(NEXT_DAY).states[DONE], [2, 1])
+
+    def test_over_registered_is_flagged(self):
+        self.import_day()
+        self.record("X1", 6, NEXT_DAY)
+        board = self.board(NEXT_DAY)
+        self.assertEqual((board.over_by, board.states[UNREGISTERED][0]), (2, 0))
+
+    def test_unclassified_and_yesterdays_records(self):
+        self.import_day()
+        self.record("U1", 5, "")
+        old = self.record("OLD", 9, NEXT_DAY)
+        Record.objects.filter(pk=old.pk).update(created_at=timezone.now() - timezone.timedelta(days=2))
+        self.assertEqual(self.board("未分類").registered, 5)
+        self.assertEqual(self.board(NEXT_DAY).registered, 0)
+
+    def test_without_daily_stats_shows_registered_only(self):
+        self.record("U1", 5, NEXT_DAY)
+        board = self.board(NEXT_DAY)
+        self.assertEqual((board.total, board.has_total, board.over_by), (5, False, 0))
 
     def test_active_and_recent(self):
-        self.entry(Stage.PICKING, "261030-002")
-        self.entry(Stage.ALLOCATION, "261030-001", ended=True)
+        self.import_day()
+        self.record("甲", 1, NEXT_DAY)
+        self.record("乙", 1, NEXT_DAY)
+        self.entry(Stage.PICKING, "甲")
+        self.entry(Stage.PICKING, "乙", ended=True)
+        self.entry(Stage.ALLOCATION, "乙", ended=True)
         data = tower()
-        self.assertEqual([(e.number, stage) for e, stage in data["active"]], [("261030-002", "撿貨")])
-        self.assertEqual([e.number for e in data["recent"]], ["261030-001"])
-
-    def test_no_records(self):
-        Record.objects.all().delete()
-        self.assertIsNone(tower()["work_date"])
+        self.assertEqual([(e.number, s) for e, s in data["active"]], [("甲", "撿貨")])
+        self.assertEqual([e.number for e in data["recent"]], ["乙"])
 
 
 class TowerPageTests(TestCase):
     def setUp(self):
         PagePermission.objects.create(page_key="data-tower", label="數據塔", min_level=Level.STAFF)
-        Record.objects.create(number="261030-001", quantity=7, name="x")
+        Record.objects.create(number="X1", quantity=7, name="x", kind="蝦皮其他")
         self.client.login(username=make_user("S001", Level.STAFF).username, password="pw12345!")
 
     def test_page_and_partial(self):
-        response = self.client.get(URL)
-        self.assertContains(response, "2026/10/30")
-        self.assertContains(response, "一般配")
+        self.assertContains(self.client.get(URL), "蝦皮其他")
         partial = self.client.get(URL, {"partial": 1})
-        self.assertContains(partial, "一般配")
+        self.assertContains(partial, "已登記 7 / 7")
         self.assertNotContains(partial, "<html")
 
     def test_needs_page_permission(self):

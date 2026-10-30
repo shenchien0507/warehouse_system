@@ -1,4 +1,4 @@
-"""登記紀錄：單純打什麼記什麼的表格，暫時不和其他資料表關聯（之後的功能確定後再考慮）。
+"""登記紀錄：單純打什麼記什麼的表格，不和其他資料表用外鍵關聯；種類只記統計分組的名稱，給當日統計、數據塔對帳用。
 編號不能重複；日期存成純文字，輸入什麼就存什麼，不轉換、不檢查格式；操作人取自登入的帳號。"""
 
 from django.conf import settings
@@ -10,6 +10,8 @@ class Record(models.Model):
     date_text = models.CharField("日期", max_length=50, blank=True)
     name = models.CharField("名稱", max_length=200)
     quantity = models.IntegerField("數量")
+    # 種類：登記時選的統計分組名稱（存文字，之後分組版本換了也不受影響）；空白是未分類
+    kind = models.CharField("種類", max_length=50, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, verbose_name="操作人", null=True, on_delete=models.SET_NULL, related_name="+"
     )

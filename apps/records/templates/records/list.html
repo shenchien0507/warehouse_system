@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}{{ menu_item.label }}{% endblock %}
 
@@ -10,12 +11,46 @@
 {% endblock %}
 
 {% block content %}
+  <details class="card mb-3 daily-board" id="kind-cards"{% if not chosen and cards %} open{% endif %}>
+    <summary class="card-body py-2" style="cursor: pointer;">
+      <strong>種類</strong>
+      {% if chosen %}
+        {% for name, registered, total in cards %}{% if name == chosen %}
+          ：<span class="fw-semibold">{{ name }}</span>　已登記 {{ registered }}{% if total is not None %} / {{ total }}{% endif %}
+        {% endif %}{% endfor %}
+        <span class="text-muted small ms-2">（點開可換種類）</span>
+      {% else %}
+        <span class="text-danger ms-2">還沒選，請先點選要登記的種類</span>
+      {% endif %}
+    </summary>
+    <div class="card-body pt-0">
+      <div class="small text-muted mb-2">{{ card_day|date:"Y/m/d" }} 當日統計的種類；點一張卡就選好那個種類，登記的編號都歸在裡面。數字是「已登記 / 當前總數」，新批次匯入後總數會增加。</div>
+      <div class="row g-2">
+        {% for name, registered, total in cards %}
+          <div class="col-6 col-md-4 col-xl-3">
+            <div class="stat-tile{% if name == chosen %} is-chosen{% endif %}">
+              <div class="stat-label"><a href="?kind={{ name|urlencode }}" class="stretched-link text-reset text-decoration-none">{{ name }}</a></div>
+              {% if total is None %}
+                <div class="stat-value">{{ registered }}</div>
+                <div class="stat-sub">已登記</div>
+              {% else %}
+                <div class="stat-value register-{% if registered == total %}even{% elif registered > total %}over{% else %}short{% endif %}">{{ registered }}<span class="stat-sub fw-normal"> / {{ total }}</span></div>
+              {% endif %}
+            </div>
+          </div>
+        {% empty %}
+          <div class="col-12 text-muted small">還沒有統計分組，請先到後台設定統計分組。</div>
+        {% endfor %}
+      </div>
+    </div>
+  </details>
+
   <form method="post" class="card mb-4" novalidate data-quick-form>
     {% csrf_token %}
     <div class="card-body">
       <div class="row g-2 align-items-start">
         {% for field in quick_form %}
-          <div class="{% if field.name == 'quantity' %}col-sm-3 col-lg-2{% else %}col-sm-6 col-lg-3{% endif %}">
+          <div class="{% if field.name == 'quantity' or field.name == 'kind' %}col-sm-3 col-lg-2{% else %}col-sm-6 col-lg-3{% endif %}">
             <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>
             {{ field }}
             {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
@@ -23,7 +58,7 @@
         {% endfor %}
         <div class="col-auto quick-submit"><button type="submit" class="btn btn-primary">登記</button></div>
       </div>
-      <div class="form-text">一次登記一筆：打完按「登記」（或在數量按 Enter）就存好，輸入列清空給下一筆；Enter 會跳到下一格。要一次打很多筆用右上角「新增紀錄」的 Excel 表格。操作人帳號自動記成你（{{ user.username }}）。</div>
+      <div class="form-text">先選種類（當日統計卡片點進來會自動選好），選好之後連續登記都是同一個種類。一次登記一筆：打完按「登記」（或在數量按 Enter）就存好，輸入列清空給下一筆；Enter 會跳到下一格。要一次打很多筆用右上角「新增紀錄」的 Excel 表格。操作人帳號自動記成你（{{ user.username }}）。</div>
     </div>
   </form>
 
@@ -48,7 +83,7 @@
   <div class="table-responsive">
     <table class="table table-sm table-hover align-middle">
       <thead class="table-light">
-        <tr><th class="text-center" style="width: 2.5rem;"><input type="checkbox" class="form-check-input" data-select-all aria-label="全選這頁可修改的紀錄"></th><th>編號</th><th>日期</th><th>名稱</th><th class="text-end">數量</th><th>操作人帳號</th><th>登記時間</th><th></th></tr>
+        <tr><th class="text-center" style="width: 2.5rem;"><input type="checkbox" class="form-check-input" data-select-all aria-label="全選這頁可修改的紀錄"></th><th>編號</th><th>種類</th><th>日期</th><th>名稱</th><th class="text-end">數量</th><th>操作人帳號</th><th>登記時間</th><th></th></tr>
       </thead>
       <tbody>
         {% for row in rows %}
@@ -56,6 +91,7 @@
             <tr>
               <td class="text-center">{% if row.can_edit %}<input type="checkbox" class="form-check-input" name="ids" value="{{ record.pk }}" form="bulk-form" aria-label="勾選 {{ record.number }}">{% endif %}</td>
               <td>{{ record.number }}</td>
+              <td>{{ record.kind|default:"未分類" }}</td>
               <td>{{ record.date_text }}</td>
               <td>{{ record.name }}</td>
               <td class="text-end">{{ record.quantity }}</td>
@@ -77,7 +113,7 @@
             </tr>
           {% endwith %}
         {% empty %}
-          <tr><td colspan="8" class="text-muted">{% if query %}找不到符合「{{ query }}」的紀錄。{% else %}還沒有紀錄，按右上角「新增紀錄」開始。{% endif %}</td></tr>
+          <tr><td colspan="9" class="text-muted">{% if query %}找不到符合「{{ query }}」的紀錄。{% else %}還沒有紀錄，按右上角「新增紀錄」開始。{% endif %}</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -86,6 +122,7 @@
 {% endblock %}
 
 {% block extra_css %}
+  <link rel="stylesheet" href="{% static 'daily/dashboard.css' %}">
   <style>.quick-submit { padding-top: 2rem; }</style>
 {% endblock %}
 
@@ -94,6 +131,15 @@
     // 固定輸入列：Enter 跳到下一格，最後一格（數量）按 Enter 才送出；有錯時游標停在第一個錯的格子
     (function () {
       var form = document.querySelector("[data-quick-form]");
+      var kind = form.querySelector("[data-kind-select]");
+      if (kind) {
+        kind.addEventListener("change", function () {
+          var params = new URLSearchParams(window.location.search);
+          if (kind.value) { params.set("kind", kind.value); } else { params.delete("kind"); }
+          params.delete("page");
+          window.location = window.location.pathname + (params.toString() ? "?" + params : "");
+        });
+      }
       var inputs = Array.prototype.slice.call(form.querySelectorAll("[data-quick]"));
       inputs.forEach(function (input, i) {
         input.addEventListener("keydown", function (event) {

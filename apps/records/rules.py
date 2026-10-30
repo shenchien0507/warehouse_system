@@ -15,3 +15,19 @@ def editable_records(user):
     if allows(user, "records-edit-all"):
         return Record.objects.all()
     return Record.objects.filter(created_by=user)
+
+
+def kind_names():
+    """登記時可選的種類：生效中的統計分組版本的分組名稱，依分組順序。"""
+    from apps.orders.models import GroupVersion
+
+    version = GroupVersion.active()
+    return list(version.groups.values_list("name", flat=True)) if version else []
+
+
+def registered_by_kind(day):
+    """某天（登記日期）各種類登記的數量加總：{種類: 數量}，空白種類是未分類。"""
+    totals = {}
+    for kind, quantity in Record.objects.filter(created_at__date=day).values_list("kind", "quantity"):
+        totals[kind] = totals.get(kind, 0) + quantity
+    return totals

@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
@@ -9,10 +11,11 @@ from django.views import View
 from django.views.generic import FormView, ListView, UpdateView
 
 from apps.backoffice.menu import MENU_BY_KEY, can_use
+from apps.tower.stats import kind_cards
 
-from .forms import BulkEditFormSet, GridFormSet, QuickAddForm, RecordForm
+from .forms import BulkEditFormSet, GridFormSet, KindRecordForm, QuickAddForm, kind_choices
 from .models import Record
-from .rules import can_edit, editable_records
+from .rules import can_edit, editable_records, kind_names
 
 
 class RecordPageMixin:
@@ -29,9 +32,16 @@ class RecordPageMixin:
         return context
 
 
+def chosen_kind(request):
+    """網址 ?kind=隔日到 帶進來的種類（當日統計的卡片點進來）；不在選單裡的忽略。"""
+    kind = request.GET.get("kind", "")
+    return kind if kind in kind_names() else ""
+
+
 class RecordListView(RecordPageMixin, ListView):
     """所有人的紀錄都看得到，最新的在最上面；?q= 用編號、名稱、日期或操作人搜尋。
-    上方固定一列輸入（POST）：一次登記一筆，存好回到同一頁、輸入列清空；有錯留在原頁標紅。"""
+    上方固定一列輸入（POST）：一次登記一筆，存好回到同一頁、輸入列清空；有錯留在原頁標紅。
+    種類在輸入列最前面選，選好留在網址（?kind=），登記完還是同一個種類，連續登記不用再選。"""
 
     template_name = "records/list.html"
     paginate_by = 50
@@ -59,7 +69,9 @@ class RecordListView(RecordPageMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["query"] = self.query
-        context["quick_form"] = getattr(self, "quick_form", None) or QuickAddForm()
+        context["quick_form"] = getattr(self, "quick_form", None) or QuickAddForm(initial={"kind": chosen_kind(self.request)})
+        day, cards = kind_cards()
+        context.update(card_day=day, cards=cards, chosen=chosen_kind(self.request))
         context["rows"] = [{"record": r, "can_edit": can_edit(self.request.user, r)} for r in context["object_list"]]
         return context
 
@@ -69,18 +81,33 @@ class RecordGridView(RecordPageMixin, FormView):
 
     template_name = "records/grid.html"
     form_class = GridFormSet
-    success_url = reverse_lazy("records:list")
+
+    def get_context_data(self, **kwargs):
+        kind = self.request.POST.get("kind", "") if self.request.method == "POST" else chosen_kind(self.request)
+        choices = kind_choices(kind)
+        if kind_names():
+            choices[0] = ("", "請先選種類")
+        return super().get_context_data(kind_choices=choices, kind=kind, **kwargs)
+
+    def get_success_url(self):
+        return reverse("records:list") + (f"?kind={quote(self.kind)}" if self.kind else "")
 
     def form_valid(self, formset):
         rows = [form for form in formset if form.has_changed()]
+        self.kind = self.request.POST.get("kind", "")
+        names = kind_names()
+        if names and self.kind not in names:
+            messages.error(self.request, "請先選種類。" if not self.kind else "種類不在目前的統計分組裡。")
+            return self.form_invalid(formset)
         if not rows:
             messages.error(self.request, "沒有輸入任何資料。")
             return self.form_invalid(formset)
         with transaction.atomic():
             for form in rows:
                 form.instance.created_by = self.request.user
+                form.instance.kind = self.kind
                 form.save()
-        messages.success(self.request, f"已登記 {len(rows)} 筆。")
+        messages.success(self.request, f"已登記 {len(rows)} 筆{f'（{self.kind}）' if self.kind else ''}。")
         return super().form_valid(formset)
 
     def form_invalid(self, formset):
@@ -161,7 +188,7 @@ class RecordObjectMixin(RecordPageMixin):
 
 class RecordEditView(RecordObjectMixin, UpdateView):
     template_name = "records/edit.html"
-    form_class = RecordForm
+    form_class = KindRecordForm
     success_url = reverse_lazy("records:list")
 
     def form_valid(self, form):

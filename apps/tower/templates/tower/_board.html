@@ -1,11 +1,10 @@
 {% comment %}數據塔內容：頁面第一次載入和定時更新（?partial=1）都用這個。{% endcomment %}
 <div class="small text-muted mb-3" id="tower-refreshed-at">更新時間 {{ refreshed_at|date:"H:i:s" }}</div>
-{% if not work_date %}
-  <div class="alert alert-light border">登記紀錄裡還沒有符合格式的編號（<code>yymmdd-001</code> 或 <code>yymmdd-W01</code>）。{% if skipped %}有 {{ skipped }} 筆格式不符，未計入。{% endif %}</div>
+{% if not kinds %}
+  <div class="alert alert-light border">{{ work_date|date:"Y/m/d" }} 還沒有匯入當日統計，也沒有登記紀錄。</div>
 {% else %}
   <div class="d-flex flex-wrap align-items-baseline gap-3 mb-3">
     <h2 class="h4 mb-0">{{ work_date|date:"Y/m/d" }}</h2>
-    {% if skipped %}<span class="text-muted small">另有 {{ skipped }} 筆編號格式不符，未計入</span>{% endif %}
   </div>
 
   <div class="row g-3 mb-4">
@@ -13,10 +12,11 @@
       <div class="col-lg-6">
         <div class="tower-card">
           <div class="d-flex justify-content-between align-items-baseline">
-            <div class="tower-label">{{ kind.label }} <span class="tower-sub fw-normal">{{ kind.count }} 份撿貨單・單位 {{ kind.unit }}</span></div>
+            <div class="tower-label">{{ kind.name }} <span class="tower-sub fw-normal">已登記 {{ kind.count }} 個編號</span></div>
             <div class="tower-sub">完成 {{ kind.percent|floatformat:0 }}%</div>
           </div>
-          <div class="tower-value">{{ kind.remaining }} <span class="tower-sub fw-normal">剩餘 / 總數 {{ kind.total }}</span></div>
+          <div class="tower-value">{{ kind.done }} <span class="tower-sub fw-normal">/ {{ kind.total }} 完成・剩餘 {{ kind.remaining }}</span></div>
+          <div class="tower-register {% if kind.over_by %}is-over{% elif kind.registered == kind.total %}is-even{% endif %}">已登記 {{ kind.registered }} / {{ kind.total }}{% if kind.over_by %}（多登記 {{ kind.over_by }}）{% endif %}{% if not kind.has_total %}・當日統計沒有這個種類{% endif %}</div>
           <div class="tower-track my-2">
             {% for key, label, quantity, count, width in kind.rows %}
               {% if quantity > 0 %}<div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" title="{{ label }}：{{ quantity }}（{{ count }} 份）"></div>{% endif %}

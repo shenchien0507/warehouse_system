@@ -11,7 +11,7 @@
     {% for card in board.groups %}
       <div class="col-6 col-md-4 col-xl-3">
         <div class="stat-tile{% if card.name == '未分組' %} is-ungrouped{% endif %}">
-          <div class="stat-label">{{ card.name }}{% if card.show_rows %} <span class="stat-sub fw-normal">非去重</span>{% endif %}</div>
+          <div class="stat-label">{% if can_register and card.name != '未分組' %}<a href="{% url 'records:list' %}?kind={{ card.name|urlencode }}" class="stretched-link text-reset text-decoration-none" title="登記這個種類">{{ card.name }}</a>{% else %}{{ card.name }}{% endif %}{% if card.show_rows %} <span class="stat-sub fw-normal">非去重</span>{% endif %}</div>
           <div class="stat-value">{{ card.main }}</div>
           {% if card.cutoff %}
             <div class="stat-split">
@@ -26,6 +26,7 @@
           {% else %}
             <div class="stat-sub">不分時段</div>
           {% endif %}
+          <div class="register-line register-{{ card.register_state }} mt-1">已登記 <strong>{{ card.registered }}</strong> / {{ card.main }}{% if card.register_state == "over" %}（多 {{ card.over_by }}）{% endif %}</div>
           {% if card.show_rows %}<div class="stat-sub mt-1">去重 {{ card.total }}</div>{% endif %}
           {% if card.shown.no_time %}<div class="stat-sub">沒有下單時間 {{ card.shown.no_time }}</div>{% endif %}
         </div>

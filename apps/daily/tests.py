@@ -153,3 +153,23 @@ class DailyStatsTests(TestCase):
         self.assertEqual(self.client.get(reverse("daily:day_list")).status_code, 403)
         PagePermission.objects.create(page_key="daily-stats", label="當日統計", min_level=Level.STAFF)
         self.assertContains(self.client.get(reverse("daily:day_list")), "還沒有匯入過")
+
+
+class DailyRegisteredCardTests(DailyStatsTests.__bases__[0]):
+    """卡片上的「已登記 / 總數」：登記紀錄裡同種類今天登記的數量對當日統計的總數。"""
+
+    def test_card_shows_registered_over_total_and_links_to_records(self):
+        from apps.records.models import Record
+
+        today = timezone.localdate()
+        client_user = make_user("boss", Level.ADMIN)
+        self.client.login(username=client_user.username, password="pw12345!")
+        rows = [["蝦皮購物", n, "蝦皮隔日到貨", "A", f"{today:%Y/%m/%d} 09:00:00"] for n in (1, 2, 3)]
+        self.client.post(reverse("daily:day_list"), {"file": xlsx(HEADERS, rows, name="a.xlsx"), "work_date": f"{today:%Y-%m-%d}"})
+        Record.objects.create(number="X1", name="x", quantity=2, kind="蝦皮隔日到貨")
+        response = self.client.get(reverse("daily:day_list"))
+        self.assertContains(response, "已登記 <strong>2</strong> / 3")
+        self.assertContains(response, "register-short")
+        self.assertContains(response, "/records/?kind=")
+        Record.objects.create(number="X2", name="x", quantity=1, kind="蝦皮隔日到貨")
+        self.assertContains(self.client.get(reverse("daily:day_list")), "register-even")

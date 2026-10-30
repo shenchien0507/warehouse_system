@@ -13,6 +13,7 @@ from apps.backoffice.menu import MENU_BY_KEY, can_use
 from apps.orders.models import GroupVersion, MappingVersion
 from apps.orders.stats import version_groups
 from apps.orders.views import summary_context
+from apps.records.rules import registered_by_kind
 
 from .batches import import_batch
 from .forms import ImportForm
@@ -87,7 +88,8 @@ class DashboardView(DailyPageMixin, TemplateView):
             work_date=work_date,
             batches=batches,
             latest=batches[-1],
-            board=dashboard(batches, total, groups),
+            board=dashboard(batches, total, groups, registered_by_kind(work_date)),
+            can_register=can_use(self.request.user, MENU_BY_KEY["records"]),
             total=summary_context(total),
             sections=[
                 {
