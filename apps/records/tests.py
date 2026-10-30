@@ -28,7 +28,8 @@ class RecordTests(TestCase):
         self.client.login(username=user.username, password="pw12345!")
 
     def record(self, user, **values):
-        return Record.objects.create(**{"number": "A001", "name": "紙箱", "quantity": 1, "created_by": user, **values})
+        number = f"N{Record.objects.count() + 1:03d}"
+        return Record.objects.create(**{"number": number, "name": "紙箱", "quantity": 1, "created_by": user, **values})
 
     def test_page_needs_page_permission(self):
         PagePermission.objects.all().delete()
@@ -102,3 +103,19 @@ class RecordTests(TestCase):
         response = self.client.get(reverse("records:list"), {"q": "膠帶"})
         self.assertContains(response, "Z999")
         self.assertNotContains(response, "A001")
+
+    def test_number_must_be_unique(self):
+        self.record(self.other, number="A001")
+        response = self.client.post(reverse("records:new"), grid_data(("A002", "", "膠帶", "1"), ("A001", "", "紙箱", "1")))
+        self.assertContains(response, "這個編號已經登記過了")
+        self.assertEqual(Record.objects.count(), 1)
+
+        response = self.client.post(reverse("records:new"), grid_data(("B1", "", "x", "1"), ("B1", "", "y", "1")))
+        self.assertContains(response, "和第 1 列的編號重複")
+        self.assertEqual(Record.objects.count(), 1)
+
+        mine = self.record(self.staff, number="M1")
+        data = {"number": "A001", "date_text": "", "name": "紙箱", "quantity": "1"}
+        self.assertContains(self.client.post(reverse("records:edit", args=[mine.pk]), data), "這個編號已經登記過了")
+        data["number"] = "M1"  # 改其他欄、編號不變可以存
+        self.assertRedirects(self.client.post(reverse("records:edit", args=[mine.pk]), data), reverse("records:list"))
