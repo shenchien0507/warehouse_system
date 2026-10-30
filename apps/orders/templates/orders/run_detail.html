@@ -12,7 +12,7 @@
     </form>
   </div>
   <p class="text-muted small mb-3">
-    {{ run.created_at|date:"Y/m/d H:i" }} 由 {{ run.created_by.name|default:"（已刪除的帳號）" }} 匯入{% if first_batch %}，欄位對應 {{ first_batch.mapping_version }}、統計分組 {{ first_batch.group_version|default:"（無）" }}{% endif %}。
+    {{ run.created_at|date:"Y/m/d H:i" }} 由 {% if run.created_by %}{{ run.created_by.name|default:run.created_by.username }}{% else %}（已刪除的帳號）{% endif %} 匯入{% if first_batch %}，欄位對應 {{ first_batch.mapping_version }}、統計分組 {{ first_batch.group_version|default:"（無）" }}{% endif %}。
   </p>
 {% endblock %}
 

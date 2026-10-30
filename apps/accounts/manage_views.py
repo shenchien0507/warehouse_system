@@ -237,7 +237,7 @@ class UserPassword(UserMixin, ManageMixin, FormView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["object"] = f"{kwargs['form'].user}／重設密碼"
+        context["object"] = f"{context['form'].user}／重設密碼"
         return context
 
     def form_valid(self, form):

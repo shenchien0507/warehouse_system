@@ -65,12 +65,12 @@ def split_known(order_nos, work_date):
     return {no: o for no, o in existing.items() if no not in moving}, holds
 
 
-def import_batch(user, work_date, uploaded):
-    """匯入一份檔案成為作業日的下一批。已在之前批次（含其他作業日）出現的訂單照存但標記重複，不算進當日統計。"""
+def import_batch(user, uploaded):
+    """匯入一份檔案成為今天（作業日一律是系統日期的今天）的下一批。已在之前批次（含其他作業日）出現的訂單照存但標記重複，不算進當日統計。"""
     version, group_version, message = check_versions()
     if message:
         return BatchOutcome(message=message)
-    work_date = work_date or timezone.localdate()
+    work_date = timezone.localdate()
     fingerprint = file_hash(uploaded)
     same = DailyBatch.objects.filter(file_hash=fingerprint).first()
     if same:

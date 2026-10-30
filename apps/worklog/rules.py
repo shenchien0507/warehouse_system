@@ -8,21 +8,55 @@ from apps.accounts.levels import allows
 from apps.personnel.models import Employee
 from apps.records.models import Record
 
-from .models import Stage, WorkEntry
+from .models import Stage, WorkEntry, WorklogSetting
 
 # 每個階段的編號要先在哪裡出現過
 SOURCE_LABEL = {Stage.PICKING: "登記紀錄", Stage.ALLOCATION: "撿貨"}
 
 
-def number_exists(stage, number):
+def source_number(stage, number):
+    """編號在來源（撿貨看登記紀錄、配貨看撿貨）存的寫法；沒有回傳 None。
+    MySQL 比對不分大小寫，s-001 也對得到 S-001，存來源的寫法，數據塔才對得起來。"""
     if stage == Stage.PICKING:
-        return Record.objects.filter(number=number).exists()
-    return WorkEntry.objects.filter(stage=Stage.PICKING, number=number).exists()
+        numbers = Record.objects.filter(number=number)
+    else:
+        numbers = WorkEntry.objects.filter(stage=Stage.PICKING, number=number)
+    return numbers.values_list("number", flat=True).first()
 
 
 def check_number(stage, number):
-    if not number_exists(stage, number):
+    """回傳來源的編號寫法；沒有就擋下。"""
+    found = source_number(stage, number)
+    if found is None:
         raise ValidationError(f"{SOURCE_LABEL[stage]}沒有編號「{number}」，不能登記。")
+    return found
+
+
+def check_cycle(stage, number):
+    """每個編號照順序只走一輪：撿貨開始 → 撿貨結束 → 配貨開始 → 配貨結束。
+    這個階段已經走完（或撿貨時已經進到配貨）就擋下，說明下一步；要重做請把舊的登記刪掉（自己的，或主任以上）。"""
+    entries = WorkEntry.objects.filter(number=number)
+    if entries.filter(stage=stage, ended_at__isnull=True).exists():
+        return  # 這次是刷結束
+    if stage == Stage.PICKING and entries.filter(stage=Stage.ALLOCATION).exists():
+        raise ValidationError(f"編號「{number}」已經進到配貨，不能再撿貨；要重做請先刪掉舊的登記。")
+    if entries.filter(stage=stage).exists():
+        done = "撿貨已經結束，下一步是配貨" if stage == Stage.PICKING else "配貨已經完成"
+        raise ValidationError(f"編號「{number}」{done}，不能再登記一輪；要重做請先刪掉舊的登記。")
+
+
+def check_rescan(stage, number):
+    """同一個編號在這個階段最後一次刷（開始或結束）不到設定的秒數，就擋下，避免連刷直接記結束。"""
+    seconds = WorklogSetting.load().rescan_seconds
+    last = WorkEntry.objects.filter(stage=stage, number=number).order_by("-started_at", "-pk").first()
+    if not seconds or last is None:
+        return
+    elapsed = (timezone.now() - (last.ended_at or last.started_at)).total_seconds()
+    if elapsed < seconds:
+        action = "結束" if last.ended_at else "開始"
+        raise ValidationError(
+            f"編號「{number}」{int(elapsed)} 秒前剛刷過{action}，{seconds} 秒內再刷不算（可能是重複刷了），要記下一步請 {seconds - int(elapsed)} 秒後再刷。"
+        )
 
 
 def find_employee(employee_no):
