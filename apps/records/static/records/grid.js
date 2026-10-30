@@ -1,4 +1,4 @@
-// 登記紀錄的多列輸入：Enter 往下、拖曳右下角方塊向下填滿（編號接續）、從 Excel 貼上多列
+// 登記紀錄的多列輸入：Enter 往下、拖曳右下角方塊向下填滿（編號、名稱接續）、從 Excel 貼上多列
 (function () {
   var form = document.getElementById("record-grid");
   if (!form) return;
@@ -50,8 +50,10 @@
     return m[1] + n;
   }
 
+  var SEQUENCE_COLUMNS = ["number", "name"]; // 往下拉會接續的欄，其他欄照抄
+
   function fillValue(col, value, step) {
-    return col === "number" ? nextNumber(value, step) : value;
+    return SEQUENCE_COLUMNS.indexOf(col) >= 0 ? nextNumber(value, step) : value;
   }
 
   function setActive(input) {
