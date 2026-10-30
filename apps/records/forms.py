@@ -12,6 +12,19 @@ class RecordForm(forms.ModelForm):
         error_messages = {"quantity": {"invalid": "數量只能輸入整數。"}}
 
 
+class QuickAddForm(RecordForm):
+    """列表上方固定的那一列：打完按登記就存一筆，輸入列清空給下一筆。"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.use_required_attribute = False
+        for name, field in self.fields.items():
+            css = "form-control is-invalid" if self.errors.get(name) else "form-control"
+            field.widget.attrs.update({"class": css, "data-quick": name, "autocomplete": "off"})
+        self.fields["number"].widget.attrs["autofocus"] = True
+        self.fields["quantity"].widget.attrs["inputmode"] = "numeric"
+
+
 class GridRowForm(RecordForm):
     """多列輸入的一列：整列空白就略過，不算錯誤。"""
 

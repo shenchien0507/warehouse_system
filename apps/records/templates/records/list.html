@@ -10,6 +10,23 @@
 {% endblock %}
 
 {% block content %}
+  <form method="post" class="card mb-4" novalidate data-quick-form>
+    {% csrf_token %}
+    <div class="card-body">
+      <div class="row g-2 align-items-start">
+        {% for field in quick_form %}
+          <div class="{% if field.name == 'quantity' %}col-sm-3 col-lg-2{% else %}col-sm-6 col-lg-3{% endif %}">
+            <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>
+            {{ field }}
+            {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+          </div>
+        {% endfor %}
+        <div class="col-auto quick-submit"><button type="submit" class="btn btn-primary">登記</button></div>
+      </div>
+      <div class="form-text">一次登記一筆：打完按「登記」（或在數量按 Enter）就存好，輸入列清空給下一筆；Enter 會跳到下一格。要一次打很多筆用右上角「新增紀錄」的 Excel 表格。操作人帳號自動記成你（{{ user.username }}）。</div>
+    </div>
+  </form>
+
   <form method="get" class="row g-2 align-items-end mb-3">
     <div class="col-sm-6 col-lg-4">
       <input type="search" name="q" value="{{ query }}" class="form-control" placeholder="搜尋編號、名稱、日期或操作人" aria-label="搜尋">
@@ -68,7 +85,28 @@
   {% include "components/_pagination.html" %}
 {% endblock %}
 
+{% block extra_css %}
+  <style>.quick-submit { padding-top: 2rem; }</style>
+{% endblock %}
+
 {% block extra_js %}
+  <script>
+    // 固定輸入列：Enter 跳到下一格，最後一格（數量）按 Enter 才送出；有錯時游標停在第一個錯的格子
+    (function () {
+      var form = document.querySelector("[data-quick-form]");
+      var inputs = Array.prototype.slice.call(form.querySelectorAll("[data-quick]"));
+      inputs.forEach(function (input, i) {
+        input.addEventListener("keydown", function (event) {
+          if (event.key !== "Enter" || event.isComposing || i === inputs.length - 1) { return; }
+          event.preventDefault();
+          inputs[i + 1].focus();
+          inputs[i + 1].select();
+        });
+      });
+      var invalid = form.querySelector(".is-invalid");
+      if (invalid) { invalid.focus(); invalid.select(); } else { inputs[0].focus(); }
+    })();
+  </script>
   <script>
     // 列表勾選：全選、顯示勾了幾筆；批量修改帶著勾選的編號到修改頁
     (function () {
