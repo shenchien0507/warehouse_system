@@ -92,7 +92,8 @@ def totals_by_kind(day):
     return {card.name: card.main for card in cards}, [card.name for card in cards]
 
 
-def tower(limit_recent=5):
+def tower(limit_recent=5, kind=None):
+    """kind 有值只看那個種類（單獨頁）：卡片、進行中、最近完成、編號清單都只留這個種類的；沒有這個種類回傳 None。"""
     day = work_date()
     totals, order = totals_by_kind(day)
     records = list(Record.objects.filter(created_at__date=day).only("number", "quantity", "kind"))
@@ -129,6 +130,14 @@ def tower(limit_recent=5):
     ]
     active.sort(key=lambda item: item[0].started_at)
     recent = sorted((e for e in allocation.values() if e.ended_at is not None), key=lambda e: e.ended_at, reverse=True)[:limit_recent]
+    if kind is not None:
+        if kind not in boards:
+            return None
+        mine = {r.number for r in records if (r.kind or UNCLASSIFIED) == kind}
+        boards = OrderedDict([(kind, boards[kind])])
+        listing = [row for row in listing if row[0] in mine]
+        active = [item for item in active if item[0].number in mine]
+        recent = [e for e in sorted((e for e in allocation.values() if e.ended_at is not None and e.number in mine), key=lambda e: e.ended_at, reverse=True)][:limit_recent]
     return {"work_date": day, "kinds": list(boards.values()), "active": active, "recent": recent, "numbers": listing}
 
 

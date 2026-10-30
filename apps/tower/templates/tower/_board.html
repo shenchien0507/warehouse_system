@@ -7,36 +7,28 @@
     <h2 class="h4 mb-0">{{ work_date|date:"Y/m/d" }}</h2>
   </div>
 
-  <div class="row g-3 mb-4">
-    {% for kind in kinds %}
-      <div class="col-lg-6">
-        <div class="tower-card">
-          <div class="d-flex justify-content-between align-items-baseline">
-            <div class="tower-label">{{ kind.name }} <span class="tower-sub fw-normal">已登記 {{ kind.count }} 個編號</span></div>
-            <div class="tower-sub">完成 {{ kind.percent|floatformat:0 }}%</div>
-          </div>
-          <div class="tower-value">{{ kind.done }} <span class="tower-sub fw-normal">/ {{ kind.total }} 完成・剩餘 {{ kind.remaining }}</span></div>
-          <div class="tower-register {% if kind.over_by %}is-over{% elif kind.registered == kind.total %}is-even{% endif %}">已登記 {{ kind.registered }} / {{ kind.total }}{% if kind.over_by %}（多登記 {{ kind.over_by }}）{% endif %}{% if not kind.has_total %}・當日統計沒有這個種類{% endif %}</div>
-          <div class="tower-track my-2">
-            {% for key, label, quantity, count, width in kind.rows %}
-              {% if quantity > 0 %}<div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" title="{{ label }}：{{ quantity }}（{{ count }} 份）"></div>{% endif %}
-            {% endfor %}
-          </div>
-          <table class="table table-sm mb-0 tower-states">
-            <tbody>
+  {% if detail %}
+    <div class="mb-3"><a href="{% url 'tower:index' %}" class="btn btn-sm btn-outline-secondary">← 回數據塔</a></div>
+    {% for kind in kinds %}<div class="tower-card mb-4">{% include "tower/_card.html" %}</div>{% endfor %}
+  {% else %}
+    <div class="row g-3 mb-4">
+      {% for kind in kinds %}
+        <div class="col-6 col-md-4 col-xl-3 tower-col">
+          <div class="tower-tile">
+            <div class="tower-label"><a href="?kind={{ kind.name|urlencode }}" class="stretched-link text-reset text-decoration-none">{{ kind.name }}</a></div>
+            <div class="tower-value">{{ kind.done }}<span class="tower-sub fw-normal"> / {{ kind.total }}</span></div>
+            <div class="tower-track tower-thin my-1">
               {% for key, label, quantity, count, width in kind.rows %}
-                <tr>
-                  <td><span class="tower-swatch seg-{{ key }}"></span>{{ label }}</td>
-                  <td class="text-end">{{ count }} 份</td>
-                  <td class="text-end fw-semibold">{{ quantity }}</td>
-                </tr>
+                {% if quantity > 0 %}<div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%"></div>{% endif %}
               {% endfor %}
-            </tbody>
-          </table>
+            </div>
+            <div class="tower-register {% if kind.over_by %}is-over{% elif kind.registered == kind.total %}is-even{% endif %}">已登記 {{ kind.registered }} / {{ kind.total }}</div>
+            <div class="tower-pop"><div class="tower-card">{% include "tower/_card.html" %}</div></div>
+          </div>
         </div>
-      </div>
-    {% endfor %}
-  </div>
+      {% endfor %}
+    </div>
+  {% endif %}
 
   <div class="row g-4 mb-4">
     <div class="col-lg-7">
@@ -71,6 +63,7 @@
     </div>
   </div>
 
+  {% if detail %}
   <details>
     <summary class="mb-2">全部編號（{{ numbers|length }}）</summary>
     <div class="table-responsive">
@@ -84,4 +77,5 @@
       </table>
     </div>
   </details>
+  {% endif %}
 {% endif %}
