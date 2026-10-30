@@ -135,6 +135,15 @@ class DailyStatsTests(TestCase):
         self.assertContains(response, "訂單號空白")
         self.assertFalse(DailyBatch.objects.exists())
 
+    def test_deleting_missing_batch_redirects_with_message(self):
+        # 連按兩下刪除：第二次送出時這批已經不在了，不要顯示 404
+        self.upload(MORNING, "10:00")
+        batch = DailyBatch.objects.get()
+        self.client.post(reverse("daily:batch_delete", args=[batch.pk]))
+        response = self.client.post(reverse("daily:batch_delete", args=[batch.pk]), follow=True)
+        self.assertRedirects(response, reverse("daily:day_list"))
+        self.assertContains(response, "這批已經刪除了")
+
     def test_only_latest_batch_can_be_deleted(self):
         self.upload(MORNING, "10:00")
         self.upload(AFTERNOON, "15:00")

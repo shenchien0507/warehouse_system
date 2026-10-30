@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.db.models import Max
 from django.http import Http404
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import redirect
 from django.utils import timezone
 from django.views.generic import TemplateView, View
 
@@ -109,7 +109,11 @@ class BatchDeleteView(DailyPageMixin, View):
     這批的訂單已被其他作業日的批次標成重複時也不能刪，否則那些批次的重複紀錄會跟著不見。"""
 
     def post(self, request, *args, **kwargs):
-        batch = get_object_or_404(DailyBatch, pk=kwargs["pk"])
+        batch = DailyBatch.objects.filter(pk=kwargs["pk"]).first()
+        if batch is None:
+            # 連按兩下刪除、或頁面停在舊畫面時（別人已經刪了），第二次送出會找不到這批
+            messages.warning(request, "這批已經刪除了（可能按了兩次刪除，或別人先刪了），請看最新的批次。")
+            return redirect("daily:day_list")
         if not batch.is_latest:
             messages.error(request, "只能刪除當天最後一批。")
             return redirect("daily:day_detail", work_date=batch.work_date)
