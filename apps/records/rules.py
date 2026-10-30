@@ -18,11 +18,10 @@ def editable_records(user):
 
 
 def kind_names():
-    """登記時可選的種類：生效中的統計分組版本的分組名稱，依分組順序。"""
-    from apps.orders.models import GroupVersion
+    """登記時可選的種類：今天當日統計有數字卡的種類（數字不是 0），沒有數字卡的不能選。"""
+    from apps.tower.stats import kind_cards
 
-    version = GroupVersion.active()
-    return list(version.groups.values_list("name", flat=True)) if version else []
+    return [name for name, _, _ in kind_cards()[1]]
 
 
 def registered_by_kind(day):

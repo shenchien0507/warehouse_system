@@ -6,7 +6,7 @@
 {% block page_header %}
   <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
     <h1 class="h3 mb-0 me-auto">{{ menu_item.label }}</h1>
-    <a class="btn btn-primary" href="{% url 'records:new' %}">新增紀錄</a>
+    <a class="btn btn-primary" href="{% url 'records:new' %}{% if chosen %}?kind={{ chosen|urlencode }}{% endif %}">新增紀錄</a>
   </div>
 {% endblock %}
 
@@ -16,7 +16,7 @@
       <strong>種類</strong>
       {% if chosen %}
         {% for name, registered, total in cards %}{% if name == chosen %}
-          ：<span class="fw-semibold">{{ name }}</span>　已登記 {{ registered }}{% if total is not None %} / {{ total }}{% endif %}
+          ：<span class="fw-semibold">{{ name }}</span>　已登記 {{ registered }} / {{ total }}
         {% endif %}{% endfor %}
         <span class="text-muted small ms-2">（點開可換種類）</span>
       {% else %}
@@ -30,16 +30,11 @@
           <div class="col-6 col-md-4 col-xl-3">
             <div class="stat-tile{% if name == chosen %} is-chosen{% endif %}">
               <div class="stat-label"><a href="?kind={{ name|urlencode }}" class="stretched-link text-reset text-decoration-none">{{ name }}</a></div>
-              {% if total is None %}
-                <div class="stat-value">{{ registered }}</div>
-                <div class="stat-sub">已登記</div>
-              {% else %}
-                <div class="stat-value register-{% if registered == total %}even{% elif registered > total %}over{% else %}short{% endif %}">{{ registered }}<span class="stat-sub fw-normal"> / {{ total }}</span></div>
-              {% endif %}
+              <div class="stat-value register-{% if registered == total %}even{% elif registered > total %}over{% else %}short{% endif %}">{{ registered }}<span class="stat-sub fw-normal"> / {{ total }}</span></div>
             </div>
           </div>
         {% empty %}
-          <div class="col-12 text-muted small">還沒有統計分組，請先到後台設定統計分組。</div>
+          <div class="col-12 text-muted small">今天還沒有匯入當日統計，沒有可以選的種類。</div>
         {% endfor %}
       </div>
     </div>
