@@ -1,0 +1,18 @@
+/* 登記紀錄多列輸入 */
+.record-grid { min-width: 640px; }
+.record-grid td { padding: 0; }
+.record-grid td.row-no, .record-grid th.row-no { width: 2.5rem; text-align: center; padding: .35rem .25rem; font-variant-numeric: tabular-nums; }
+.record-grid th.row-tools, .record-grid td.row-tools { width: 2rem; text-align: center; padding: .3rem 0; }
+.record-grid th.col-qty { width: 8rem; }
+.record-grid .grid-cell { position: relative; }
+.record-grid .grid-cell .form-control { border: 0; border-radius: 0; box-shadow: none; }
+.record-grid .grid-cell .form-control:focus { outline: 2px solid #0d6efd; outline-offset: -2px; }
+.record-grid .grid-cell.has-error .form-control { background: #f8d7da; }
+.record-grid .grid-cell .invalid-feedback { padding: 0 .5rem .25rem; }
+.record-grid .grid-cell.fill-target .form-control { background: #e7f1ff; }
+/* 右下角的填滿方塊：只在目前選到的格子顯示 */
+.fill-handle {
+  position: absolute; right: -4px; bottom: -4px; width: 9px; height: 9px; z-index: 2;
+  background: #0d6efd; border: 1px solid #fff; cursor: crosshair; touch-action: none; display: none;
+}
+.grid-cell.active .fill-handle { display: block; }
