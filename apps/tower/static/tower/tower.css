@@ -1,0 +1,26 @@
+/* 數據塔：狀態顏色用角色變數，長條是純 HTML */
+.tower-board {
+  --state-not_started: #d6d5d0;
+  --state-picking: #2a78d6;
+  --state-wait_allocation: #e8a93a;
+  --state-allocating: #eb6834;
+  --state-done: #1baf7a;
+  --text-muted: #6c6b66;
+}
+.tower-board .tower-card { border: 1px solid #e3e2de; border-radius: .5rem; padding: .75rem 1rem; height: 100%; background: #fff; }
+.tower-board .tower-label { font-size: 1.125rem; font-weight: 600; }
+.tower-board .tower-sub { font-size: .8125rem; color: var(--text-muted); }
+.tower-board .tower-value { font-size: 2rem; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.tower-board .tower-track { display: flex; gap: 2px; height: 1.25rem; background: #f3f2ef; border-radius: 4px; overflow: hidden; }
+.tower-board .tower-seg { height: 100%; min-width: 3px; }
+.tower-board .tower-states td { border: 0; padding: .15rem 0; font-variant-numeric: tabular-nums; }
+.tower-board .tower-swatch { display: inline-block; width: .75rem; height: .75rem; border-radius: 2px; margin-right: .4rem; vertical-align: -1px; }
+.tower-board .seg-not_started { background: var(--state-not_started); }
+.tower-board .seg-picking { background: var(--state-picking); }
+.tower-board .seg-wait_allocation { background: var(--state-wait_allocation); }
+.tower-board .seg-allocating { background: var(--state-allocating); }
+.tower-board .seg-done { background: var(--state-done); }
+
+@media (max-width: 576px) {
+  .tower-board .tower-value { font-size: 1.5rem; }
+}

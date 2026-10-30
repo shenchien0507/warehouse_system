@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}數據塔{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'tower/tower.css' %}">{% endblock %}
+
+{% block heading %}數據塔{% endblock %}
+
+{% block content %}
+  <div class="d-flex justify-content-end align-items-center gap-2 small text-muted mb-2">
+    <div class="form-check form-switch mb-0">
+      <input class="form-check-input" type="checkbox" role="switch" id="tower-auto-refresh" checked>
+      <label class="form-check-label" for="tower-auto-refresh">每 {{ refresh_seconds }} 秒自動更新</label>
+    </div>
+  </div>
+  <div id="tower-board" class="tower-board" data-url="{{ partial_url }}" data-refresh="{{ refresh_seconds }}">
+    {% include "tower/_board.html" %}
+  </div>
+{% endblock %}
+
+{% block extra_js %}<script src="{% static 'tower/tower.js' %}"></script>{% endblock %}
