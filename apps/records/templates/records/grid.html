@@ -19,6 +19,17 @@
   <form method="post" id="record-grid" novalidate>
     {% csrf_token %}
     {{ form.management_form }}
+    {% if not bulk_edit %}
+      <div class="row mb-3">
+        <div class="col-sm-6 col-lg-3">
+          <label class="form-label" for="grid-kind">種類</label>
+          <select name="kind" id="grid-kind" class="form-select">
+            {% for value, label in kind_choices %}<option value="{{ value }}"{% if value == kind %} selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+          <div class="form-text">這批登記的編號都歸在這個種類。</div>
+        </div>
+      </div>
+    {% endif %}
     {% for error in form.non_form_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
     <div class="table-responsive">
       <table class="table table-sm table-bordered align-top record-grid mb-2">

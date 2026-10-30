@@ -54,10 +54,20 @@ class GroupCard:
     rows: int = 0  # 非去重
     show_rows: bool = False  # 分組勾選「另外列出非去重」：卡片主要顯示非去重，去重放小字
     cutoff: str = ""  # 切單時間文字，例如 14:00；沒切時間空白
+    registered: int = 0  # 登記紀錄裡這個種類今天登記的數量（對帳用）
 
     @property
     def main(self):
         return self.rows if self.show_rows else self.total
+
+    @property
+    def register_state(self):
+        """登記對總數：不足 short、剛好 even、超過 over。"""
+        return "even" if self.registered == self.main else "over" if self.registered > self.main else "short"
+
+    @property
+    def over_by(self):
+        return self.registered - self.main
 
     @property
     def shown(self):
@@ -88,8 +98,9 @@ def segment_key(period):
     return "no_time" if period == NO_TIME else "all_day"
 
 
-def dashboard(batches, summary, stat_groups):
-    """當日累計的數字整理成 dashboard：每個分組一張數字卡（切單前／後）、批次累計。"""
+def dashboard(batches, summary, stat_groups, registered=None):
+    """當日累計的數字整理成 dashboard：每個分組一張數字卡（切單前／後）、批次累計。
+    registered：{種類: 登記數量}，卡片上顯示「已登記 / 總數」。"""
     cards = {
         g.name: GroupCard(g.name, {}, show_rows=g.show_rows, cutoff=g.cutoff.strftime("%H:%M") if g.cutoff else "")
         for g in stat_groups
@@ -101,6 +112,9 @@ def dashboard(batches, summary, stat_groups):
         card.total += row.count.distinct
         card.row_counts[key] = card.row_counts.get(key, 0) + row.count.rows
         card.rows += row.count.rows
+    for name, quantity in (registered or {}).items():
+        if name in cards:
+            cards[name].registered = quantity
     total = sum(b.new_order_count for b in batches)
     rows, running = [], 0
     for batch in batches:

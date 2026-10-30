@@ -1,8 +1,17 @@
 from django import forms
 
 from .models import Record
+from .rules import kind_names
 
 FIELDS = ["number", "date_text", "name", "quantity"]
+
+
+def kind_choices(current=""):
+    """種類選單：未分類加上生效版本的分組；舊紀錄的種類已不在清單時也留著，修改時不會被洗掉。"""
+    names = kind_names()
+    if current and current not in names:
+        names.append(current)
+    return [("", "未分類"), *[(name, name) for name in names]]
 
 
 class RecordForm(forms.ModelForm):
@@ -12,15 +21,39 @@ class RecordForm(forms.ModelForm):
         error_messages = {"quantity": {"invalid": "數量只能輸入整數。"}}
 
 
-class QuickAddForm(RecordForm):
+class KindRecordForm(RecordForm):
+    """多一個「種類」的單筆表單（列表上方固定輸入列、修改頁）。"""
+
+    kind = forms.ChoiceField(label="種類", required=False)
+    field_order = ["kind", *FIELDS]
+
+    class Meta(RecordForm.Meta):
+        fields = ["kind", *FIELDS]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["kind"].choices = kind_choices(self.instance.kind)
+
+
+class QuickAddForm(KindRecordForm):
     """列表上方固定的那一列：打完按登記就存一筆，輸入列清空給下一筆。"""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.use_required_attribute = False
+        if kind_names():  # 新登記一定要先選種類（還沒設定統計分組時才不擋）
+            kind = self.fields["kind"]
+            kind.required = True
+            kind.choices = [("", "請先選種類"), *kind.choices[1:]]
+            kind.error_messages["required"] = "請先選種類。"
         for name, field in self.fields.items():
-            css = "form-control is-invalid" if self.errors.get(name) else "form-control"
-            field.widget.attrs.update({"class": css, "data-quick": name, "autocomplete": "off"})
+            css = "form-select" if name == "kind" else "form-control"
+            if self.errors.get(name):
+                css += " is-invalid"
+            field.widget.attrs.update({"class": css, "autocomplete": "off"})
+            if name != "kind":
+                field.widget.attrs["data-quick"] = name
+        self.fields["kind"].widget.attrs["data-kind-select"] = True
         self.fields["number"].widget.attrs["autofocus"] = True
         self.fields["quantity"].widget.attrs["inputmode"] = "numeric"
 

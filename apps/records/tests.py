@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from django.test import TestCase
 from django.urls import reverse
 
@@ -8,9 +10,12 @@ from .forms import FIELDS
 from .models import Record
 
 
+KIND = "蝦皮其他"  # 預設統計分組裡有的種類
+
+
 def grid_data(*rows, total=3):
     """多列輸入的表單資料；rows 是 (編號, 日期, 名稱, 數量)，其餘列空白。"""
-    data = {"form-TOTAL_FORMS": total, "form-INITIAL_FORMS": 0, "form-MIN_NUM_FORMS": 0, "form-MAX_NUM_FORMS": 500}
+    data = {"kind": KIND, "form-TOTAL_FORMS": total, "form-INITIAL_FORMS": 0, "form-MIN_NUM_FORMS": 0, "form-MAX_NUM_FORMS": 500}
     for i, row in enumerate(rows):
         data.update({f"form-{i}-{field}": value for field, value in zip(FIELDS, row)})
     return data
@@ -41,7 +46,7 @@ class RecordTests(TestCase):
         response = self.client.post(
             reverse("records:new"), grid_data(("A001", "10/30 早上", "紙箱", "5"), ("A002", "", "膠帶", "-2"), total=10)
         )
-        self.assertRedirects(response, reverse("records:list"))
+        self.assertRedirects(response, reverse("records:list") + "?kind=" + quote(KIND))
         rows = list(Record.objects.order_by("number").values_list("number", "date_text", "name", "quantity", "created_by"))
         self.assertEqual(rows, [("A001", "10/30 早上", "紙箱", 5, self.staff.pk), ("A002", "", "膠帶", -2, self.staff.pk)])
 
@@ -180,16 +185,52 @@ class RecordTests(TestCase):
 
     def test_quick_add_saves_one_record_and_returns_to_list(self):
         url = reverse("records:list") + "?q=A"
-        response = self.client.post(url, {"number": "A1", "date_text": "早班", "name": "紙箱", "quantity": "3"})
+        response = self.client.post(url, {"kind": KIND, "number": "A1", "date_text": "早班", "name": "紙箱", "quantity": "3"})
         self.assertRedirects(response, url)
         record = Record.objects.get()
-        self.assertEqual((record.number, record.date_text, record.quantity, record.created_by), ("A1", "早班", 3, self.staff))
+        self.assertEqual(
+            (record.number, record.date_text, record.quantity, record.created_by, record.kind), ("A1", "早班", 3, self.staff, KIND)
+        )
 
     def test_quick_add_errors_stay_on_page(self):
         self.record(self.other, number="A1")
-        response = self.client.post(reverse("records:list"), {"number": "A1", "date_text": "", "name": "紙箱", "quantity": "x"})
+        response = self.client.post(reverse("records:list"), {"kind": KIND, "number": "A1", "date_text": "", "name": "紙箱", "quantity": "x"})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "這個編號已經登記過了")
         self.assertContains(response, "數量只能輸入整數")
         self.assertContains(response, 'value="紙箱"')
         self.assertEqual(Record.objects.count(), 1)
+
+    def test_new_registration_needs_a_kind(self):
+        response = self.client.post(reverse("records:list"), {"number": "A1", "date_text": "", "name": "紙箱", "quantity": "3"})
+        self.assertContains(response, "請先選種類")
+        response = self.client.post(reverse("records:new"), {**grid_data(("A2", "", "紙箱", "1")), "kind": ""})
+        self.assertContains(response, "請先選種類")
+        response = self.client.post(reverse("records:list"), {"kind": "不存在", "number": "A1", "date_text": "", "name": "紙箱", "quantity": "3"})
+        self.assertFalse(Record.objects.exists())
+
+    def test_grid_gives_every_row_the_chosen_kind(self):
+        response = self.client.post(reverse("records:new"), grid_data(("A1", "", "紙箱", "1"), ("A2", "", "膠帶", "2")))
+        self.assertRedirects(response, reverse("records:list") + "?kind=" + quote(KIND))
+        self.assertEqual(set(Record.objects.values_list("kind", flat=True)), {KIND})
+
+    def test_list_keeps_showing_every_record_and_kind_from_url_is_preselected(self):
+        self.record(self.staff, number="A1", kind="蝦皮無包裝")
+        self.record(self.other, number="A2", kind="")
+        response = self.client.get(reverse("records:list"), {"kind": KIND})
+        self.assertContains(response, "A1")
+        self.assertContains(response, "A2")
+        self.assertContains(response, f'<option value="{KIND}" selected>')
+        self.assertContains(response, "未分類")  # 舊紀錄沒有種類
+
+    def test_kind_cards_panel_lists_kinds_with_registered_counts(self):
+        self.record(self.staff, number="A1", kind=KIND, quantity=4)
+        response = self.client.get(reverse("records:list"), {"kind": KIND})
+        self.assertContains(response, f"?kind={quote(KIND)}")
+        self.assertContains(response, "id=\"kind-cards\"")
+
+    def test_edit_can_change_kind(self):
+        record = self.record(self.staff, kind="")
+        self.client.post(reverse("records:edit", args=[record.pk]), {"kind": KIND, "number": record.number, "date_text": "", "name": "紙箱", "quantity": "1"})
+        record.refresh_from_db()
+        self.assertEqual(record.kind, KIND)
