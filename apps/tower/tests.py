@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -23,7 +25,7 @@ def day_rows():
     return rows
 
 
-class TowerTests(TestCase):
+class TowerBase(TestCase):
     def setUp(self):
         self.employee = Employee.objects.create(employee_no="E001", name="小明")
         self.client.login(username=make_user("boss", Level.ADMIN).username, password="pw12345!")
@@ -45,6 +47,8 @@ class TowerTests(TestCase):
     def board(self, name):
         return {b.name: b for b in tower()["kinds"]}[name]
 
+
+class TowerTests(TowerBase):
     def test_totals_come_from_daily_stats_and_unregistered_is_the_gap(self):
         self.import_day()
         self.record("X1", 3, NEXT_DAY)
@@ -129,7 +133,7 @@ class TowerPageTests(TestCase):
         self.assertEqual(self.client.get(URL).status_code, 403)
 
 
-class KindNamesTests(TowerTests):
+class KindNamesTests(TowerBase):
     """登記時可選的種類只有今天當日統計有數字卡的；沒有數字卡的不能選。"""
 
     def test_only_kinds_with_cards_today_are_listed(self):
@@ -147,3 +151,39 @@ class KindNamesTests(TowerTests):
         self.assertFalse(Record.objects.exists())
         self.client.post(reverse("records:list"), {"kind": NEXT_DAY, "number": "A1", "date_text": "", "name": "x", "quantity": "1"})
         self.assertEqual(Record.objects.get().kind, NEXT_DAY)
+
+
+class TowerDetailTests(TowerBase):
+    """數字卡點進去單獨看一個種類；總覽只有緊湊的數字卡，詳細的放在滑鼠停留的小窗。"""
+
+    def setUp(self):
+        super().setUp()
+        PagePermission.objects.create(page_key="data-tower", label="數據塔", min_level=Level.STAFF)
+        self.import_day()
+        self.record("甲", 2, NEXT_DAY)
+        self.record("乙", 3, NO_PACK)
+        self.entry(Stage.PICKING, "甲")
+        self.entry(Stage.PICKING, "乙")
+
+    def test_overview_has_tiles_with_links_and_hover_details_but_no_number_list(self):
+        response = self.client.get(URL)
+        self.assertContains(response, "tower-pop")
+        self.assertContains(response, f'href="?kind={quote(NEXT_DAY)}"')
+        self.assertNotContains(response, "全部編號")
+
+    def test_detail_shows_only_that_kind(self):
+        response = self.client.get(URL, {"kind": NEXT_DAY})
+        self.assertContains(response, "全部編號（1）")
+        self.assertContains(response, "甲")
+        self.assertNotContains(response, "乙")  # 另一個種類的編號、進行中不出現
+        self.assertNotContains(response, "tower-pop")
+        self.assertContains(response, "回數據塔")
+
+    def test_partial_keeps_the_kind_and_unknown_kind_is_404(self):
+        response = self.client.get(URL, {"kind": NEXT_DAY, "partial": 1})
+        self.assertContains(response, "全部編號（1）")
+        self.assertEqual(self.client.get(URL, {"kind": "不存在"}).status_code, 404)
+
+    def test_refresh_url_carries_the_kind(self):
+        response = self.client.get(URL, {"kind": "蝦皮隔日到貨"})
+        self.assertIn("kind=", response.context["partial_url"])

@@ -1,0 +1,23 @@
+{% comment %}一個種類的詳細卡：單獨頁和數字卡上跳出的小窗共用。{% endcomment %}
+<div class="d-flex justify-content-between align-items-baseline">
+  <div class="tower-label">{{ kind.name }} <span class="tower-sub fw-normal">已登記 {{ kind.count }} 個編號</span></div>
+  <div class="tower-sub">完成 {{ kind.percent|floatformat:0 }}%</div>
+</div>
+<div class="tower-value">{{ kind.done }} <span class="tower-sub fw-normal">/ {{ kind.total }} 完成・剩餘 {{ kind.remaining }}</span></div>
+<div class="tower-register {% if kind.over_by %}is-over{% elif kind.registered == kind.total %}is-even{% endif %}">已登記 {{ kind.registered }} / {{ kind.total }}{% if kind.over_by %}（多登記 {{ kind.over_by }}）{% endif %}{% if not kind.has_total %}・當日統計沒有這個種類{% endif %}</div>
+<div class="tower-track my-2">
+  {% for key, label, quantity, count, width in kind.rows %}
+    {% if quantity > 0 %}<div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" title="{{ label }}：{{ quantity }}（{{ count }} 份）"></div>{% endif %}
+  {% endfor %}
+</div>
+<table class="table table-sm mb-0 tower-states">
+  <tbody>
+    {% for key, label, quantity, count, width in kind.rows %}
+      <tr>
+        <td><span class="tower-swatch seg-{{ key }}"></span>{{ label }}</td>
+        <td class="text-end">{{ count }} 份</td>
+        <td class="text-end fw-semibold">{{ quantity }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
