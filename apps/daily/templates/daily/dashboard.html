@@ -8,6 +8,12 @@
 {% block heading %}當日統計{% endblock %}
 
 {% block content %}
+  {% if not is_today %}
+    <div class="alert alert-secondary d-flex flex-wrap gap-2 align-items-center">
+      <span class="me-auto">這是 {{ work_date|date:"Y/m/d" }} 的歷史紀錄，只能查看、抽起、放回；匯入一律算進今天。</span>
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'daily:day_list' %}">回今天</a>
+    </div>
+  {% else %}
   <div class="card mb-4" id="daily-import">
     <div class="card-body py-3">
       {% if form.non_field_errors %}
@@ -21,17 +27,12 @@
             {{ form.file }}
             {% for error in form.file.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
           </div>
-          <div class="col-md-3 wh-field{% if form.work_date.errors %} has-error{% endif %}">
-            <label class="form-label" for="{{ form.work_date.id_for_label }}">作業日</label>
-            {{ form.work_date }}
-            {% for error in form.work_date.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
-          </div>
           <div class="col-auto">
             <button type="submit" class="btn btn-primary" onclick="this.disabled=true;this.textContent='匯入中…';this.form.submit();">匯入</button>
           </div>
         </div>
         <div class="form-text">
-          每次放一份這個時段確定要出的訂單檔，累加到作業日的資料池。之前匯過的訂單（含其他作業日）標記重複、不重複計算；內容一樣的檔案、或訂單全部都匯過的檔案會被擋下。
+          每次放一份這個時段確定要出的訂單檔，累加到今天（{{ work_date|date:"Y/m/d" }}）的資料池。之前匯過的訂單（含其他作業日）標記重複、不重複計算；內容一樣的檔案、或訂單全部都匯過的檔案會被擋下。
           {% if active_version %}用欄位對應 {{ active_version }}{% if active_groups %}、統計分組 {{ active_groups }}{% else %}，<span class="text-danger">但沒有生效的統計分組版本</span>{% endif %}（和訂單統計共用）。{% else %}<span class="text-danger">目前沒有生效的欄位對應版本，請先到後台設定。</span>{% endif %}
         </div>
       </form>
@@ -50,6 +51,8 @@
       {% endif %}
     </div>
   </div>
+
+  {% endif %}
 
   {% if batches %}
     <div class="card mb-4" id="daily-search">

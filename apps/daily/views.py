@@ -61,7 +61,7 @@ class DashboardView(DailyPageMixin, TemplateView):
     def post(self, request, *args, **kwargs):
         form = ImportForm(request.POST, request.FILES)
         if form.is_valid():
-            outcome = import_batch(request.user, form.cleaned_data["work_date"], form.cleaned_data["file"])
+            outcome = import_batch(request.user, form.cleaned_data["file"])
             if outcome.batch:
                 batch = outcome.batch
                 text = f"已匯入 {batch}：{batch.order_count} 張訂單，新的 {batch.new_order_count} 張"
@@ -75,9 +75,8 @@ class DashboardView(DailyPageMixin, TemplateView):
         return self.get(request, *args, **kwargs)
 
     def work_date(self):
-        if "work_date" in self.kwargs:
-            return self.kwargs["work_date"]
-        return DailyBatch.objects.aggregate(day=Max("work_date"))["day"]
+        """平常一律看今天；網址指定日期是查歷史。"""
+        return self.kwargs.get("work_date") or timezone.localdate()
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -91,7 +90,12 @@ class DashboardView(DailyPageMixin, TemplateView):
             partial_url=f"{self.request.path}?partial=1",
         )
         work_date = self.work_date()
-        batches, total = day_stats(work_date) if work_date else ([], None)
+        context.update(
+            work_date=work_date,
+            is_today=work_date == timezone.localdate(),
+            last_day=DailyBatch.objects.filter(work_date__lt=work_date).aggregate(day=Max("work_date"))["day"],
+        )
+        batches, total = day_stats(work_date)
         if not batches:
             if "work_date" in self.kwargs:
                 raise Http404("這天沒有匯入過")

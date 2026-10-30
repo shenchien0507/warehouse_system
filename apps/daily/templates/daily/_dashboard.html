@@ -1,7 +1,10 @@
 {% comment %}dashboard 區塊：頁面第一次載入和定時更新（?partial=1）都用這個。{% endcomment %}
 <div class="small text-muted mb-3" id="daily-refreshed-at">更新時間 {{ refreshed_at|date:"H:i:s" }}</div>
 {% if not batches %}
-  <div class="alert alert-light border">還沒有匯入過，上面選檔案匯入第一批。</div>
+  <div class="alert alert-light border">
+    今天（{{ work_date|date:"Y/m/d" }}）還沒有匯入，上面選檔案匯入第一批。
+    {% if last_day %}<a href="{% url 'daily:day_detail' last_day %}">查看上一次作業日 {{ last_day|date:"Y/m/d" }}</a>{% endif %}
+  </div>
 {% else %}
   <div class="d-flex flex-wrap align-items-baseline gap-3 mb-3">
     <h2 class="h4 mb-0">作業日 {{ work_date|date:"Y/m/d" }}</h2>

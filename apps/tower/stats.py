@@ -1,13 +1,12 @@
 """數據塔：把當日統計（今天每個種類應出的總數）、登記紀錄（登記進哪個種類）、撿貨登記、配貨登記串起來看進度。
 沒有自己的資料表，每次現算。種類就是統計分組的名稱，登記時選；編號只是代號，不看格式，
-撿貨、配貨靠編號對得到登記紀錄的那一筆。今天是當日統計最新的作業日，沒有匯入過就是系統日期的今天。"""
+撿貨、配貨靠編號對得到登記紀錄的那一筆。今天一律是系統日期的今天。"""
 
 from collections import OrderedDict
 from dataclasses import dataclass, field
 
 from django.utils import timezone
 
-from apps.daily.models import DailyBatch
 from apps.daily.stats import dashboard, day_stats
 from apps.orders.stats import version_groups
 from apps.records.models import Record
@@ -80,7 +79,8 @@ def latest_by_number(stage, numbers):
 
 
 def work_date():
-    return DailyBatch.objects.order_by("-work_date").values_list("work_date", flat=True).first() or timezone.localdate()
+    """系統操作一律看今天（系統日期），不跟著最新匯入的作業日跑。"""
+    return timezone.localdate()
 
 
 def totals_by_kind(day):

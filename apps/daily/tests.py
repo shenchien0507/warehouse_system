@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from unittest import mock
 
 from django.test import TestCase
@@ -31,12 +31,16 @@ class DailyStatsTests(TestCase):
         self.client.login(username=make_user("boss", Level.ADMIN).username, password="pw12345!")
 
     def upload(self, rows, clock="10:00", work_date="2026-10-05", name=None):
+        """匯入一律算進今天：把系統時間設成 work_date 那天的 clock。"""
         hour, minute = map(int, clock.split(":"))
-        now = timezone.make_aware(datetime(2026, 10, 5, hour, minute))
+        now = timezone.make_aware(datetime.combine(date.fromisoformat(work_date), time(hour, minute)))
         with mock.patch("django.utils.timezone.now", return_value=now):
-            return self.client.post(
-                reverse("daily:day_list"), {"file": xlsx(HEADERS, rows, name=name or f"{clock}.xlsx"), "work_date": work_date}
-            )
+            return self.client.post(reverse("daily:day_list"), {"file": xlsx(HEADERS, rows, name=name or f"{clock}.xlsx")})
+
+    def today_page(self, today=WORK_DATE):
+        """沒指定日期的當日統計頁：一律看今天（系統日期）。"""
+        with mock.patch("django.utils.timezone.now", return_value=timezone.make_aware(datetime.combine(today, time(16, 0)))):
+            return self.client.get(reverse("daily:day_list"))
 
     def day(self):
         return self.client.get(reverse("daily:day_detail", args=[WORK_DATE]))
@@ -73,7 +77,7 @@ class DailyStatsTests(TestCase):
     def test_dashboard_numbers_and_partial_refresh(self):
         self.upload(MORNING, "10:00")
         self.upload(AFTERNOON, "15:00")
-        response = self.client.get(reverse("daily:day_list"))  # 沒指定日期：最近一個有資料的作業日
+        response = self.today_page()  # 沒指定日期：今天
         board = response.context["board"]
         self.assertEqual(board.total, 5)
         self.assertEqual(
@@ -197,7 +201,7 @@ class DailyStatsTests(TestCase):
         self.assertEqual(self.cards()[:2], (3, 0))
         self.hold("2", reason="地址有問題")  # 可以再抽一次
         self.assertEqual(DailyHold.objects.filter(order__order_no="2").count(), 2)
-        self.assertContains(self.client.get(reverse("daily:day_list")), "地址有問題")
+        self.assertContains(self.today_page(), "地址有問題")
 
     def test_held_order_in_later_batch_same_day_returns(self):
         self.upload(MORNING, "10:00")
@@ -280,7 +284,7 @@ class DailyStatsTests(TestCase):
         self.client.login(username=make_user("staff", Level.STAFF).username, password="pw12345!")
         self.assertEqual(self.client.get(reverse("daily:day_list")).status_code, 403)
         PagePermission.objects.create(page_key="daily-stats", label="當日統計", min_level=Level.STAFF)
-        self.assertContains(self.client.get(reverse("daily:day_list")), "還沒有匯入過")
+        self.assertContains(self.client.get(reverse("daily:day_list")), "還沒有匯入")
 
 
 class DailyRegisteredCardTests(DailyStatsTests.__bases__[0]):
@@ -301,3 +305,32 @@ class DailyRegisteredCardTests(DailyStatsTests.__bases__[0]):
         self.assertContains(response, "/records/?kind=")
         Record.objects.create(number="X2", name="x", quantity=1, kind="蝦皮隔日到貨")
         self.assertContains(self.client.get(reverse("daily:day_list")), "register-even")
+
+
+class DailyTodayTests(TestCase):
+    """系統操作一律是今天：匯入不能選作業日，頁面不跟著最新匯入的日子跑；其他日子只能從網址查歷史。"""
+
+    def setUp(self):
+        self.client.login(username=make_user("boss", Level.ADMIN).username, password="pw12345!")
+
+    def test_import_always_goes_to_today_and_page_shows_today(self):
+        today = timezone.localdate()
+        response = self.client.post(
+            reverse("daily:day_list"),
+            {"file": xlsx(HEADERS, MORNING, name="a.xlsx"), "work_date": "2030-01-01"},  # 送了日期也不理
+        )
+        self.assertRedirects(response, reverse("daily:day_detail", args=[today]))
+        self.assertEqual(list(DailyBatch.objects.values_list("work_date", flat=True)), [today])
+        self.assertNotContains(self.client.get(reverse("daily:day_list")), 'name="work_date"')
+
+    def test_other_days_are_history_only(self):
+        tomorrow = timezone.localdate() + timedelta(days=1)
+        with mock.patch("django.utils.timezone.now", return_value=timezone.now() + timedelta(days=1)):
+            self.client.post(reverse("daily:day_list"), {"file": xlsx(HEADERS, MORNING, name="a.xlsx")})
+        self.assertTrue(DailyBatch.objects.filter(work_date=tomorrow).exists())
+        response = self.client.get(reverse("daily:day_list"))  # 今天還沒匯入，不會跳到明天
+        self.assertContains(response, "還沒有匯入")
+        self.assertNotIn("board", response.context)
+        history = self.client.get(reverse("daily:day_detail", args=[tomorrow]))
+        self.assertContains(history, "歷史紀錄")
+        self.assertNotContains(history, 'name="file"')

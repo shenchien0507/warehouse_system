@@ -2,7 +2,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 
 from .models import WorkEntry
-from .rules import check_number, find_employee, open_entry
+from .rules import check_cycle, check_number, check_rescan, find_employee, open_entry
 
 
 def text_input(**attrs):
@@ -20,7 +20,10 @@ class ScanForm(forms.Form):
         self.stage = stage
 
     def clean_number(self):
-        return check_number(self.stage, self.cleaned_data["number"].strip())
+        number = check_number(self.stage, self.cleaned_data["number"].strip())
+        check_rescan(self.stage, number)
+        check_cycle(self.stage, number)
+        return number
 
     def clean_employee_no(self):
         self.employee = find_employee(self.cleaned_data["employee_no"].strip())
