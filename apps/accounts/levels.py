@@ -16,6 +16,7 @@ RULES = [
     Rule("attendance-register-all", "到班：登記全部部門的人員、看「未設定部門」", 40),
     Rule("attendance-past-dates", "到班：修改之前日期的紀錄與工位、作廢別人登記的紀錄", 30),
     Rule("attendance-stations-all", "工位安排：安排全部部門", 40),
+    Rule("records-edit-all", "登記紀錄：修改、刪除別人登記的紀錄", 30),
 ]
 
 RULES_BY_CODE = {rule.code: rule for rule in RULES}

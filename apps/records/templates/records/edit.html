@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}修改{{ menu_item.label }}{% endblock %}
+{% block heading %}修改{{ menu_item.label }}：{{ object }}{% endblock %}
+
+{% block content %}
+  <p class="text-muted small">
+    操作人：{% if object.created_by %}{{ object.created_by.username }} {{ object.created_by.name }}{% else %}（帳號已刪除）{% endif %}，登記於 {{ object.created_at|date:"Y-m-d H:i" }}
+  </p>
+  <div class="row">
+    <div class="col-lg-6">
+      {% url 'records:list' as list_url %}
+      {% include "components/_form.html" with form=form submit_text="儲存" cancel_url=list_url %}
+    </div>
+  </div>
+{% endblock %}

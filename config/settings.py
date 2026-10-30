@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "apps.attendance",
     "apps.orders",
     "apps.daily",
+    "apps.records",
     "apps.testdata",  # 暫時的測試資料產生，正式開發完成後移除
 ]
 

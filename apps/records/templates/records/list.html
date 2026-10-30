@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}{{ menu_item.label }}{% endblock %}
+
+{% block page_header %}
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <h1 class="h3 mb-0 me-auto">{{ menu_item.label }}</h1>
+    <a class="btn btn-primary" href="{% url 'records:new' %}">新增紀錄</a>
+  </div>
+{% endblock %}
+
+{% block content %}
+  <form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-sm-6 col-lg-4">
+      <input type="search" name="q" value="{{ query }}" class="form-control" placeholder="搜尋編號、名稱、日期或操作人" aria-label="搜尋">
+    </div>
+    <div class="col-auto"><button type="submit" class="btn btn-outline-secondary">搜尋</button></div>
+    {% if query %}<div class="col-auto"><a class="btn btn-link" href="{% url 'records:list' %}">清除</a></div>{% endif %}
+  </form>
+
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead class="table-light">
+        <tr><th>編號</th><th>日期</th><th>名稱</th><th class="text-end">數量</th><th>操作人帳號</th><th>登記時間</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          {% with record=row.record %}
+            <tr>
+              <td>{{ record.number }}</td>
+              <td>{{ record.date_text }}</td>
+              <td>{{ record.name }}</td>
+              <td class="text-end">{{ record.quantity }}</td>
+              <td>{% if record.created_by %}{{ record.created_by.username }} {{ record.created_by.name }}{% endif %}</td>
+              <td class="small text-muted text-nowrap">
+                {{ record.created_at|date:"Y-m-d H:i" }}
+                {% if record.edited %}<div title="{{ record.updated_at|date:'Y-m-d H:i' }}">{{ record.updated_by.name|default:record.updated_by.username }} 修改過</div>{% endif %}
+              </td>
+              <td class="text-end text-nowrap">
+                {% if row.can_edit %}
+                  <a class="btn btn-sm btn-outline-secondary" href="{% url 'records:edit' record.pk %}">修改</a>
+                  <form method="post" action="{% url 'records:delete' record.pk %}" class="d-inline" onsubmit="return confirm('確定要刪除「{{ record|escapejs }}」？刪除後無法復原。');">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">刪除</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endwith %}
+        {% empty %}
+          <tr><td colspan="7" class="text-muted">{% if query %}找不到符合「{{ query }}」的紀錄。{% else %}還沒有紀錄，按右上角「新增紀錄」開始。{% endif %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "components/_pagination.html" %}
+{% endblock %}
