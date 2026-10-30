@@ -20,9 +20,7 @@ class ScanForm(forms.Form):
         self.stage = stage
 
     def clean_number(self):
-        number = self.cleaned_data["number"].strip()
-        check_number(self.stage, number)
-        return number
+        return check_number(self.stage, self.cleaned_data["number"].strip())
 
     def clean_employee_no(self):
         self.employee = find_employee(self.cleaned_data["employee_no"].strip())
@@ -51,7 +49,7 @@ class EntryEditForm(forms.ModelForm):
     def clean_number(self):
         number = self.cleaned_data["number"].strip()
         if number != self.instance.number:
-            check_number(self.instance.stage, number)
+            number = check_number(self.instance.stage, number)
             if self.instance.is_open and open_entry(self.instance.stage, number, exclude=self.instance):
                 raise ValidationError(f"編號「{number}」已經有一筆還沒結束的登記。")
         return number

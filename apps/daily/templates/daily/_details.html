@@ -12,7 +12,7 @@
           <tr>
             <td>第 {{ batch.seq }} 批</td>
             <td>{{ batch.imported_at|date:"H:i" }}</td>
-            <td>{{ batch.imported_by.name|default:"" }}</td>
+            <td>{{ batch.imported_by.name|default:batch.imported_by.username }}</td>
             <td>{{ batch.file_name }}</td>
             <td class="text-end">{{ batch.order_count }}</td>
             <td class="text-end fw-bold">{{ batch.new_order_count }}</td>

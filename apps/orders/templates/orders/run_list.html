@@ -68,7 +68,7 @@
           <tr>
             <td>{{ run.work_date|date:"Y/m/d" }}</td>
             <td>{{ run.created_at|date:"Y/m/d H:i" }}</td>
-            <td>{{ run.created_by.name|default:"" }}</td>
+            <td>{{ run.created_by.name|default:run.created_by.username }}</td>
             <td>{% for batch in run.batches.all %}<div>{{ batch.category_name|default:"未分類" }}<span class="text-muted small ms-1">{{ batch.file_name }}</span></div>{% endfor %}</td>
             <td class="text-end">{% for batch in run.batches.all %}<div>{{ batch.order_count }}</div>{% endfor %}</td>
             <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'orders:run_detail' run.pk %}">看統計</a></td>

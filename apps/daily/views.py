@@ -179,13 +179,18 @@ class HoldView(DailyPageMixin, View):
         reason = request.POST.get("reason", "").strip()[: DailyHold._meta.get_field("reason").max_length]
         if not reason:
             messages.error(request, f"抽起訂單 {order.order_no} 要填原因。")
-        elif order.holds.filter(status__in=DailyHold.EXCLUDED).exists():
-            messages.warning(request, f"訂單 {order.order_no} 已經抽起了。")
         else:
-            try:
-                with transaction.atomic():
-                    DailyHold.objects.create(order=order, reason=reason, held_by=request.user)
-            except IntegrityError:  # 連按兩下：另一次已經抽起
+            # MySQL 不支援有條件的唯一限制，連按兩下要靠鎖住訂單這一列擋
+            with transaction.atomic():
+                DailyOrder.objects.select_for_update().filter(pk=order.pk).first()
+                held = order.holds.filter(status__in=DailyHold.EXCLUDED).exists()
+                if not held:
+                    try:
+                        with transaction.atomic():
+                            DailyHold.objects.create(order=order, reason=reason, held_by=request.user)
+                    except IntegrityError:  # SQLite、PostgreSQL 有唯一限制，另一次已經抽起
+                        held = True
+            if held:
                 messages.warning(request, f"訂單 {order.order_no} 已經抽起了。")
             else:
                 messages.success(request, f"已抽起訂單 {order.order_no}，不算進當日統計。")

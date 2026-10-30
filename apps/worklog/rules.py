@@ -14,15 +14,22 @@ from .models import Stage, WorkEntry
 SOURCE_LABEL = {Stage.PICKING: "登記紀錄", Stage.ALLOCATION: "撿貨"}
 
 
-def number_exists(stage, number):
+def source_number(stage, number):
+    """編號在來源（撿貨看登記紀錄、配貨看撿貨）存的寫法；沒有回傳 None。
+    MySQL 比對不分大小寫，s-001 也對得到 S-001，存來源的寫法，數據塔才對得起來。"""
     if stage == Stage.PICKING:
-        return Record.objects.filter(number=number).exists()
-    return WorkEntry.objects.filter(stage=Stage.PICKING, number=number).exists()
+        numbers = Record.objects.filter(number=number)
+    else:
+        numbers = WorkEntry.objects.filter(stage=Stage.PICKING, number=number)
+    return numbers.values_list("number", flat=True).first()
 
 
 def check_number(stage, number):
-    if not number_exists(stage, number):
+    """回傳來源的編號寫法；沒有就擋下。"""
+    found = source_number(stage, number)
+    if found is None:
         raise ValidationError(f"{SOURCE_LABEL[stage]}沒有編號「{number}」，不能登記。")
+    return found
 
 
 def find_employee(employee_no):

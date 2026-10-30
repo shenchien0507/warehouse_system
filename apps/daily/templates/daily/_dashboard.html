@@ -65,9 +65,9 @@
             <tr{% if not hold.is_held %} class="text-muted"{% endif %}>
               <td>{{ hold.order.order_no }}</td>
               <td>第 {{ hold.order.batch.seq }} 批</td>
-              <td>{{ hold.held_at|date:"H:i" }} {{ hold.held_by.name|default:"" }}</td>
+              <td>{{ hold.held_at|date:"H:i" }} {{ hold.held_by.name|default:hold.held_by.username }}</td>
               <td>{{ hold.reason }}</td>
-              <td>{% if hold.is_held %}<span class="badge text-bg-danger">抽起中</span>{% else %}{{ hold.released_at|date:"m/d H:i" }} {{ hold.released_by.name|default:"" }} {{ hold.outcome }}{% endif %}</td>
+              <td>{% if hold.is_held %}<span class="badge text-bg-danger">抽起中</span>{% else %}{{ hold.released_at|date:"m/d H:i" }} {{ hold.released_by.name|default:hold.released_by.username }} {{ hold.outcome }}{% endif %}</td>
               <td class="text-end">
                 {% if hold.is_held %}
                   <form method="post" action="{% url 'daily:release' hold.pk %}" onsubmit="if (!confirm('放回訂單 {{ hold.order.order_no }}？{% if hold.release_moves %}作業日已過，放回後算進今天最新一批。{% else %}放回後算回當日統計。{% endif %}')) return false; this.querySelector('button').disabled = true; return true;">
