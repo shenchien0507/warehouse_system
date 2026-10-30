@@ -15,7 +15,7 @@ from apps.tower.stats import kind_cards
 
 from .forms import BulkEditFormSet, GridFormSet, KindRecordForm, QuickAddForm, kind_choices
 from .models import Record
-from .rules import can_edit, editable_records, kind_names
+from .rules import LINKED_NOTE, can_edit, editable_records, is_linked, kind_names, linked_numbers
 
 
 class RecordPageMixin:
@@ -72,7 +72,10 @@ class RecordListView(RecordPageMixin, ListView):
         context["quick_form"] = getattr(self, "quick_form", None) or QuickAddForm(initial={"kind": chosen_kind(self.request)})
         day, cards = kind_cards()
         context.update(card_day=day, cards=cards, chosen=chosen_kind(self.request))
-        context["rows"] = [{"record": r, "can_edit": can_edit(self.request.user, r)} for r in context["object_list"]]
+        linked = linked_numbers(r.number for r in context["object_list"])
+        context["rows"] = [
+            {"record": r, "can_edit": can_edit(self.request.user, r), "linked": r.number in linked} for r in context["object_list"]
+        ]
         return context
 
 
@@ -158,16 +161,22 @@ class RecordBulkEditView(RecordPageMixin, FormView):
 
 
 class RecordBulkDeleteView(RecordPageMixin, View):
-    """刪除列表勾選的紀錄；不能改的紀錄不會被刪。"""
+    """刪除列表勾選的紀錄；不能改的紀錄不會被刪，已有撿貨、配貨登記的略過不刪。"""
 
     def post(self, request, *args, **kwargs):
         ids = selected_ids(request.POST)
         records = editable_records(request.user).filter(pk__in=ids)
-        count = records.count()
-        if count != len(set(ids)):
+        if records.count() != len(set(ids)):
             raise PermissionDenied
-        records.delete()
-        messages.success(request, f"已刪除 {count} 筆。" if count else "沒有勾選任何紀錄。")
+        linked = linked_numbers(r.number for r in records)
+        deletable = records.exclude(number__in=linked)
+        count = deletable.count()
+        deletable.delete()
+        text = f"已刪除 {count} 筆。" if count else "沒有勾選任何紀錄。" if not linked else "沒有刪除任何紀錄。"
+        if linked:
+            messages.error(request, f"{text}{len(linked)} 筆{LINKED_NOTE}，不能刪除：{'、'.join(sorted(linked))}。")
+        else:
+            messages.success(request, text)
         return redirect(safe_next(request))
 
 
@@ -200,6 +209,9 @@ class RecordEditView(RecordObjectMixin, UpdateView):
 class RecordDeleteView(RecordObjectMixin, View):
     def post(self, request, *args, **kwargs):
         record = self.get_object()
+        if is_linked(record):
+            messages.error(request, f"「{record}」{LINKED_NOTE}，不能刪除。")
+            return redirect(safe_next(request))
         record.delete()
         messages.success(request, f"已刪除「{record}」。")
         return redirect(safe_next(request))

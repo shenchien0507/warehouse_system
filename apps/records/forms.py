@@ -1,7 +1,7 @@
 from django import forms
 
 from .models import Record
-from .rules import kind_names
+from .rules import LINKED_NOTE, is_linked, kind_names
 
 FIELDS = ["number", "date_text", "name", "quantity"]
 
@@ -19,6 +19,13 @@ class RecordForm(forms.ModelForm):
         model = Record
         fields = FIELDS
         error_messages = {"quantity": {"invalid": "數量只能輸入整數。"}}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if is_linked(self.instance):  # 撿貨、配貨已經用這個編號登記過，編號不能再改
+            number = self.fields["number"]
+            number.disabled = True
+            number.help_text = f"{LINKED_NOTE}，編號不能修改。"
 
 
 class KindRecordForm(RecordForm):

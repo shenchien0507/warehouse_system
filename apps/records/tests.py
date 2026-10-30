@@ -251,3 +251,35 @@ class RecordTests(TestCase):
         response = self.client.get(new_url)
         self.assertContains(response, f'<option value="{KIND}" selected>')
         self.assertContains(response, 'href="' + reverse("records:list") + "?kind=" + quote(KIND))
+
+    def test_record_with_worklog_entry_cannot_be_deleted_or_renumbered(self):
+        from apps.personnel.models import Employee
+        from apps.worklog.models import Stage, WorkEntry
+
+        linked = self.record(self.staff, number="L1")
+        free = self.record(self.staff, number="F1")
+        WorkEntry.objects.create(stage=Stage.PICKING, number="L1", start_employee=Employee.objects.create(employee_no="E1", name="小明"))
+
+        response = self.client.post(reverse("records:delete", args=[linked.pk]), follow=True)
+        self.assertContains(response, "已有撿貨或配貨登記，不能刪除")
+        self.assertTrue(Record.objects.filter(pk=linked.pk).exists())
+        self.client.post(reverse("records:delete", args=[free.pk]))
+        self.assertFalse(Record.objects.filter(pk=free.pk).exists())
+
+        self.client.post(
+            reverse("records:edit", args=[linked.pk]),
+            {"kind": "", "number": "CHANGED", "date_text": "", "name": "新名稱", "quantity": "9"},
+        )
+        linked.refresh_from_db()
+        self.assertEqual((linked.number, linked.name, linked.quantity), ("L1", "新名稱", 9))  # 編號不變，其他照改
+
+    def test_bulk_delete_skips_linked_and_says_so(self):
+        from apps.personnel.models import Employee
+        from apps.worklog.models import Stage, WorkEntry
+
+        linked, free = self.record(self.staff, number="L1"), self.record(self.staff, number="F1")
+        WorkEntry.objects.create(stage=Stage.ALLOCATION, number="L1", start_employee=Employee.objects.create(employee_no="E1", name="小明"))
+        response = self.client.post(reverse("records:bulk_delete"), {"ids": [linked.pk, free.pk]}, follow=True)
+        self.assertContains(response, "已刪除 1 筆。1 筆已有撿貨或配貨登記，不能刪除：L1")
+        self.assertEqual(list(Record.objects.values_list("number", flat=True)), ["L1"])
+        self.assertNotContains(self.client.get(reverse("records:list")), reverse("records:delete", args=[linked.pk]))

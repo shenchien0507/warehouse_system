@@ -98,11 +98,15 @@
               <td class="text-end text-nowrap">
                 {% if row.can_edit %}
                   <a class="btn btn-sm btn-outline-secondary" href="{% url 'records:edit' record.pk %}">修改</a>
-                  <form method="post" action="{% url 'records:delete' record.pk %}" class="d-inline" onsubmit="return confirm('確定要刪除「{{ record|escapejs }}」？刪除後無法復原。');">
-                    {% csrf_token %}
-                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                    <button type="submit" class="btn btn-sm btn-outline-danger">刪除</button>
-                  </form>
+                  {% if row.linked %}
+                    <span class="text-muted small" title="撿貨或配貨已經用這個編號登記過，不能刪除">已有作業登記</span>
+                  {% else %}
+                    <form method="post" action="{% url 'records:delete' record.pk %}" class="d-inline" onsubmit="return confirm('確定要刪除「{{ record|escapejs }}」？刪除後無法復原。');">
+                      {% csrf_token %}
+                      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                      <button type="submit" class="btn btn-sm btn-outline-danger">刪除</button>
+                    </form>
+                  {% endif %}
                 {% endif %}
               </td>
             </tr>

@@ -17,6 +17,20 @@ def editable_records(user):
     return Record.objects.filter(created_by=user)
 
 
+def linked_numbers(numbers):
+    """這些編號裡，已經有撿貨或配貨登記的。有作業登記的紀錄不能刪、編號不能改，不然作業登記會對不到登記紀錄。"""
+    from apps.worklog.models import WorkEntry
+
+    return set(WorkEntry.objects.filter(number__in=list(numbers)).values_list("number", flat=True))
+
+
+def is_linked(record):
+    return bool(record.pk) and bool(linked_numbers([record.number]))
+
+
+LINKED_NOTE = "已有撿貨或配貨登記"
+
+
 def kind_names():
     """登記時可選的種類：今天當日統計有數字卡的種類（數字不是 0），沒有數字卡的不能選。"""
     from apps.tower.stats import kind_cards
