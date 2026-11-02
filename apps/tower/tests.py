@@ -1,3 +1,5 @@
+from datetime import timedelta
+from unittest import mock
 from urllib.parse import quote
 
 from django.test import TestCase
@@ -32,7 +34,7 @@ class TowerBase(TestCase):
 
     def import_day(self):
         response = self.client.post(
-            reverse("daily:day_list"), {"file": xlsx(HEADERS, day_rows(), name="a.xlsx"), "work_date": f"{timezone.localdate():%Y-%m-%d}"}
+            reverse("daily:day_list"), {"file": xlsx(HEADERS, day_rows(), name="a.xlsx")}
         )
         self.assertEqual(response.status_code, 302)
 
@@ -49,6 +51,15 @@ class TowerBase(TestCase):
 
 
 class TowerTests(TowerBase):
+    def test_always_today_even_with_a_future_batch(self):
+        self.import_day()
+        self.record("X1", 3, NEXT_DAY)
+        with mock.patch("django.utils.timezone.now", return_value=timezone.now() + timedelta(days=1)):
+            self.client.post(reverse("daily:day_list"), {"file": xlsx(HEADERS, [["蝦皮購物", 9, "蝦皮隔日到貨", "A", "2030/01/01 09:00:00"]], name="b.xlsx")})
+        data = tower()
+        self.assertEqual(data["work_date"], timezone.localdate())
+        self.assertEqual(self.board(NEXT_DAY).registered, 3)
+
     def test_totals_come_from_daily_stats_and_unregistered_is_the_gap(self):
         self.import_day()
         self.record("X1", 3, NEXT_DAY)

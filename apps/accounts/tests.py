@@ -94,3 +94,16 @@ class PagePermissionTests(TestCase):
         content = self.client.get(reverse("home")).content.decode()
         self.assertIn(f'href="{reverse("tower:index")}"', content)
         self.assertNotIn(f'href="{reverse("records:list")}"', content)
+
+
+class UserPasswordTests(TestCase):
+    def test_admin_resets_password(self):
+        admin = User.objects.create_superuser("root", password="pw12345!", name="root")
+        target = make_user("E001")
+        self.client.force_login(admin)
+        url = reverse("accounts_manage:user_password", args=[target.pk])
+        self.assertEqual(self.client.get(url).status_code, 200)
+        response = self.client.post(url, {"new_password1": "Newpass123!", "new_password2": "Newpass123!"})
+        self.assertRedirects(response, reverse("accounts_manage:user_edit", args=[target.pk]))
+        target.refresh_from_db()
+        self.assertTrue(target.check_password("Newpass123!"))

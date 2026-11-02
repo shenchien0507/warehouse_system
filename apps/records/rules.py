@@ -41,6 +41,6 @@ def kind_names():
 def registered_by_kind(day):
     """某天（登記日期）各種類登記的數量加總：{種類: 數量}，空白種類是未分類。"""
     totals = {}
-    for kind, quantity in Record.objects.filter(created_at__date=day).values_list("kind", "quantity"):
+    for kind, quantity in Record.objects.created_on(day).values_list("kind", "quantity"):
         totals[kind] = totals.get(kind, 0) + quantity
     return totals

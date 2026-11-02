@@ -37,7 +37,7 @@ class RecordTests(TestCase):
         self.login(make_user("importer", Level.ADMIN))
         today = timezone.localdate()
         rows = [["蝦皮購物", 1, "7-11", "A", f"{today:%Y/%m/%d} 09:00:00"]]
-        self.client.post(reverse("daily:day_list"), {"file": xlsx(["交易平台", "交易序號", "出貨類型", "商品編號", "建立時間"], rows, name="a.xlsx"), "work_date": f"{today:%Y-%m-%d}"})
+        self.client.post(reverse("daily:day_list"), {"file": xlsx(["交易平台", "交易序號", "出貨類型", "商品編號", "建立時間"], rows, name="a.xlsx"), })
 
     def login(self, user):
         self.client.login(username=user.username, password="pw12345!")

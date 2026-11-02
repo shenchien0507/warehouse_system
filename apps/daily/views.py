@@ -61,7 +61,7 @@ class DashboardView(DailyPageMixin, TemplateView):
     def post(self, request, *args, **kwargs):
         form = ImportForm(request.POST, request.FILES)
         if form.is_valid():
-            outcome = import_batch(request.user, form.cleaned_data["work_date"], form.cleaned_data["file"])
+            outcome = import_batch(request.user, form.cleaned_data["file"])
             if outcome.batch:
                 batch = outcome.batch
                 text = f"已匯入 {batch}：{batch.order_count} 張訂單，新的 {batch.new_order_count} 張"
@@ -75,9 +75,8 @@ class DashboardView(DailyPageMixin, TemplateView):
         return self.get(request, *args, **kwargs)
 
     def work_date(self):
-        if "work_date" in self.kwargs:
-            return self.kwargs["work_date"]
-        return DailyBatch.objects.aggregate(day=Max("work_date"))["day"]
+        """平常一律看今天；網址指定日期是查歷史。"""
+        return self.kwargs.get("work_date") or timezone.localdate()
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -91,7 +90,12 @@ class DashboardView(DailyPageMixin, TemplateView):
             partial_url=f"{self.request.path}?partial=1",
         )
         work_date = self.work_date()
-        batches, total = day_stats(work_date) if work_date else ([], None)
+        context.update(
+            work_date=work_date,
+            is_today=work_date == timezone.localdate(),
+            last_day=DailyBatch.objects.filter(work_date__lt=work_date).aggregate(day=Max("work_date"))["day"],
+        )
+        batches, total = day_stats(work_date)
         if not batches:
             if "work_date" in self.kwargs:
                 raise Http404("這天沒有匯入過")
@@ -179,13 +183,18 @@ class HoldView(DailyPageMixin, View):
         reason = request.POST.get("reason", "").strip()[: DailyHold._meta.get_field("reason").max_length]
         if not reason:
             messages.error(request, f"抽起訂單 {order.order_no} 要填原因。")
-        elif order.holds.filter(status__in=DailyHold.EXCLUDED).exists():
-            messages.warning(request, f"訂單 {order.order_no} 已經抽起了。")
         else:
-            try:
-                with transaction.atomic():
-                    DailyHold.objects.create(order=order, reason=reason, held_by=request.user)
-            except IntegrityError:  # 連按兩下：另一次已經抽起
+            # MySQL 不支援有條件的唯一限制，連按兩下要靠鎖住訂單這一列擋
+            with transaction.atomic():
+                DailyOrder.objects.select_for_update().filter(pk=order.pk).first()
+                held = order.holds.filter(status__in=DailyHold.EXCLUDED).exists()
+                if not held:
+                    try:
+                        with transaction.atomic():
+                            DailyHold.objects.create(order=order, reason=reason, held_by=request.user)
+                    except IntegrityError:  # SQLite、PostgreSQL 有唯一限制，另一次已經抽起
+                        held = True
+            if held:
                 messages.warning(request, f"訂單 {order.order_no} 已經抽起了。")
             else:
                 messages.success(request, f"已抽起訂單 {order.order_no}，不算進當日統計。")

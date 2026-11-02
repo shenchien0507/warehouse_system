@@ -1,8 +1,18 @@
 """登記紀錄：單純打什麼記什麼的表格，不和其他資料表用外鍵關聯；種類只記統計分組的名稱，給當日統計、數據塔對帳用。
 編號不能重複；日期存成純文字，輸入什麼就存什麼，不轉換、不檢查格式；操作人取自登入的帳號。"""
 
+from datetime import datetime, time, timedelta
+
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
+
+
+class RecordQuerySet(models.QuerySet):
+    def created_on(self, day):
+        """某天（台灣時間）登記的紀錄。不用 created_at__date：MySQL 沒載入時區表時 CONVERT_TZ 回傳 NULL，會一筆都對不到。"""
+        start = timezone.make_aware(datetime.combine(day, time.min))
+        return self.filter(created_at__gte=start, created_at__lt=start + timedelta(days=1))
 
 
 class Record(models.Model):
@@ -20,6 +30,8 @@ class Record(models.Model):
         settings.AUTH_USER_MODEL, verbose_name="最後修改人", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
     updated_at = models.DateTimeField("最後修改時間", auto_now=True)
+
+    objects = RecordQuerySet.as_manager()
 
     class Meta:
         verbose_name = "登記紀錄"

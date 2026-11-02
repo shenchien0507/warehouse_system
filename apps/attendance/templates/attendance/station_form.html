@@ -103,7 +103,7 @@
 {% endblock %}
 
 {% block extra_js %}
-  {% if editable and not previewing %}
+  {% if editable and rows and not previewing %}
   <script>
     (() => {
       const tbody = document.getElementById("station-rows");

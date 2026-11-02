@@ -2,7 +2,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 
 from .models import WorkEntry
-from .rules import check_number, find_employee, open_entry
+from .rules import check_cycle, check_number, check_rescan, find_employee, open_entry
 
 
 def text_input(**attrs):
@@ -20,8 +20,9 @@ class ScanForm(forms.Form):
         self.stage = stage
 
     def clean_number(self):
-        number = self.cleaned_data["number"].strip()
-        check_number(self.stage, number)
+        number = check_number(self.stage, self.cleaned_data["number"].strip())
+        check_rescan(self.stage, number)
+        check_cycle(self.stage, number)
         return number
 
     def clean_employee_no(self):
@@ -51,7 +52,7 @@ class EntryEditForm(forms.ModelForm):
     def clean_number(self):
         number = self.cleaned_data["number"].strip()
         if number != self.instance.number:
-            check_number(self.instance.stage, number)
+            number = check_number(self.instance.stage, number)
             if self.instance.is_open and open_entry(self.instance.stage, number, exclude=self.instance):
                 raise ValidationError(f"編號「{number}」已經有一筆還沒結束的登記。")
         return number
