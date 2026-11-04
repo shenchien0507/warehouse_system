@@ -526,6 +526,16 @@ class StationAssignTests(StationTestCase):
         self.a1.refresh_from_db()
         self.assertIsNone(self.a1.station)
 
+    def test_inactive_station_cannot_be_newly_assigned(self):
+        self.desk.is_active = False
+        self.desk.save()
+        self.login(self.mgr)
+        response = self.client.get(self.url)
+        self.assertNotIn(self.desk, list(response.context["stations"]))
+        self.post(self.desk, action="confirm")
+        self.a1.refresh_from_db()
+        self.assertIsNone(self.a1.station)
+
     def test_page_permission_decides_access(self):
         self.login(make_user("lead", Level.LEADER, self.floor))
         self.assertEqual(self.client.get(self.list_url).status_code, 200)
