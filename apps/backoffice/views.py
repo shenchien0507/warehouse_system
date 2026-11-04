@@ -3,7 +3,7 @@
 from django.contrib import messages
 from django.forms import Form
 from django.core.exceptions import PermissionDenied
-from django.db.models import ProtectedError, Q
+from django.db.models import ProtectedError, Q, RestrictedError
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
@@ -135,8 +135,34 @@ class ManageDeleteView(ManageMixin, DeleteView):
     def form_valid(self, form):
         try:
             response = super().form_valid(form)
-        except ProtectedError:
-            messages.error(self.request, f"「{self.object}」還有其他資料在使用，不能刪除。")
+        except (ProtectedError, RestrictedError) as error:
+            usage = describe_usage(self.object, error.protected_objects if isinstance(error, ProtectedError) else error.restricted_objects)
+            messages.error(self.request, f"「{self.object}」還有其他資料在使用，不能刪除。使用中的資料：{usage}")
             return redirect(self.get_success_url())
         messages.success(self.request, f"已刪除「{self.object}」。")
         return response
+
+
+USAGE_EXAMPLES = 3
+
+
+def describe_usage(target, objects):
+    """把擋住刪除的資料整理成「到班紀錄（當日工位）12 筆，例如：…；…」，讓使用者知道要去哪裡處理。"""
+    by_model = {}
+    for obj in objects:
+        by_model.setdefault(type(obj), []).append(obj)
+    parts = []
+    for model, items in by_model.items():
+        fields = [
+            str(field.verbose_name)
+            for field in model._meta.fields
+            if field.remote_field and isinstance(target, field.remote_field.model)
+            and any(getattr(obj, field.attname) == target.pk for obj in items)
+        ]
+        label = str(model._meta.verbose_name)
+        if fields:
+            label += f"（{'、'.join(fields)}）"
+        examples = "、".join(str(obj) for obj in items[:USAGE_EXAMPLES])
+        more = " 等" if len(items) > USAGE_EXAMPLES else ""
+        parts.append(f"{label} {len(items)} 筆，例如：{examples}{more}")
+    return "；".join(parts)
