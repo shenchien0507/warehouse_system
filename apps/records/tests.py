@@ -33,10 +33,10 @@ class RecordTests(TestCase):
         self.login(self.staff)
 
     def import_today(self):
-        """今天的當日統計有 蝦皮其他 一張訂單，種類才選得到。"""
+        """今天的當日統計有 蝦皮其他 20 張訂單，種類才選得到；登記數量加總不能超過 20。"""
         self.login(make_user("importer", Level.ADMIN))
         today = timezone.localdate()
-        rows = [["蝦皮購物", 1, "7-11", "A", f"{today:%Y/%m/%d} 09:00:00"]]
+        rows = [["蝦皮購物", n, "7-11", "A", f"{today:%Y/%m/%d} 09:00:00"] for n in range(1, 21)]
         self.client.post(reverse("daily:day_list"), {"file": xlsx(["交易平台", "交易序號", "出貨類型", "商品編號", "建立時間"], rows, name="a.xlsx"), })
 
     def login(self, user):
@@ -283,3 +283,38 @@ class RecordTests(TestCase):
         self.assertContains(response, "已刪除 1 筆。1 筆已有撿貨或配貨登記，不能刪除：L1")
         self.assertEqual(list(Record.objects.values_list("number", flat=True)), ["L1"])
         self.assertNotContains(self.client.get(reverse("records:list")), reverse("records:delete", args=[linked.pk]))
+
+
+    def test_cannot_register_more_than_daily_total(self):
+        self.record(self.other, number="A1", kind=KIND, quantity=18)
+        response = self.client.post(reverse("records:list"), {"kind": KIND, "number": "A2", "date_text": "", "name": "紙箱", "quantity": "3"})
+        self.assertContains(response, "當日統計總數 20，這樣登記會變成 21，多了 1")
+        self.assertFalse(Record.objects.filter(number="A2").exists())
+        response = self.client.post(reverse("records:list"), {"kind": KIND, "number": "A2", "date_text": "", "name": "紙箱", "quantity": "2"})
+        self.assertEqual(response.status_code, 302)  # 剛好 20 可以
+
+    def test_grid_over_daily_total_saves_nothing(self):
+        response = self.client.post(reverse("records:new"), grid_data(("A1", "", "紙箱", "15"), ("A2", "", "膠帶", "6")))
+        self.assertContains(response, "多了 1")
+        self.assertFalse(Record.objects.exists())
+
+    def test_edit_cannot_push_over_total_but_can_lower_an_overage(self):
+        record = self.record(self.staff, kind=KIND, quantity=20)
+        data = {"kind": KIND, "number": record.number, "date_text": "", "name": "紙箱"}
+        response = self.client.post(reverse("records:edit", args=[record.pk]), {**data, "quantity": "21"})
+        self.assertContains(response, "多了 1")
+        record.refresh_from_db()
+        self.assertEqual(record.quantity, 20)
+        Record.objects.filter(pk=record.pk).update(quantity=25)  # 改規則前就已經超出的
+        self.client.post(reverse("records:edit", args=[record.pk]), {**data, "quantity": "22"})
+        record.refresh_from_db()
+        self.assertEqual(record.quantity, 22)
+
+    def test_bulk_edit_over_daily_total_saves_nothing(self):
+        a, b = self.record(self.staff, kind=KIND, quantity=10), self.record(self.staff, kind=KIND, quantity=10)
+        data = {"form-TOTAL_FORMS": 2, "form-INITIAL_FORMS": 2, "form-MIN_NUM_FORMS": 0, "form-MAX_NUM_FORMS": 500}
+        for i, r in enumerate([a, b]):
+            data.update({f"form-{i}-id": r.pk, f"form-{i}-number": r.number, f"form-{i}-date_text": "", f"form-{i}-name": "紙箱", f"form-{i}-quantity": "11"})
+        url = reverse("records:bulk_edit") + f"?ids={a.pk}&ids={b.pk}"
+        self.assertContains(self.client.post(url, data), "多了 2")
+        self.assertEqual(sorted(Record.objects.values_list("quantity", flat=True)), [10, 10])

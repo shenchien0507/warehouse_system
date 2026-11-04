@@ -44,3 +44,35 @@ def registered_by_kind(day):
     for kind, quantity in Record.objects.created_on(day).values_list("kind", "quantity"):
         totals[kind] = totals.get(kind, 0) + quantity
     return totals
+
+
+def over_total_errors(new_rows=(), edited=()):
+    """登記後會超過當日統計總數的種類，回傳錯誤訊息（空的就是可以存）。
+    new_rows 是新登記的 [(種類, 數量)]；edited 是改好但還沒存的紀錄（修改、批量修改），先扣掉它們原本的數量再算，
+    不是今天登記的紀錄不算進今天的已登記，略過。
+    已經超出的種類，只要這次沒有讓它更多就放行（例如把數量改小）；當日統計沒有的種類（未分類）不檢查。
+    有新訂單要先到當日統計匯入，總數才會增加，不能直接登記上去。"""
+    from apps.tower.stats import kind_cards
+
+    day, cards = kind_cards()
+    totals = {name: total for name, _, total in cards}
+    before = registered_by_kind(day)
+    after = dict(before)
+    rows = list(new_rows)
+    originals = Record.objects.created_on(day).filter(pk__in=[r.pk for r in edited if r.pk]).in_bulk()
+    for record in edited:
+        original = originals.get(record.pk)
+        if original is not None:
+            after[original.kind] = after.get(original.kind, 0) - original.quantity
+            rows.append((record.kind, record.quantity))
+    for kind, quantity in rows:
+        after[kind] = after.get(kind, 0) + quantity
+    errors = []
+    for kind in dict.fromkeys(kind for kind, _ in rows):
+        count = after.get(kind, 0)
+        if kind in totals and count > totals[kind] and count > before.get(kind, 0):
+            errors.append(
+                f"「{kind}」當日統計總數 {totals[kind]}，這樣登記會變成 {count}，多了 {count - totals[kind]}，不能存。"
+                "有新訂單請先到當日統計匯入，總數增加後再登記。"
+            )
+    return errors
