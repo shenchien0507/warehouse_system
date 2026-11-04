@@ -1,0 +1,2 @@
+.card select, .card input[type=time], .card input[type=text]:not(.form-control) { width: 100%; padding: .375rem .5rem; border: 1px solid #ced4da; border-radius: .375rem; }
+.card select:disabled, .card input:disabled { background: #f1f3f5; }
