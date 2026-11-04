@@ -431,6 +431,20 @@ class ImportStatsTests(TestCase):
         self.assertFalse(StatRun.objects.exists())
         self.assertFalse(ImportBatch.objects.exists())
 
+    def test_file_with_only_headers_counts_zero(self):
+        """出貨中這類檔案當時沒有訂單，匯出只有欄名：照常匯入，這個分類記 0 張。"""
+        response = self.client.post(reverse("orders:run_list"), import_data(
+            急單=xlsx(STAT_HEADERS, STAT_ROWS, name="急.xlsx"), 出貨中=xlsx(STAT_HEADERS, [], name="出貨中.xlsx"),
+        ))
+        run = StatRun.objects.get()
+        self.assertRedirects(response, reverse("orders:run_detail", args=[run.pk]))
+        self.assertEqual(
+            [(b.category_name, b.line_count, b.order_count) for b in run.batches.order_by("pk")], [("急單", 10, 7), ("出貨中", 0, 0)],
+        )
+        page = self.client.get(reverse("orders:run_detail", args=[run.pk]))
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.context["total"]["summary"].total, 7)
+
     def test_needs_at_least_one_file(self):
         response = self.client.post(reverse("orders:run_list"), import_data())
         self.assertContains(response, "至少要放一份檔案")
