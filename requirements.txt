@@ -4,10 +4,4 @@ PyMySQL>=1.1
 python-dotenv>=1.0
 openpyxl>=3.1  # 讀取匯入的 Excel 檔
 
-# 網路爬蟲
-requests>=2.32
-beautifulsoup4>=4.12
-
-# 機器學習與資料分析
-pandas>=2.2
-scikit-learn>=1.5
+# 網路爬蟲（requests、beautifulsoup4）、資料分析（pandas、scikit-learn）等真的要用時再加回來
