@@ -8,6 +8,8 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
 
+from apps.accounts.choices import hide_inactive_choices
+
 from .menu import MENU_BY_KEY, accessible_menu, can_use
 
 
@@ -46,6 +48,10 @@ class ManageMixin:
 
     def get_success_url(self):
         return reverse(self.list_url_name)
+
+    def get_form(self, form_class=None):
+        # 停用的職級、部門、工位不出現在選單裡（已經選的保留）
+        return hide_inactive_choices(super().get_form(form_class))
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -137,7 +143,8 @@ class ManageDeleteView(ManageMixin, DeleteView):
             response = super().form_valid(form)
         except (ProtectedError, RestrictedError) as error:
             usage = describe_usage(self.object, error.protected_objects if isinstance(error, ProtectedError) else error.restricted_objects)
-            messages.error(self.request, f"「{self.object}」還有其他資料在使用，不能刪除。使用中的資料：{usage}")
+            hint = "不想再用的話，可以按「編輯」改成停用，舊紀錄會保留。" if hasattr(self.object, "is_active") else ""
+            messages.error(self.request, f"「{self.object}」還有其他資料在使用，不能刪除。使用中的資料：{usage}。{hint}")
             return redirect(self.get_success_url())
         messages.success(self.request, f"已刪除「{self.object}」。")
         return response
