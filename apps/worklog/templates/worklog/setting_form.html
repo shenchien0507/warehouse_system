@@ -1,0 +1,31 @@
+{% extends "backoffice/form.html" %}
+
+{% block manage_content %}
+  <div class="row">
+    <div class="col-lg-6">
+      <form method="post" novalidate>
+        {% csrf_token %}
+        {% include "components/_form_field.html" with field=form.rescan_seconds %}
+        {% for field in form %}{% if field.name != "rescan_seconds" %}
+          <fieldset class="mb-3{% if field.errors %} has-error{% endif %}">
+            <legend class="form-label fs-6 mb-1">{{ field.label }}</legend>
+            <div class="d-flex flex-wrap gap-3">
+              {% for option in field %}
+                <div class="form-check">
+                  {{ option.tag }}
+                  <label class="form-check-label" for="{{ option.id_for_label }}">{{ option.choice_label }}</label>
+                </div>
+              {% empty %}
+                <span class="text-muted small">還沒有工位，請先到「工位」新增。</span>
+              {% endfor %}
+            </div>
+            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+            {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+          </fieldset>
+        {% endif %}{% endfor %}
+        <button type="submit" class="btn btn-primary">儲存</button>
+        {% if list_url %}<a class="btn btn-outline-secondary ms-2" href="{{ list_url }}">取消</a>{% endif %}
+      </form>
+    </div>
+  </div>
+{% endblock %}

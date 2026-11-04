@@ -2,7 +2,9 @@ from django import forms
 from django.core.exceptions import ValidationError
 
 from .models import WorkEntry
-from .rules import check_cycle, check_number, check_rescan, find_employee, open_entry
+from django.utils import timezone
+
+from .rules import check_cycle, check_number, check_rescan, check_station, find_employee, open_entry
 
 
 def text_input(**attrs):
@@ -27,6 +29,7 @@ class ScanForm(forms.Form):
 
     def clean_employee_no(self):
         self.employee = find_employee(self.cleaned_data["employee_no"].strip())
+        check_station(self.stage, self.employee)
         return self.employee.employee_no
 
 
@@ -58,10 +61,13 @@ class EntryEditForm(forms.ModelForm):
         return number
 
     def employee_field(self, name, attr):
-        """沒改就不重新比對（原本的人之後離職也能存）；改了要對得到在職的人員。"""
+        """沒改就不重新比對（原本的人之後離職也能存）；改了要對得到在職的人員，那天的工位也要符合設定。"""
         employee_no = self.cleaned_data[name].strip()
         if employee_no != getattr(self.instance, attr).employee_no:
-            setattr(self.instance, attr, find_employee(employee_no))
+            employee = find_employee(employee_no)
+            when = getattr(self.instance, "ended_at" if attr == "end_employee" else "started_at")
+            check_station(self.instance.stage, employee, timezone.localdate(when))
+            setattr(self.instance, attr, employee)
         return employee_no
 
     def clean_start_employee_no(self):
