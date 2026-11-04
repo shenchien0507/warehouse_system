@@ -16,7 +16,7 @@
       <strong>種類</strong>
       {% if chosen %}
         {% for name, registered, total in cards %}{% if name == chosen %}
-          ：<span class="fw-semibold">{{ name }}</span>　已登記 {{ registered }} / {{ total }}
+          ：<span class="fw-semibold">{{ name }}</span>　已登記 {{ registered }} / {{ total }}{% if registered > total %}<span class="text-danger">（超過總數）</span>{% endif %}
         {% endif %}{% endfor %}
         <span class="text-muted small ms-2">（點開可換種類）</span>
       {% else %}
@@ -24,7 +24,7 @@
       {% endif %}
     </summary>
     <div class="card-body pt-0">
-      <div class="small text-muted mb-2">{{ card_day|date:"Y/m/d" }} 當日統計的種類；點一張卡就選好那個種類，登記的編號都歸在裡面。數字是「已登記 / 當前總數」，新批次匯入後總數會增加。</div>
+      <div class="small text-muted mb-2">{{ card_day|date:"Y/m/d" }} 當日統計的種類；點一張卡就選好那個種類，登記的編號都歸在裡面。數字是「已登記 / 當前總數」，新批次匯入後總數會增加；登記不能超過總數，有新訂單要先到當日統計匯入。</div>
       <div class="row g-2">
         {% for name, registered, total in cards %}
           <div class="col-6 col-md-4 col-xl-3">

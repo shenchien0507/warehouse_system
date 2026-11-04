@@ -15,7 +15,7 @@ from apps.tower.stats import kind_cards
 
 from .forms import BulkEditFormSet, GridFormSet, KindRecordForm, QuickAddForm, kind_choices
 from .models import Record
-from .rules import LINKED_NOTE, can_edit, editable_records, is_linked, kind_names, linked_numbers
+from .rules import LINKED_NOTE, can_edit, editable_records, is_linked, kind_names, linked_numbers, over_total_errors
 
 
 class RecordPageMixin:
@@ -48,6 +48,9 @@ class RecordListView(RecordPageMixin, ListView):
 
     def post(self, request, *args, **kwargs):
         form = QuickAddForm(request.POST)
+        if form.is_valid():
+            for error in over_total_errors([(form.cleaned_data["kind"], form.cleaned_data["quantity"])]):
+                form.add_error("quantity", error)
         if form.is_valid():
             form.instance.created_by = request.user
             record = form.save()
@@ -105,6 +108,11 @@ class RecordGridView(RecordPageMixin, FormView):
         if not rows:
             messages.error(self.request, "沒有輸入任何資料。")
             return self.form_invalid(formset)
+        over = over_total_errors([(self.kind, form.cleaned_data["quantity"]) for form in rows])
+        if over:
+            for error in over:
+                messages.error(self.request, f"{error}這次全部都還沒存。")
+            return self.render_to_response(self.get_context_data(form=formset))
         with transaction.atomic():
             for form in rows:
                 form.instance.created_by = self.request.user
@@ -148,6 +156,11 @@ class RecordBulkEditView(RecordPageMixin, FormView):
 
     def form_valid(self, formset):
         changed = [form for form in formset if form.has_changed()]
+        over = over_total_errors(edited=[form.instance for form in changed])
+        if over:
+            for error in over:
+                messages.error(self.request, f"{error}這次全部都還沒存。")
+            return self.render_to_response(self.get_context_data(form=formset))
         with transaction.atomic():
             for form in changed:
                 form.instance.updated_by = self.request.user
@@ -201,6 +214,11 @@ class RecordEditView(RecordObjectMixin, UpdateView):
     success_url = reverse_lazy("records:list")
 
     def form_valid(self, form):
+        over = over_total_errors(edited=[form.instance])
+        if over:
+            for error in over:
+                form.add_error("quantity", error)
+            return self.form_invalid(form)
         form.instance.updated_by = self.request.user
         messages.success(self.request, f"已修改「{form.instance}」。")
         return super().form_valid(form)
