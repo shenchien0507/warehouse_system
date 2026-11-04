@@ -1,4 +1,4 @@
-// 新增登記頁：選的種類今天的當日統計總數、已登記、這批正在打的數量、存完剩下多少。
+// 新增登記頁：最新一筆編號；選的種類今天的當日統計總數、已登記、這批正在打的數量、存完剩下多少。
 // 打數量時馬上算；已登記、總數每 15 秒跟伺服器拿一次（別人同時在登記、或當日統計匯入新訂單時會變）。
 (function () {
   var box = document.getElementById("kind-live");
@@ -22,7 +22,18 @@
 
   function pad(n) { return (n < 10 ? "0" : "") + n; }
 
+  // 最新一筆編號：不分種類，別人剛登記的也會跟著更新
+  function renderLatest() {
+    var el = document.getElementById("latest-number");
+    if (!el) return;
+    var latest = stats.latest;
+    el.querySelector("[data-latest='number']").textContent = latest ? latest.number : "（還沒有紀錄）";
+    el.querySelector("[data-latest='detail']").textContent = latest
+      ? "（" + (latest.kind || "未分類") + "，" + latest.by + "，" + latest.at + "）" : "";
+  }
+
   function render() {
+    renderLatest();
     var kind = stats.kinds[select.value];
     if (!kind) { box.hidden = true; return; }
     box.hidden = false;
