@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}人員名單{% endblock %}
 
@@ -67,9 +68,5 @@
 {% endblock %}
 
 {% block extra_js %}
-  <script>
-    document.getElementById("check-all")?.addEventListener("change", (e) => {
-      document.querySelectorAll(".row-check").forEach((box) => { box.checked = e.target.checked; });
-    });
-  </script>
+  <script src="{% static 'attendance/person_list.js' %}"></script>
 {% endblock %}

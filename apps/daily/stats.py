@@ -1,17 +1,43 @@
 """當日統計：計算規則和訂單統計一樣（orders.stats.summarize），只算沒重複的商品列。
 - 當日累計：作業日全部批次，用當天第一批的統計分組版本，00:00:00 的訂單用各自那批的匯入時間判斷前後。
 - 抽起的訂單（抽起中、或已轉到其他作業日）不算進當日累計和數字卡；每一批的表格照匯入時的樣子算。
-- 每一批：只算這批新出現的訂單；重複的另外列出。"""
+- 每一批：只算這批新出現的訂單；重複的另外列出。
+算好的結果暫存在記憶體（cache.py），資料沒變就不重算。"""
 
 from dataclasses import dataclass, field
 
-from django.db.models import Q
+from django.db.models import Count, Max, Q
 
 from apps.orders.stats import LINE_VALUES, NO_TIME, summarize, version_groups
 
+from .cache import remember
 from .models import DailyBatch, DailyHold, DailyLine, DailyOrder
 
 DAY_VALUES = (*LINE_VALUES, "batch__imported_at")
+
+
+def batch_key(batch):
+    """一批的指紋：批次本身加上目前的商品列數、最大 id（之後手動放回的訂單會掛進最新一批，列數就變了）。"""
+    return (batch.pk, batch.imported_at, batch.file_hash, batch.group_version_id, *batch.line_marks)
+
+
+def mark_lines(batches):
+    """每批記下目前的（商品列數, 最大 id），放在 batch.line_marks。"""
+    marks = {
+        batch_id: (count, last)
+        for batch_id, count, last in DailyLine.objects.filter(batch__in=batches).order_by()
+        .values("batch").annotate(count=Count("id"), last=Max("id")).values_list("batch", "count", "last")
+    }
+    for batch in batches:
+        batch.line_marks = marks.get(batch.pk, (0, 0))
+
+
+def day_key(batches):
+    """作業日的指紋：全部批次，加上這天商品列的訂單有哪些抽單紀錄、各是什麼狀態（抽起、放回會改變當日累計）。"""
+    holds = (
+        DailyHold.objects.filter(order__lines__batch__in=batches).order_by("pk").values_list("pk", "status").distinct()
+    )
+    return (batches[0].work_date, tuple(batch_key(batch) for batch in batches), tuple(holds))
 
 
 def day_stats(work_date):
@@ -19,19 +45,28 @@ def day_stats(work_date):
     batches = list(DailyBatch.objects.filter(work_date=work_date).select_related("group_version", "mapping_version", "imported_by"))
     if not batches:
         return [], None
-    groups = version_groups(batches[0].group_version)
-    lines = (
-        DailyLine.objects.filter(batch__work_date=work_date, is_duplicate=False).exclude(order__holds__status__in=DailyHold.EXCLUDED)
-        .values_list(*DAY_VALUES).iterator(chunk_size=5000)
-    )
-    return batches, summarize(lines, batches[0].imported_at, groups, work_date)
+    mark_lines(batches)
+
+    def compute():
+        groups = version_groups(batches[0].group_version)
+        lines = (
+            DailyLine.objects.filter(batch__work_date=work_date, is_duplicate=False).exclude(order__holds__status__in=DailyHold.EXCLUDED)
+            .values_list(*DAY_VALUES).iterator(chunk_size=5000)
+        )
+        return summarize(lines, batches[0].imported_at, groups, work_date).compact()
+
+    return batches, remember(("day", day_key(batches)), compute)
 
 
 def held_stats(batches, groups):
-    """作業日抽起中的訂單，用和當日累計一樣的規則歸組（數字卡上的「抽起 N」）。"""
+    """作業日抽起中的訂單，用和當日累計一樣的規則歸組（數字卡上的「抽起 N」）。batches 要是 day_stats 回傳的。"""
     work_date = batches[0].work_date
-    lines = DailyLine.objects.filter(batch__work_date=work_date, is_duplicate=False, order__holds__status=DailyHold.HELD)
-    return summarize(lines.values_list(*DAY_VALUES).iterator(chunk_size=5000), batches[0].imported_at, groups, work_date)
+
+    def compute():
+        lines = DailyLine.objects.filter(batch__work_date=work_date, is_duplicate=False, order__holds__status=DailyHold.HELD)
+        return summarize(lines.values_list(*DAY_VALUES).iterator(chunk_size=5000), batches[0].imported_at, groups, work_date).compact()
+
+    return remember(("held", day_key(batches)), compute)
 
 
 def order_place(order, groups):
@@ -63,9 +98,13 @@ def other_days(keyword, work_date):
 
 
 def batch_stats(batch, groups):
-    """一批新出現的訂單的統計。"""
-    lines = batch.lines.filter(is_duplicate=False).values_list(*LINE_VALUES).iterator(chunk_size=5000)
-    return summarize(lines, batch.imported_at, groups, batch.work_date)
+    """一批新出現的訂單的統計。batch 要是 day_stats 回傳的（帶著 line_marks）。"""
+
+    def compute():
+        lines = batch.lines.filter(is_duplicate=False).values_list(*LINE_VALUES).iterator(chunk_size=5000)
+        return summarize(lines, batch.imported_at, groups, batch.work_date).compact()
+
+    return remember(("batch", batch_key(batch)), compute)
 
 
 def duplicates(work_date):

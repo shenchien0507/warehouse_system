@@ -11,6 +11,7 @@
 
 from dataclasses import dataclass, field
 from datetime import date, time
+from functools import lru_cache
 
 from django.utils import timezone
 
@@ -21,22 +22,27 @@ UNGROUPED = "未分組"
 NO_TIME = "沒有下單時間"
 
 
-def local(value):
-    return timezone.localtime(value) if timezone.is_aware(value) else value
+# 以下判斷用的時間（下單時間、匯入時間）都要先轉成當地時間（summarize 每列轉一次）。
+
+
+def localizer():
+    """回傳把時間轉成當地時間的函式；時區只查一次（每列都查 timezone.localtime 很慢）。"""
+    tz = timezone.get_current_timezone()
+    return lambda value: value.astimezone(tz) if value is not None and timezone.is_aware(value) else value
 
 
 def date_only(order_time):
     """下單時間只有日期（00:00:00）。"""
-    return local(order_time).time() == time(0, 0)
+    return order_time.time() == time(0, 0)
 
 
+@lru_cache(maxsize=None)
 def labels(cutoff):
     text = cutoff.strftime("%H:%M")
     return f"{text} 前", f"{text} 後"
 
 
 def cutoff_period(cutoff, moment):
-    moment = local(moment)
     before, after = labels(cutoff)
     return before if (moment.hour, moment.minute) <= (cutoff.hour, cutoff.minute) else after
 
@@ -77,6 +83,7 @@ def find_group(groups, platform, shop, ship_type):
 class Count:
     orders: set = field(default_factory=set)
     rows: int = 0
+    frozen: int = None  # compact() 之後只留去重的數字，不留訂單號
 
     def add(self, order_no):
         self.orders.add(order_no)
@@ -84,11 +91,15 @@ class Count:
 
     @property
     def distinct(self):
-        return len(self.orders)
+        return self.frozen if self.orders is None else len(self.orders)
+
+    def freeze(self):
+        if self.orders is not None:
+            self.frozen, self.orders = len(self.orders), None
 
 
 def order_date(order_time):
-    return local(order_time).date() if order_time is not None else None
+    return order_time.date() if order_time is not None else None
 
 
 @dataclass
@@ -140,6 +151,12 @@ class Summary:
     rows_total: int = 0  # 最後一列的非去重：有列出非去重的分組加起來的列數
     rows_groups: list = field(default_factory=list)  # 有列出非去重的分組名稱
 
+    def compact(self):
+        """算完只留數字（不留每格的訂單號），暫存時省記憶體；之後不能再 add。"""
+        for row in (*self.groups, *self.daily, *self.details):
+            row.count.freeze()
+        return self
+
     @property
     def by_day(self):
         """[(日期, 當天訂單數, 當天的 GroupRow)]，給頁面一天一段顯示。"""
@@ -167,15 +184,27 @@ def summarize(lines, imported_at, groups, work_date=None):
     """lines：[(平台, 店鋪, 出貨類型, 下單時間, 訂單號)]，可再多一個這列的匯入時間（多批合在一起算時各批不同）；
     groups：依順序排好的 StatGroup（含 conditions）。"""
     groups = list(groups)
-    work_date = work_date or local(imported_at).date()
+    to_local = localizer()
+    imported_at = to_local(imported_at)
+    work_date = work_date or imported_at.date()
+    group_of, local_at = {}, {}  # 同樣的平台、店鋪、出貨類型歸到同一組；同一批的匯入時間只轉一次
     table, daily = {}, {}
     details = {}
     by_import_time, everyone, per_day = set(), set(), {}
     counted, rows_total = set(), 0
     for platform, shop, ship_type, order_time, order_no, *line_imported_at in lines:
-        at = line_imported_at[0] if line_imported_at else imported_at
+        at = imported_at
+        if line_imported_at:
+            at = local_at.get(line_imported_at[0])
+            if at is None:
+                at = local_at[line_imported_at[0]] = to_local(line_imported_at[0])
+        order_time = to_local(order_time)
         platform, shop, ship_type = platform or "", shop or "", ship_type or ""
-        group = find_group(groups, platform, shop, ship_type)
+        combo = (platform, shop, ship_type)
+        if combo in group_of:
+            group = group_of[combo]
+        else:
+            group = group_of[combo] = find_group(groups, platform, shop, ship_type)
         name = group.name if group else UNGROUPED
         show_rows = group.show_rows if group else False
         p = period(group, order_time, at, work_date)

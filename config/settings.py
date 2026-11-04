@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 
 import pymysql
@@ -162,3 +163,7 @@ AUTH_USER_MODEL = "accounts.User"
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "home"
 LOGOUT_REDIRECT_URL = "login"
+
+# 當日統計的計算結果暫存幾筆在記憶體（apps/daily/cache.py）；跑測試時不暫存，免得測試之間互相影響
+TESTING = len(sys.argv) > 1 and sys.argv[1] == "test"
+DAILY_STATS_CACHE_SIZE = 0 if TESTING else 64

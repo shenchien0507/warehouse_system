@@ -1,7 +1,7 @@
 from datetime import date, datetime, time, timedelta
 from unittest import mock
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -9,6 +9,7 @@ from apps.accounts.models import PagePermission
 from apps.accounts.testing import Level, make_user
 from apps.orders.tests import xlsx
 
+from . import cache, stats
 from .models import DailyBatch, DailyHold, DailyLine, DailyOrder
 
 HEADERS = ["交易平台", "交易序號", "出貨類型", "商品編號", "建立時間"]
@@ -334,3 +335,31 @@ class DailyTodayTests(TestCase):
         history = self.client.get(reverse("daily:day_detail", args=[tomorrow]))
         self.assertContains(history, "歷史紀錄")
         self.assertNotContains(history, 'name="file"')
+
+
+@override_settings(DAILY_STATS_CACHE_SIZE=64)
+class CachedDailyStatsTests(DailyStatsTests):
+    """開著暫存把當日統計的測試再跑一次：新批次、抽起、放回、刪批次、轉到其他作業日之後，數字都要跟著變。"""
+
+    def setUp(self):
+        cache.clear()
+        super().setUp()
+
+    def test_same_data_is_not_recomputed(self):
+        self.upload(MORNING, "10:00")
+        with mock.patch.object(stats, "summarize", wraps=stats.summarize) as summarize:
+            self.cards()
+            first = summarize.call_count  # 當日累計、抽起、每一批
+            self.cards()
+            self.assertEqual(summarize.call_count, first)  # 資料沒變：全部用暫存
+            self.hold("2")
+            self.cards()
+            self.assertEqual(summarize.call_count, first + 2)  # 抽起：當日累計、抽起重算，每一批的表格不變
+
+
+@override_settings(DAILY_STATS_CACHE_SIZE=64)
+class CachedDailyTodayTests(DailyTodayTests):
+    def setUp(self):
+        cache.clear()
+        super().setUp()
+

@@ -1,6 +1,6 @@
 # Warehouse System（倉儲系統）
 
-使用 Python + Django + MySQL 開發，並預留網路爬蟲與機器學習／資料分析所需套件。
+使用 Python + Django + MySQL 開發。網路爬蟲、資料分析的套件等需要時再加進 requirements.txt。
 
 ## 環境需求（Windows 10）
 

@@ -2,12 +2,13 @@ from datetime import timedelta
 from unittest import mock
 from urllib.parse import quote
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import PagePermission
 from apps.accounts.testing import Level, make_user
+from apps.daily import cache
 from apps.orders.tests import xlsx
 from apps.personnel.models import Employee
 from apps.records.models import Record
@@ -198,3 +199,13 @@ class TowerDetailTests(TowerBase):
     def test_refresh_url_carries_the_kind(self):
         response = self.client.get(URL, {"kind": "蝦皮隔日到貨"})
         self.assertIn("kind=", response.context["partial_url"])
+
+
+@override_settings(DAILY_STATS_CACHE_SIZE=64)
+class CachedTowerTests(TowerTests):
+    """開著當日統計的暫存再跑一次數據塔的測試。"""
+
+    def setUp(self):
+        cache.clear()
+        super().setUp()
+

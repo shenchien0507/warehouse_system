@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}建立工位安排{% endblock %}
 
@@ -104,110 +105,13 @@
 
 {% block extra_js %}
   {% if editable and rows and not previewing %}
-  <script>
-    (() => {
-      const tbody = document.getElementById("station-rows");
-      if (!tbody) return;
-      const rows = [...tbody.querySelectorAll("tr.person-row")];
-      const select = (row) => row.querySelector("select");
-      const visible = (row) => !row.hidden;
-      const checked = () => rows.filter((row) => visible(row) && row.querySelector(".row-check").checked);
-      const countText = document.getElementById("checked-count");
-      const applyButton = document.getElementById("bulk-apply");
-      const checkAll = document.getElementById("check-all");
-      const onlyUnassigned = document.getElementById("only-unassigned");
-
-      function refreshCount() {
-        const n = checked().length;
-        countText.textContent = n;
-        applyButton.disabled = n === 0;
-      }
-
-      function filter() {
-        rows.forEach((row) => {
-          row.hidden = onlyUnassigned.checked && select(row).value !== "";
-          if (row.hidden) row.querySelector(".row-check").checked = false;
-        });
-        tbody.querySelectorAll("tr.group-row").forEach((header) => {
-          header.hidden = !rows.some((row) => visible(row) && row.dataset.group === header.dataset.group);
-        });
-        refreshCount();
-      }
-
-      // 按工位分組：依目前選的工位排，「未安排」放最前面；切回按部門恢復原本順序
-      function regroup() {
-        tbody.querySelectorAll("tr.group-row").forEach((header) => header.remove());
-        const byStation = document.getElementById("group-station").checked;
-        const name = (row) => (select(row).value ? select(row).selectedOptions[0].text : "");
-        const sorted = [...rows].sort((a, b) =>
-          byStation ? name(a).localeCompare(name(b), "zh-Hant") || a.dataset.order - b.dataset.order : a.dataset.order - b.dataset.order
-        );
-        let current = null;
-        sorted.forEach((row) => {
-          row.dataset.group = byStation ? name(row) : "";
-          if (byStation && row.dataset.group !== current) {
-            current = row.dataset.group;
-            const count = sorted.filter((r) => name(r) === current).length;
-            const header = document.createElement("tr");
-            header.className = "group-row table-light";
-            header.dataset.group = current;
-            header.innerHTML = `<td colspan="6" class="fw-bold"></td>`;
-            header.firstChild.textContent = `${current || "未安排"}（${count} 人）`;
-            tbody.appendChild(header);
-          }
-          tbody.appendChild(row);
-        });
-        filter();
-      }
-
-      checkAll.addEventListener("change", () => {
-        rows.filter(visible).forEach((row) => { row.querySelector(".row-check").checked = checkAll.checked; });
-        refreshCount();
-      });
-      tbody.addEventListener("change", (e) => { if (e.target.classList.contains("row-check")) refreshCount(); });
-      applyButton.addEventListener("click", () => {
-        const value = document.getElementById("bulk-station").value;
-        checked().forEach((row) => { select(row).value = value; row.querySelector(".row-check").checked = false; });
-        checkAll.checked = false;
-        regroup();
-      });
-      document.querySelectorAll("input[name=group-mode]").forEach((radio) => radio.addEventListener("change", regroup));
-      onlyUnassigned.addEventListener("change", filter);
-      refreshCount();
-    })();
-  </script>
+  <script src="{% static 'attendance/station_rows.js' %}"></script>
   {% endif %}
   {% if editable %}
-  <script>
-    // 編輯頁開著時每分鐘延長編輯鎖；鎖被別人拿走（被強制解除後有人開始編輯）時提醒。
-    // 不是按頁面上的按鈕離開（例如點選單、關分頁）時放開編輯鎖。
-    (() => {
-      const url = "{% url 'attendance:station_lock' %}";
-      const csrf = document.querySelector("input[name=csrfmiddlewaretoken]").value;
-      const body = (action) => new URLSearchParams({ action, date: "{{ date|date:'Y-m-d' }}", csrfmiddlewaretoken: csrf });
-      let submitting = false;
-      document.querySelectorAll("form").forEach((form) => form.addEventListener("submit", () => { submitting = true; }));
-      document.querySelectorAll("a[href]").forEach((link) => {
-        if (link.href.includes("{% url 'attendance:station_new' %}")) link.addEventListener("click", () => { submitting = true; });
-      });
-      window.addEventListener("pagehide", () => { if (!submitting) navigator.sendBeacon(url, body("release")); });
-      const timer = setInterval(async () => {
-        try {
-          const response = await fetch(url, { method: "POST", body: body("touch") });
-          const data = await response.json();
-          if (!data.ok) {
-            clearInterval(timer);
-            alert("別人已經開始編輯工位安排，你這頁的修改將無法儲存。");
-          }
-        } catch (e) { /* 網路暫時斷線，下一分鐘再試 */ }
-      }, 60000);
-    })();
-  </script>
+  <script src="{% static 'attendance/station_lock.js' %}" data-lock-url="{% url 'attendance:station_lock' %}" data-date="{{ date|date:'Y-m-d' }}" data-new-url="{% url 'attendance:station_new' %}"></script>
   {% endif %}
 {% endblock %}
 
 {% block extra_css %}
-  <style>
-    .station-table select { width: 100%; min-width: 10rem; padding: .25rem .5rem; border: 1px solid #ced4da; border-radius: .375rem; }
-  </style>
+  <link rel="stylesheet" href="{% static 'attendance/station_form.css' %}">
 {% endblock %}
