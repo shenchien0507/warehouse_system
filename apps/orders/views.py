@@ -2,12 +2,13 @@
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.views.generic import DetailView, ListView, View
 
 from apps.backoffice.menu import MENU_BY_KEY, can_use
 
-from .batches import import_run
+from .batches import check_versions, import_run, read_file
 from .forms import ImportForm
 from .models import GroupVersion, ImportCategory, MappingVersion, StatRun
 from .stats import run_stats
@@ -25,6 +26,24 @@ class StatsPageMixin:
         context = super().get_context_data(**kwargs)
         context["menu_item"] = MENU_BY_KEY[self.page_key]
         return context
+
+
+class CheckFileView(StatsPageMixin, View):
+    """選好檔案當下先試讀一次（和匯入用同一套檢查），不寫入任何資料；回傳 JSON 給匯入頁顯示。"""
+
+    def post(self, request):
+        uploaded = request.FILES.get("file")
+        if uploaded is None:
+            return JsonResponse({"ok": False, "message": "沒有收到檔案。"})
+        version, _, message = check_versions()
+        if message:
+            return JsonResponse({"ok": False, "message": message})
+        result, outcome = read_file(version, uploaded)
+        if outcome.message:
+            errors = [[row_no, label, str(raw), error] for row_no, label, raw, error in outcome.errors]
+            return JsonResponse({"ok": False, "message": outcome.message, "errors": errors, "error_count": outcome.error_count})
+        orders = len({values["order_no"] for _, values in result.lines})
+        return JsonResponse({"ok": True, "message": f"檢查沒問題：{orders} 張訂單、{len(result.lines)} 列。"})
 
 
 class RunListView(StatsPageMixin, ListView):

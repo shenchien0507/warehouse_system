@@ -431,6 +431,24 @@ class ImportStatsTests(TestCase):
         self.assertFalse(StatRun.objects.exists())
         self.assertFalse(ImportBatch.objects.exists())
 
+    def test_check_file_before_import(self):
+        """選好檔案就先檢查：結果和匯入時一樣，但不寫入任何資料。"""
+        url = reverse("orders:check_file")
+        ok = self.client.post(url, {"file": xlsx(STAT_HEADERS, STAT_ROWS)}).json()
+        self.assertEqual(ok, {"ok": True, "message": "檢查沒問題：7 張訂單、10 列。"})
+        empty = self.client.post(url, {"file": xlsx(STAT_HEADERS, [])}).json()
+        self.assertEqual((empty["ok"], empty["message"]), (False, "檔案裡沒有資料列。"))
+        bad = self.client.post(url, {"file": xlsx(STAT_HEADERS, [["蝦皮購物", "", "蝦皮店到店", "A", ""]])}).json()
+        self.assertEqual((bad["ok"], bad["error_count"]), (False, 1))
+        self.assertEqual(bad["errors"][0][0], 2)
+        self.assertFalse(self.client.post(url).json()["ok"])
+        self.assertFalse(ImportBatch.objects.exists())
+        page = self.client.get(reverse("orders:run_list"))
+        self.assertContains(page, f'data-check-url="{url}"')
+        self.assertContains(page, "移除</button>", count=3)
+        self.client.login(username=make_user("staff", Level.STAFF).username, password="pw12345!")
+        self.assertEqual(self.client.post(url, {"file": xlsx(STAT_HEADERS, STAT_ROWS)}).status_code, 403)
+
     def test_needs_at_least_one_file(self):
         response = self.client.post(reverse("orders:run_list"), import_data())
         self.assertContains(response, "至少要放一份檔案")
