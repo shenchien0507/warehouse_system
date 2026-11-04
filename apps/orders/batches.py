@@ -1,4 +1,4 @@
-"""匯入訂單：一次可放多個分類的檔案，用目前生效的欄位對應版本讀；任何一份有錯就整次不匯入，只有欄名的空檔算 0 張。"""
+"""匯入訂單：一次可放多個分類的檔案，用目前生效的欄位對應版本讀；任何一份有錯就整次不匯入。"""
 
 from dataclasses import dataclass, field
 
@@ -57,7 +57,8 @@ def read_file(version, uploaded):
         return result, ImportOutcome(
             message=f"有 {result.error_count} 列資料有問題，請改好後重新匯入。", errors=result.errors, error_count=result.error_count,
         )
-    # 只有欄名、沒有資料列也照常匯入（例如當時沒有出貨中的訂單），這個分類記 0 張
+    if not result.lines:
+        return result, ImportOutcome(message="檔案裡沒有資料列。")
     return result, ImportOutcome()
 
 
