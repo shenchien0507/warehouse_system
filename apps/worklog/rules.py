@@ -5,6 +5,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.levels import allows
+from apps.attendance.models import Attendance
 from apps.personnel.models import Employee
 from apps.records.models import Record
 
@@ -65,6 +66,24 @@ def find_employee(employee_no):
     if employee is None:
         raise ValidationError(f"人員資料沒有在職的員工編號「{employee_no}」，不能登記。")
     return employee
+
+
+def check_station(stage, employee, date=None):
+    """設定裡這個階段有勾工位，員工那天（預設今天）的工位就要是其中一個，沒排工位或沒到班也擋下。
+    工位看到班紀錄的「當日工位」，也就是工位安排目前生效那批的結果。"""
+    allowed = WorklogSetting.load().stations_for(stage)
+    if not allowed:
+        return
+    date = date or timezone.localdate()
+    attendance = Attendance.objects.filter(employee=employee, date=date).select_related("station").first()
+    station = attendance.station if attendance else None
+    if station is None or station.pk not in {s.pk for s in allowed}:
+        now = station.name if station else ("未安排" if attendance else "今天沒有到班紀錄")
+        names = "、".join(s.name for s in allowed)
+        label = Stage(stage).label
+        raise ValidationError(
+            f"{employee.employee_no} {employee.name} 今天的工位是「{now}」，{label}只有工位是「{names}」的人可以登記。"
+        )
 
 
 def open_entry(stage, number, exclude=None):

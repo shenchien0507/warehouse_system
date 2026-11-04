@@ -57,6 +57,15 @@ class WorklogSetting(models.Model):
         "重複刷的間隔（秒）", default=10, validators=[MaxValueValidator(600)],
         help_text="同一個編號在同一個階段刷過之後，這幾秒內再刷會被擋下；填 0 不限制",
     )
+    # 員工編號當天工位（工位安排目前生效的那批）要在這裡面才能登記；沒勾任何工位 = 不限制
+    picking_stations = models.ManyToManyField(
+        "accounts.Station", verbose_name="撿貨可登記的工位", blank=True, related_name="+",
+        help_text="員工今天的工位要是勾選的其中一個，才能在撿貨登記刷開始或結束；都不勾 = 不限制",
+    )
+    allocation_stations = models.ManyToManyField(
+        "accounts.Station", verbose_name="配貨可登記的工位", blank=True, related_name="+",
+        help_text="員工今天的工位要是勾選的其中一個，才能在配貨登記刷開始或結束；都不勾 = 不限制",
+    )
 
     class Meta:
         verbose_name = "撿貨配貨設定"
@@ -68,3 +77,7 @@ class WorklogSetting(models.Model):
     @classmethod
     def load(cls):
         return cls.objects.get_or_create(pk=1)[0]
+
+    def stations_for(self, stage):
+        field = self.picking_stations if stage == Stage.PICKING else self.allocation_stations
+        return list(field.order_by("name"))

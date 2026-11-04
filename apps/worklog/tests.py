@@ -179,3 +179,59 @@ class RescanTests(TestCase):
         self.assertEqual(self.client.get(url).status_code, 200)
         self.client.post(url, {"rescan_seconds": 5})
         self.assertEqual(WorklogSetting.load().rescan_seconds, 5)
+
+
+class StationLimitTests(TestCase):
+    """設定勾了工位：員工今天的工位（工位安排目前生效的那批）不在裡面就不能登記。"""
+
+    def setUp(self):
+        from apps.accounts.models import Station
+        from apps.attendance.models import Attendance
+
+        PagePermission.objects.create(page_key="worklog-picking", label="撿貨登記", min_level=Level.STAFF)
+        self.user = make_user("P001", Level.STAFF)
+        self.client.login(username=self.user.username, password="pw12345!")
+        self.picking, self.warehouse = Station.objects.create(name="撿貨"), Station.objects.create(name="倉庫")
+        self.picker = Employee.objects.create(employee_no="T006", name="李傑宇")
+        self.keeper = Employee.objects.create(employee_no="T004", name="羅豪淑")
+        self.idle = Employee.objects.create(employee_no="T001", name="楊建冠")
+        Employee.objects.create(employee_no="T099", name="沒來的人")
+        today = timezone.localdate()
+        for employee, station in [(self.picker, self.picking), (self.keeper, self.warehouse), (self.idle, None)]:
+            Attendance.objects.create(employee=employee, date=today, station=station, created_by=self.user, updated_by=self.user)
+        Record.objects.create(number="N001", name="紙箱", quantity=1)
+        self.setting = WorklogSetting.objects.create(pk=1, rescan_seconds=0)
+        self.setting.picking_stations.set([self.picking])
+
+    def scan(self, employee_no):
+        return self.client.post(PICK, {"number": "N001", "employee_no": employee_no})
+
+    def test_other_station_unassigned_or_absent_is_blocked(self):
+        self.assertContains(self.scan("T004"), "今天的工位是「倉庫」，撿貨只有工位是「撿貨」的人可以登記")
+        self.assertContains(self.scan("T001"), "今天的工位是「未安排」")
+        self.assertContains(self.scan("T099"), "今天的工位是「今天沒有到班紀錄」")
+        self.assertFalse(WorkEntry.objects.exists())
+
+    def test_right_station_can_start_and_end_and_end_is_checked_too(self):
+        self.assertRedirects(self.scan("T006"), PICK)
+        self.assertContains(self.scan("T004"), "今天的工位是「倉庫」")
+        self.assertTrue(WorkEntry.objects.get().is_open)
+        self.scan("T006")
+        self.assertFalse(WorkEntry.objects.get().is_open)
+
+    def test_no_station_ticked_means_no_limit(self):
+        self.setting.picking_stations.clear()
+        self.assertRedirects(self.scan("T004"), PICK)
+
+    def test_edit_to_employee_of_other_station_is_blocked(self):
+        self.scan("T006")
+        url = reverse("worklog:picking_edit", args=[WorkEntry.objects.get().pk])
+        self.assertContains(self.client.post(url, {"number": "N001", "start_employee_no": "T004"}), "今天的工位是「倉庫」")
+
+    def test_setting_page_saves_stations(self):
+        self.client.login(username=make_user("root", Level.ADMIN).username, password="pw12345!")
+        url = reverse("worklog_manage:setting")
+        self.assertContains(self.client.get(url), "撿貨可登記的工位")
+        self.client.post(url, {"rescan_seconds": 0, "picking_stations": [self.picking.pk, self.warehouse.pk]})
+        self.assertEqual(set(self.setting.picking_stations.all()), {self.picking, self.warehouse})
+        self.assertFalse(self.setting.allocation_stations.exists())
