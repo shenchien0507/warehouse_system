@@ -1,6 +1,7 @@
 from urllib.parse import quote
 
 from django.contrib import messages
+from django.http import JsonResponse
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q
@@ -82,6 +83,19 @@ class RecordListView(RecordPageMixin, ListView):
         return context
 
 
+def kind_stats():
+    """新增登記頁的即時數字：{"day": 今天, "kinds": {種類: {"registered": 已登記, "total": 當日統計總數}}}。"""
+    day, cards = kind_cards()
+    return {"day": day.isoformat(), "kinds": {name: {"registered": done, "total": total} for name, done, total in cards}}
+
+
+class RecordKindStatsView(RecordPageMixin, View):
+    """新增登記頁每隔幾秒來拿一次最新數字（別人同時在登記、或當日統計剛匯入新訂單時會變）。"""
+
+    def get(self, request, *args, **kwargs):
+        return JsonResponse(kind_stats())
+
+
 class RecordGridView(RecordPageMixin, FormView):
     """像 Excel 的多列輸入：整列空白的略過，其他列全部正確才一起存，操作人是登入的帳號。"""
 
@@ -93,7 +107,7 @@ class RecordGridView(RecordPageMixin, FormView):
         choices = kind_choices(kind)
         if kind_names():
             choices[0] = ("", "請先選種類")
-        return super().get_context_data(kind_choices=choices, kind=kind, **kwargs)
+        return super().get_context_data(kind_choices=choices, kind=kind, kind_stats=kind_stats(), **kwargs)
 
     def get_success_url(self):
         return reverse("records:list") + (f"?kind={quote(self.kind)}" if self.kind else "")

@@ -28,7 +28,17 @@
           </select>
           <div class="form-text">這批登記的編號都歸在這個種類。</div>
         </div>
+        <div class="col-sm-6 col-lg-9 d-flex align-items-end">
+          <div class="kind-live w-100" id="kind-live" data-url="{% url 'records:kind_stats' %}" hidden>
+            <div class="kind-live-item"><div class="kind-live-label">當日統計總數</div><div class="kind-live-value" data-stat="total">–</div></div>
+            <div class="kind-live-item"><div class="kind-live-label">已登記</div><div class="kind-live-value" data-stat="registered">–</div></div>
+            <div class="kind-live-item"><div class="kind-live-label">這批</div><div class="kind-live-value" data-stat="batch">0</div></div>
+            <div class="kind-live-item"><div class="kind-live-label" data-stat="left-label">存完剩下</div><div class="kind-live-value" data-stat="left">–</div></div>
+            <div class="kind-live-note small text-muted" data-stat="note"></div>
+          </div>
+        </div>
       </div>
+      {{ kind_stats|json_script:"kind-stats-data" }}
     {% endif %}
     {% for error in form.non_form_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
     <div class="table-responsive">
@@ -59,4 +69,4 @@
 {% endblock %}
 
 {% block extra_css %}<link rel="stylesheet" href="{% static 'records/grid.css' %}">{% endblock %}
-{% block extra_js %}<script src="{% static 'records/grid.js' %}"></script>{% endblock %}
+{% block extra_js %}<script src="{% static 'records/grid.js' %}"></script>{% if not bulk_edit %}<script src="{% static 'records/kind_live.js' %}"></script>{% endif %}{% endblock %}

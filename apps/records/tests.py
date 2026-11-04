@@ -318,3 +318,15 @@ class RecordTests(TestCase):
         url = reverse("records:bulk_edit") + f"?ids={a.pk}&ids={b.pk}"
         self.assertContains(self.client.post(url, data), "多了 2")
         self.assertEqual(sorted(Record.objects.values_list("quantity", flat=True)), [10, 10])
+
+    def test_new_page_shows_live_numbers_for_kinds(self):
+        self.record(self.other, kind=KIND, quantity=5)
+        response = self.client.get(reverse("records:new") + f"?kind={quote(KIND)}")
+        self.assertContains(response, 'id="kind-live"')
+        self.assertEqual(response.context["kind_stats"]["kinds"][KIND], {"registered": 5, "total": 20})
+        data = self.client.get(reverse("records:kind_stats")).json()
+        self.assertEqual(data["kinds"][KIND], {"registered": 5, "total": 20})
+
+    def test_kind_stats_needs_page_permission(self):
+        self.client.logout()
+        self.assertNotEqual(self.client.get(reverse("records:kind_stats")).status_code, 200)
