@@ -16,3 +16,10 @@
   background: #0d6efd; border: 1px solid #fff; cursor: crosshair; touch-action: none; display: none;
 }
 .grid-cell.active .fill-handle { display: block; }
+/* 種類旁邊的即時數字 */
+.kind-live { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .25rem 1.5rem; padding: .4rem .75rem; border: 1px solid #dee2e6; border-radius: .375rem; background: #f8f9fa; }
+.kind-live-label { font-size: .8rem; color: #6c757d; }
+.kind-live-value { font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.kind-live-note { flex-basis: 100%; }
+.kind-live.is-over { border-color: #dc3545; background: #f8d7da; }
+.kind-live.is-over [data-stat="left"] { color: #dc3545; }
