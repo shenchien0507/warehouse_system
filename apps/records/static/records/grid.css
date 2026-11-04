@@ -23,3 +23,4 @@
 .kind-live-note { flex-basis: 100%; }
 .kind-live.is-over { border-color: #dc3545; background: #f8d7da; }
 .kind-live.is-over [data-stat="left"] { color: #dc3545; }
+.latest-number strong { font-variant-numeric: tabular-nums; }

@@ -38,6 +38,10 @@
           </div>
         </div>
       </div>
+      <div class="latest-number small mb-2" id="latest-number">
+        目前最新一筆編號：<strong data-latest="number">{{ kind_stats.latest.number|default:"（還沒有紀錄）" }}</strong>
+        <span class="text-muted" data-latest="detail">{% if kind_stats.latest %}（{{ kind_stats.latest.kind|default:"未分類" }}，{{ kind_stats.latest.by }}，{{ kind_stats.latest.at }}）{% endif %}</span>
+      </div>
       {{ kind_stats|json_script:"kind-stats-data" }}
     {% endif %}
     {% for error in form.non_form_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}

@@ -7,6 +7,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import FormView, ListView, UpdateView
@@ -83,10 +84,27 @@ class RecordListView(RecordPageMixin, ListView):
         return context
 
 
+def latest_record():
+    """最新登記的一筆（不分種類、不管編號格式），新增登記頁顯示它的編號，讓人知道編到哪了。"""
+    record = Record.objects.select_related("created_by").first()
+    if not record:
+        return None
+    return {
+        "number": record.number,
+        "kind": record.kind,
+        "by": record.created_by.username if record.created_by else "",
+        "at": timezone.localtime(record.created_at).strftime("%m-%d %H:%M"),
+    }
+
+
 def kind_stats():
-    """新增登記頁的即時數字：{"day": 今天, "kinds": {種類: {"registered": 已登記, "total": 當日統計總數}}}。"""
+    """新增登記頁的即時數字：{"day": 今天, "kinds": {種類: {"registered": 已登記, "total": 當日統計總數}}, "latest": 最新一筆}。"""
     day, cards = kind_cards()
-    return {"day": day.isoformat(), "kinds": {name: {"registered": done, "total": total} for name, done, total in cards}}
+    return {
+        "day": day.isoformat(),
+        "kinds": {name: {"registered": done, "total": total} for name, done, total in cards},
+        "latest": latest_record(),
+    }
 
 
 class RecordKindStatsView(RecordPageMixin, View):

@@ -327,6 +327,16 @@ class RecordTests(TestCase):
         data = self.client.get(reverse("records:kind_stats")).json()
         self.assertEqual(data["kinds"][KIND], {"registered": 5, "total": 20})
 
+    def test_new_page_shows_latest_number(self):
+        response = self.client.get(reverse("records:new"))
+        self.assertContains(response, "還沒有紀錄")
+        self.assertIsNone(self.client.get(reverse("records:kind_stats")).json()["latest"])
+        self.record(self.other, number="X-9", kind=KIND)
+        self.record(self.other, number="260104-031")
+        self.assertContains(self.client.get(reverse("records:new")), "260104-031")
+        latest = self.client.get(reverse("records:kind_stats")).json()["latest"]
+        self.assertEqual((latest["number"], latest["kind"]), ("260104-031", ""))
+
     def test_kind_stats_needs_page_permission(self):
         self.client.logout()
         self.assertNotEqual(self.client.get(reverse("records:kind_stats")).status_code, 200)
