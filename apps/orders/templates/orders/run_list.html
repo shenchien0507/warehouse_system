@@ -4,6 +4,8 @@
 
 {% block heading %}訂單統計{% endblock %}
 
+{% load static %}
+
 {% block content %}
   <div class="card mb-4">
     <div class="card-body">
@@ -13,16 +15,20 @@
         {% if active_version %}目前用欄位對應 {{ active_version }} 讀取{% if active_groups %}、統計分組 {{ active_groups }} 計算{% else %}，<span class="text-danger">但沒有生效的統計分組版本</span>{% endif %}。{% else %}<span class="text-danger">目前沒有生效的欄位對應版本，請先到後台設定。</span>{% endif %}
       </p>
       {% if form.non_field_errors %}
-        <div class="alert alert-danger py-2">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>
+        <div class="alert alert-danger py-2 server-error">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>
       {% endif %}
-      <form method="post" enctype="multipart/form-data" novalidate>
+      <form method="post" enctype="multipart/form-data" novalidate data-check-url="{% url 'orders:check_file' %}">
         {% csrf_token %}
         <div class="row g-3 mb-3">
           {% for field in form.file_fields %}
             <div class="col-md-4 wh-field{% if field.errors %} has-error{% endif %}">
               <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
-              {{ field }}
-              {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+              <div class="d-flex align-items-center gap-2">
+                {{ field }}
+                <button type="button" class="btn btn-sm btn-outline-secondary file-clear" data-target="{{ field.id_for_label }}" hidden>移除</button>
+              </div>
+              {% for error in field.errors %}<div class="invalid-feedback d-block server-error" data-for="{{ field.id_for_label }}">{{ error }}</div>{% endfor %}
+              <div class="file-check small mt-1" data-for="{{ field.id_for_label }}"></div>
             </div>
           {% endfor %}
         </div>
@@ -40,7 +46,7 @@
       </form>
       {% for category, problem in outcome.files %}
         {% if problem.errors %}
-          <div class="table-responsive mt-3">
+          <div class="table-responsive mt-3 server-error" data-for="id_file_{{ category.pk }}">
             <div class="fw-bold small mb-1">{{ category.name }}</div>
             <table class="table table-sm mb-0">
               <thead class="table-light"><tr><th>第幾列</th><th>欄位</th><th>檔案裡的值</th><th>問題</th></tr></thead>
@@ -81,3 +87,5 @@
   </div>
   {% include "components/_pagination.html" %}
 {% endblock %}
+
+{% block extra_js %}<script src="{% static 'orders/run_list.js' %}"></script>{% endblock %}

@@ -6,6 +6,7 @@ app_name = "orders"
 
 urlpatterns = [
     path("", views.RunListView.as_view(), name="run_list"),
+    path("check-file/", views.CheckFileView.as_view(), name="check_file"),
     path("<int:pk>/", views.RunDetailView.as_view(), name="run_detail"),
     path("<int:pk>/delete/", views.RunDeleteView.as_view(), name="run_delete"),
 ]
