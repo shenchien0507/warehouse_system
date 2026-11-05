@@ -124,8 +124,18 @@ class TowerTests(TowerBase):
         self.entry(Stage.PICKING, "乙", ended=True)
         self.entry(Stage.ALLOCATION, "乙", ended=True)
         data = tower()
-        self.assertEqual([(e.number, s) for e, s in data["active"]], [("甲", "撿貨")])
-        self.assertEqual([e.number for e in data["recent"]], ["乙"])
+        progress = {key: [e.number for e in entries] for key, _, _, entries, _ in data["progress"]}
+        self.assertEqual(progress, {"picking": ["甲"], "allocation": [], "done": ["乙"]})
+
+    def test_progress_shows_five_and_folds_the_rest(self):
+        self.import_day()
+        for i in range(7):
+            self.record(f"P{i}", 1, NEXT_DAY)
+            self.entry(Stage.PICKING, f"P{i}")
+        response = self.client.get(URL, {"partial": 1})
+        self.assertContains(response, "撿貨進行中")
+        self.assertContains(response, "其他 2 筆")
+        self.assertContains(response, 'data-key="picking"')
 
 
 class TowerPageTests(TestCase):
