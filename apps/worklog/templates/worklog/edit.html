@@ -7,6 +7,20 @@
   <p class="text-muted small">
     開始時間 {{ object.started_at|date:"Y-m-d H:i:s" }}，結束時間 {% if object.is_open %}（還沒結束）{% else %}{{ object.ended_at|date:"Y-m-d H:i:s" }}{% endif %}；時間由系統記錄，不能修改。
   </p>
+  {% if object.handovers %}
+    <div class="mb-3">
+      <div class="small fw-semibold mb-1">作業片段</div>
+      <table class="table table-sm w-auto small">
+        <thead class="table-light"><tr><th>員工</th><th>開始</th><th>結束</th><th></th></tr></thead>
+        <tbody>
+          {% for segment in object.handovers %}
+            <tr><td>{{ segment.employee.label }}</td><td>{{ segment.started_at|date:"H:i:s" }}</td><td>{{ segment.ended_at|date:"H:i:s"|default:"進行中" }}</td><td>{{ segment.get_outcome_display }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="form-text">修改開始員工會改第一段的人，修改結束員工會改最後一段的人；中間交接的人不能在這裡改。</div>
+    </div>
+  {% endif %}
   <div class="row">
     <div class="col-lg-6">
       {% include "components/_form.html" with form=form submit_text="儲存" cancel_url=page_url %}

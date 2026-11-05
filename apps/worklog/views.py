@@ -13,7 +13,7 @@ from apps.backoffice.menu import MENU_BY_KEY, can_use
 
 from .forms import EntryEditForm, ScanForm
 from .models import Stage, WorkEntry
-from .rules import can_edit, can_see_anomaly, scan
+from .rules import can_edit, can_see_anomaly, scan, sync_segments
 
 PAGE_KEYS = {Stage.PICKING: "worklog-picking", Stage.ALLOCATION: "worklog-allocation"}
 
@@ -48,12 +48,17 @@ class StagePageView(StagePageMixin, FormView):
         return {**super().get_form_kwargs(), "stage": self.stage}
 
     def form_valid(self, form):
-        entry, started = scan(self.stage, form.cleaned_data["number"], form.employee, self.request.user)
+        entry, action = scan(self.stage, form.cleaned_data["number"], form.employee, self.request.user)
         employee = form.employee
-        if started:
-            text = f"{entry.number} 開始（{employee.employee_no} {employee.name}，{timezone.localtime(entry.started_at):%H:%M:%S}）"
+        if action == "start":
+            text = f"{entry.number} 開始（{employee.label}，{timezone.localtime(entry.started_at):%H:%M:%S}）"
             if entry.anomaly and can_see_anomaly(self.request.user):
                 text += "；撿貨還沒刷結束，已標記異常"
+        elif action == "handover":
+            text = (
+                f"{entry.number} 由 {employee.label} 接手（原本是 {entry.handover_from.label}，"
+                f"{timezone.localtime():%H:%M:%S}）；做完請再刷一次"
+            )
         else:
             text = f"{entry.number} 結束（{employee.employee_no} {employee.name}，{timezone.localtime(entry.ended_at):%H:%M:%S}）"
         messages.success(self.request, text)
@@ -68,14 +73,19 @@ class StagePageView(StagePageMixin, FormView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         show_anomaly = self.stage == Stage.ALLOCATION and can_see_anomaly(self.request.user)
-        entries = WorkEntry.objects.filter(stage=self.stage).select_related("start_employee", "end_employee", "updated_by")
+        entries = (
+            WorkEntry.objects.filter(stage=self.stage)
+            .select_related("start_employee", "end_employee", "updated_by")
+            .prefetch_related("segments__employee")
+        )
         query = self.request.GET.get("q", "").strip()
         if query:
             entries = entries.filter(
                 Q(number__icontains=query)
                 | Q(start_employee__employee_no__icontains=query) | Q(start_employee__name__icontains=query)
                 | Q(end_employee__employee_no__icontains=query) | Q(end_employee__name__icontains=query)
-            )
+                | Q(segments__employee__employee_no__icontains=query) | Q(segments__employee__name__icontains=query)
+            ).distinct()
         only_anomaly = show_anomaly and self.request.GET.get("anomaly") == "1"
         if only_anomaly:
             entries = entries.filter(anomaly=True)
@@ -122,7 +132,9 @@ class EntryEditView(EntryObjectMixin, UpdateView):
     def form_valid(self, form):
         form.instance.updated_by = self.request.user
         messages.success(self.request, f"已修改「{form.instance}」。")
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        sync_segments(self.object)
+        return response
 
 
 class EntryDeleteView(EntryObjectMixin, View):

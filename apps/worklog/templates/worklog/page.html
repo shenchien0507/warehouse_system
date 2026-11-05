@@ -19,7 +19,7 @@
         </div>
         <div class="col-auto"><button type="submit" class="btn btn-primary">登記</button></div>
       </div>
-      <div class="form-text">同一個編號第一次登記是開始，再登記一次是結束，每個階段只登記一輪；開始、結束時間由系統記錄。編號要{% if stage == "picking" %}登記紀錄{% else %}撿貨{% endif %}有，員工編號要人員資料有，否則不能登記。</div>
+      <div class="form-text">同一個編號第一次登記是開始，同一個人再登記一次是結束；換別人登記是交接，由他接手，等他再登記一次才結束。每個階段只登記一輪；開始、結束時間由系統記錄。編號要{% if stage == "picking" %}登記紀錄{% else %}撿貨{% endif %}有，員工編號要人員資料有，否則不能登記。</div>
     </div>
   </form>
 
@@ -51,10 +51,15 @@
           {% with entry=row.entry %}
             <tr{% if show_anomaly and entry.anomaly %} class="table-danger"{% endif %}>
               <td>{{ entry.number }}</td>
-              <td>{{ entry.start_employee.employee_no }} {{ entry.start_employee.name }}</td>
+              <td>
+                {{ entry.start_employee.label }}
+                {% if entry.handovers %}
+                  <div class="small text-muted">交接：{% for segment in entry.handovers %}{% if not forloop.first %} → {{ segment.started_at|date:"H:i" }} {% endif %}{{ segment.employee.label }}{% endfor %}</div>
+                {% endif %}
+              </td>
               <td class="text-nowrap">{{ entry.started_at|date:"Y-m-d H:i:s" }}</td>
               {% if entry.is_open %}
-                <td colspan="2"><span class="badge text-bg-warning">進行中</span></td>
+                <td colspan="2"><span class="badge text-bg-warning">進行中</span>{% if entry.handovers %} <span class="small text-muted">目前：{{ entry.current_employee.label }}</span>{% endif %}</td>
               {% else %}
                 <td>{{ entry.end_employee.employee_no }} {{ entry.end_employee.name }}</td>
                 <td class="text-nowrap">{{ entry.ended_at|date:"Y-m-d H:i:s" }}</td>

@@ -9,7 +9,7 @@ from apps.attendance.models import Attendance
 from apps.personnel.models import Employee
 from apps.records.models import Record
 
-from .models import Stage, WorkEntry, WorklogSetting
+from .models import Stage, WorkEntry, WorklogSetting, WorkSegment
 
 # 每個階段的編號要先在哪裡出現過
 SOURCE_LABEL = {Stage.PICKING: "登記紀錄", Stage.ALLOCATION: "撿貨"}
@@ -52,9 +52,15 @@ def check_rescan(stage, number):
     last = WorkEntry.objects.filter(stage=stage, number=number).order_by("-started_at", "-pk").first()
     if not seconds or last is None:
         return
-    elapsed = (timezone.now() - (last.ended_at or last.started_at)).total_seconds()
+    segment = last.segments.order_by("-started_at", "-pk").first()
+    if last.ended_at:
+        last_time, action = last.ended_at, "結束"
+    elif segment is not None and segment.started_at > last.started_at:
+        last_time, action = segment.started_at, "接手"
+    else:
+        last_time, action = last.started_at, "開始"
+    elapsed = (timezone.now() - last_time).total_seconds()
     if elapsed < seconds:
-        action = "結束" if last.ended_at else "開始"
         raise ValidationError(
             f"編號「{number}」{int(elapsed)} 秒前剛刷過{action}，{seconds} 秒內再刷不算（可能是重複刷了），要記下一步請 {seconds - int(elapsed)} 秒後再刷。"
         )
@@ -94,22 +100,52 @@ def open_entry(stage, number, exclude=None):
 
 
 def scan(stage, number, employee, user):
-    """刷一次：同編號有還沒結束的就記結束，沒有就開一筆新的。回傳 (紀錄, 是否為開始)。"""
+    """刷一次，回傳 (紀錄, 動作)，動作是 "start"、"handover" 或 "end"：
+    - 同編號沒有還沒結束的：開一筆新的（第一段是這個人）
+    - 有還沒結束的，而且是目前負責的人刷：完成
+    - 有還沒結束的，換別人刷：交接，前一段記成交接，這個人開新的一段，等他再刷一次才完成"""
+    now = timezone.now()
     with transaction.atomic():
         entry = (
             WorkEntry.objects.select_for_update()
             .filter(stage=stage, number=number, ended_at__isnull=True)
             .first()
         )
-        if entry is not None:
-            entry.end_employee, entry.ended_at = employee, timezone.now()
+        if entry is None:
+            anomaly = stage == Stage.ALLOCATION and open_entry(Stage.PICKING, number) is not None
+            entry = WorkEntry.objects.create(
+                stage=stage, number=number, start_employee=employee, anomaly=anomaly, created_by=user
+            )
+            WorkSegment.objects.create(entry=entry, employee=employee, started_at=entry.started_at)
+            return entry, "start"
+        segment = entry.segments.filter(ended_at__isnull=True).order_by("-started_at", "-pk").first()
+        if segment is None:  # 理論上不會發生（每筆至少一段）；補一段給原本開始的人
+            segment = WorkSegment.objects.create(entry=entry, employee=entry.start_employee, started_at=entry.started_at)
+        if segment.employee_id == employee.pk:
+            segment.ended_at, segment.outcome = now, WorkSegment.DONE
+            segment.save(update_fields=["ended_at", "outcome"])
+            entry.end_employee, entry.ended_at = employee, now
             entry.save(update_fields=["end_employee", "ended_at"])
-            return entry, False
-        anomaly = stage == Stage.ALLOCATION and open_entry(Stage.PICKING, number) is not None
-        entry = WorkEntry.objects.create(
-            stage=stage, number=number, start_employee=employee, anomaly=anomaly, created_by=user
-        )
-        return entry, True
+            return entry, "end"
+        segment.ended_at, segment.outcome = now, WorkSegment.HANDOVER
+        segment.save(update_fields=["ended_at", "outcome"])
+        WorkSegment.objects.create(entry=entry, employee=employee, started_at=now)
+        entry.handover_from = segment.employee
+        return entry, "handover"
+
+
+def sync_segments(entry):
+    """修改登記的開始、結束員工後，第一段、最後一段（已完成的話）的員工跟著改。"""
+    segments = list(entry.segments.order_by("started_at", "pk"))
+    if not segments:
+        return
+    first, last = segments[0], segments[-1]
+    if first.employee_id != entry.start_employee_id:
+        first.employee_id = entry.start_employee_id
+        first.save(update_fields=["employee"])
+    if entry.ended_at and last.employee_id != entry.end_employee_id:
+        last.employee_id = entry.end_employee_id
+        last.save(update_fields=["employee"])
 
 
 def can_edit(user, entry):

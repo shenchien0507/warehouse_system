@@ -37,6 +37,11 @@ class Employee(models.Model):
     def __str__(self):
         return f"{self.employee_no} {self.name}"
 
+    @property
+    def label(self):
+        """畫面上顯示的「工號 姓名」。"""
+        return str(self)
+
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
         # 工號、姓名、聯絡資料、部門、職級以人員資料為準，有帳號時同步過去（管理員是帳號身分，不受影響）

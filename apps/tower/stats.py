@@ -73,7 +73,7 @@ class KindBoard:
 def latest_by_number(stage, numbers):
     """每個編號在這個階段最新的一筆登記。"""
     latest = {}
-    for entry in WorkEntry.objects.filter(stage=stage, number__in=numbers).select_related("start_employee", "end_employee").order_by("started_at", "pk"):
+    for entry in WorkEntry.objects.filter(stage=stage, number__in=numbers).select_related("start_employee", "end_employee").prefetch_related("segments__employee").order_by("started_at", "pk"):
         latest[entry.number] = entry
     return latest
 
