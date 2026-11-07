@@ -109,6 +109,27 @@ Django 內建的 http://127.0.0.1:8000/admin/ 只留給超級使用者緊急備�
 - 新增後台頁面：在 `apps/backoffice/menu.py` 的 `MENU` 加一筆，再寫繼承上述類別的 view（設定 `model`、`form_class`、`page_key`、`columns`…），可參考 `apps/personnel/views.py`。
 - 執行測試（不需要 MySQL）：`$env:DB_ENGINE="sqlite"; python manage.py test`
 
+## 讓其他設備臨時連進來（Cloudflare Tunnel）
+
+想讓手機、平板或別人的電腦在任何地方都能開，可以用 Cloudflare Tunnel 產生一個臨時的公開網址，不用註冊帳號。電腦、`runserver` 和 cloudflared 都要一直開著；重開 cloudflared 網址就會換一個。
+
+```powershell
+# 1. 安裝 cloudflared（裝完重開終端機）
+winget install --id Cloudflare.cloudflared
+
+# 2. 在 .env 加上這兩行
+#    DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,.trycloudflare.com
+#    DJANGO_CSRF_TRUSTED_ORIGINS=https://*.trycloudflare.com
+
+# 3. 照平常啟動
+python manage.py runserver
+
+# 4. 另開一個終端機
+cloudflared tunnel --url http://localhost:8000
+```
+
+畫面會印出一個 `https://xxxx.trycloudflare.com` 網址，任何設備打開就能用。網址是公開的，知道的人都能看到登入頁，用完記得關掉。
+
 ## 專案結構
 
 - `apps/`：所有功能模組（Django app）都放在這裡，新增 app 用 `python manage.py startapp 名稱 apps/名稱`；建立後把 `apps.py` 的 `name` 改成 `apps.名稱`，並加進 `INSTALLED_APPS`

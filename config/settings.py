@@ -35,6 +35,10 @@ DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
+# 用 https 網址從外面連進來（例如 Cloudflare Tunnel）時，登入等表單要信任這個來源，否則會 403
+# 例：DJANGO_CSRF_TRUSTED_ORIGINS=https://*.trycloudflare.com
+CSRF_TRUSTED_ORIGINS = [o for o in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if o]
+
 
 # Application definition
 
