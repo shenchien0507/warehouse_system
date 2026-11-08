@@ -6,6 +6,8 @@ from django.db import models
 # 職級排序的範圍；不用 0，因為沒設定職級的人在比較時當成 0
 RANK_MIN, RANK_MAX = 1, 100
 
+INACTIVE_HELP = "取消勾選＝停用：新的選單不再出現，已經用到的舊紀錄照樣保留。"
+
 
 class Level(models.Model):
     """職級，由管理員在後台「職級」新增、改名、調整高低。排序數字越大職級越高，權限依高低判斷。
@@ -18,6 +20,7 @@ class Level(models.Model):
         validators=[MinValueValidator(RANK_MIN), MaxValueValidator(RANK_MAX)],
         help_text=f"{RANK_MIN}–{RANK_MAX}，數字越大職級越高，例如員工 10、組長 20",
     )
+    is_active = models.BooleanField("啟用", default=True, help_text=INACTIVE_HELP)
 
     class Meta:
         verbose_name = "職級"
@@ -33,7 +36,7 @@ class Level(models.Model):
 
 def lowest_level_id():
     """新人員預設最低的職級。"""
-    return Level.objects.order_by("rank").values_list("pk", flat=True).first()
+    return Level.objects.filter(is_active=True).order_by("rank").values_list("pk", flat=True).first()
 
 
 class LevelRule(models.Model):
@@ -56,6 +59,7 @@ class LevelRule(models.Model):
 
 class Department(models.Model):
     name = models.CharField("部門名稱", max_length=50, unique=True)
+    is_active = models.BooleanField("啟用", default=True, help_text=INACTIVE_HELP)
 
     class Meta:
         verbose_name = "部門"
@@ -69,6 +73,7 @@ class Station(models.Model):
     """工位和部門、職級各自獨立，任何部門的人都可以排到任何工位。"""
 
     name = models.CharField("工位名稱", max_length=50, unique=True)
+    is_active = models.BooleanField("啟用", default=True, help_text=INACTIVE_HELP)
 
     class Meta:
         verbose_name = "工位"

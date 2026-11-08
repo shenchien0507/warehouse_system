@@ -86,6 +86,31 @@ class CrudTests(BackofficeTestCase):
         self.assertContains(response, "不能刪除")
         self.assertTrue(Department.objects.filter(pk=dept.pk).exists())
 
+    def test_delete_protected_shows_which_data_uses_it(self):
+        dept = Department.objects.create(name="現場部")
+        for no in ["P001", "P002", "P003", "P004"]:
+            Employee.objects.create(employee_no=no, name=f"員工{no}", department=dept)
+        response = self.client.post(reverse("accounts_manage:department_delete", args=[dept.pk]), follow=True)
+        self.assertContains(response, "人員（部門） 4 筆")
+        self.assertContains(response, " 等")
+
+    def test_inactive_choices_hidden_but_current_value_kept(self):
+        active = Department.objects.create(name="現場部")
+        old = Department.objects.create(name="舊部門", is_active=False)
+        response = self.client.get(reverse("personnel:employee_create"))
+        choices = list(response.context["form"].fields["department"].queryset)
+        self.assertIn(active, choices)
+        self.assertNotIn(old, choices)
+        employee = Employee.objects.create(employee_no="P009", name="老員工", department=old)
+        response = self.client.get(reverse("personnel:employee_edit", args=[employee.pk]))
+        self.assertIn(old, list(response.context["form"].fields["department"].queryset))
+
+    def test_station_can_be_deactivated(self):
+        station = Station.objects.create(name="出貨")
+        self.client.post(reverse("accounts_manage:station_edit", args=[station.pk]), {"name": "出貨"})
+        station.refresh_from_db()
+        self.assertFalse(station.is_active)
+
     def test_station_is_independent_of_department(self):
         self.client.post(reverse("accounts_manage:station_create"), {"name": "撿貨"})
         self.assertEqual(Station.objects.get().name, "撿貨")

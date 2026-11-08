@@ -32,6 +32,7 @@ class LevelList(LevelMixin, ManageListView):
         ("排序", "rank"),
         ("在職人員", lambda o: o.employee_count),
         ("啟用中的系統帳號", lambda o: o.user_count),
+        ("啟用", "is_active"),
     ]
     create_url_name = "accounts_manage:level_create"
     edit_url_name = "accounts_manage:level_edit"
@@ -47,7 +48,7 @@ class LevelList(LevelMixin, ManageListView):
         context = super().get_context_data(**kwargs)
         context["note"] = (
             "排序數字越大職級越高。頁面權限、職級規則都依高低判斷，非管理員只能管理比自己低的職級。"
-            "還有人員、帳號或設定在用的職級不能刪除。管理員是系統帳號上的身分，不在這裡。"
+            "還有人員、帳號或設定在用的職級不能刪除，可以改成停用。管理員是系統帳號上的身分，不在這裡。"
         )
         return context
 
@@ -119,11 +120,16 @@ class DepartmentMixin:
 
 class DepartmentList(DepartmentMixin, ManageListView):
     queryset = Department.objects.order_by("name")
-    columns = [("部門名稱", "name")]
+    columns = [("部門名稱", "name"), ("啟用", "is_active")]
     search_fields = ["name"]
     create_url_name = "accounts_manage:department_create"
     edit_url_name = "accounts_manage:department_edit"
     delete_url_name = "accounts_manage:department_delete"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["note"] = "還有資料在用的不能刪除，可以按「編輯」取消勾選「啟用」改成停用：新的選單不再出現，舊紀錄照樣保留。"
+        return context
 
 
 class DepartmentCreate(DepartmentMixin, ManageCreateView):
@@ -147,11 +153,16 @@ class StationMixin:
 
 class StationList(StationMixin, ManageListView):
     queryset = Station.objects.order_by("name")
-    columns = [("工位名稱", "name")]
+    columns = [("工位名稱", "name"), ("啟用", "is_active")]
     search_fields = ["name"]
     create_url_name = "accounts_manage:station_create"
     edit_url_name = "accounts_manage:station_edit"
     delete_url_name = "accounts_manage:station_delete"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["note"] = "還有資料在用的不能刪除，可以按「編輯」取消勾選「啟用」改成停用：新的選單不再出現，舊紀錄照樣保留。"
+        return context
 
 
 class StationCreate(StationMixin, ManageCreateView):

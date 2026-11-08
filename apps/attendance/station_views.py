@@ -14,6 +14,7 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from apps.accounts.levels import allows
+from apps.accounts.choices import hide_inactive_choices
 from apps.accounts.models import Station
 
 from . import locks
@@ -124,7 +125,7 @@ class StationCreateView(StationScopeMixin, TemplateView):
         editable = can_arrange(self.request.user, date)
         rows = []
         for record in records:
-            form = StationAssignForm(data, prefix=f"a{record.pk}", initial={"station": record.station})
+            form = hide_inactive_choices(StationAssignForm(data, prefix=f"a{record.pk}", initial={"station": record.station}))
             if not editable:
                 form.fields["station"].disabled = True
             rows.append({"record": record, "form": form})
@@ -208,7 +209,7 @@ class StationCreateView(StationScopeMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        stations = Station.objects.order_by("name")
+        stations = Station.objects.filter(is_active=True).order_by("name")
         context.update(
             date=self.date, is_today=self.date == timezone.localdate(), stations=stations,
             lock_minutes=StationEditLock.LOCK_MINUTES,
