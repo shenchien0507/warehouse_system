@@ -37,7 +37,7 @@ def lowest_level_id():
 
 
 class LevelRule(models.Model):
-    """程式裡依職級判斷的規則（例如「可登記全部部門」），門檻職級由管理員在後台「職級規則」設定。
+    """程式裡依職級判斷的規則（例如「修改之前日期」），門檻職級由管理員在後台「職級規則」設定。
     規則代碼列在 apps/accounts/levels.py 的 RULES；沒設門檻代表只有管理員可以。"""
 
     code = models.SlugField("規則代碼", max_length=50, unique=True)
@@ -54,19 +54,8 @@ class LevelRule(models.Model):
         return self.code
 
 
-class Department(models.Model):
-    name = models.CharField("部門名稱", max_length=50, unique=True)
-
-    class Meta:
-        verbose_name = "部門"
-        verbose_name_plural = "部門"
-
-    def __str__(self):
-        return self.name
-
-
 class Station(models.Model):
-    """工位和部門、職級各自獨立，任何部門的人都可以排到任何工位。"""
+    """工位和職級各自獨立，任何人都可以排到任何工位。"""
 
     name = models.CharField("工位名稱", max_length=50, unique=True)
 
@@ -90,9 +79,6 @@ class User(AbstractUser):
         Level, verbose_name="職級", null=True, blank=True, on_delete=models.PROTECT, related_name="users"
     )
     is_admin = models.BooleanField("管理員", default=False, help_text="管理員可以使用所有頁面、做所有操作，不受職級限制")
-    department = models.ForeignKey(
-        Department, verbose_name="部門", null=True, blank=True, on_delete=models.PROTECT, related_name="users"
-    )
 
     class Meta:
         verbose_name = "使用者"
@@ -118,14 +104,11 @@ class User(AbstractUser):
 
 
 class PagePermission(models.Model):
-    """某個頁面開放給哪些部門、最低職級。由管理員在後台「頁面權限」調整，新增功能不必改程式。"""
+    """某個頁面開放的最低職級。由管理員在後台「頁面權限」調整，新增功能不必改程式。"""
 
     page_key = models.SlugField("頁面代碼", max_length=50, unique=True)
     label = models.CharField("頁面名稱", max_length=50)
     min_level = models.ForeignKey(Level, verbose_name="最低職級", on_delete=models.PROTECT, related_name="+")
-    departments = models.ManyToManyField(
-        Department, verbose_name="開放部門", blank=True, help_text="不選代表所有部門皆可"
-    )
 
     class Meta:
         verbose_name = "頁面權限"
@@ -141,8 +124,4 @@ class PagePermission(models.Model):
             return False
         if is_admin(user):
             return True
-        if not reaches(user, self.min_level):
-            return False
-        if not self.departments.exists():
-            return True
-        return user.department_id is not None and self.departments.filter(pk=user.department_id).exists()
+        return reaches(user, self.min_level)

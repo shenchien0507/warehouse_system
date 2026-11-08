@@ -33,7 +33,6 @@ MENU = [
     # 暫時的測試資料產生，正式開發完成後移除
     MenuItem("test-data", "測試資料產生", "testdata:generate", TOOLS_GROUP, admin_only=True, section="feature"),
     MenuItem("manage-levels", "職級", "accounts_manage:level_list", "組織", admin_only=True),
-    MenuItem("manage-departments", "部門", "accounts_manage:department_list", "組織"),
     MenuItem("manage-stations", "工位", "accounts_manage:station_list", "組織"),
     MenuItem("manage-employees", "人員資料", "personnel:employee_list", "帳號與權限"),
     MenuItem("manage-users", "系統帳號", "accounts_manage:user_list", "帳號與權限"),

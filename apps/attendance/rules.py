@@ -3,23 +3,20 @@
 from django.utils import timezone
 
 from apps.accounts.levels import allows
-from apps.accounts.models import Department
 from apps.personnel.models import Employee
 
 
+def can_register_any(user):
+    """符合「登記人員」規則的人可以登記所有人員（到班人數與名單也是這個範圍）。"""
+    return allows(user, "attendance-register")
+
+
 def employees_in_scope(user):
-    """可以登記的人員（到班人數與名單也是這個範圍）：可登記全部部門的看全部（含未設定部門），可登記自己部門的只看自己部門。"""
-    if allows(user, "attendance-register-all"):
-        return Employee.objects.all()
-    if allows(user, "attendance-register-own") and user.department_id:
-        return Employee.objects.filter(department_id=user.department_id)
-    return Employee.objects.none()
+    return Employee.objects.all() if can_register_any(user) else Employee.objects.none()
 
 
 def can_register(user, employee):
-    if allows(user, "attendance-register-all"):
-        return True
-    return allows(user, "attendance-register-own") and bool(user.department_id) and employee.department_id == user.department_id
+    return can_register_any(user)
 
 
 def can_add(user, date):
@@ -38,15 +35,6 @@ def can_void(user, event):
     if allows(user, "attendance-past-dates"):
         return True
     return date == timezone.localdate() and event.created_by_id == user.pk
-
-
-def station_departments(user):
-    """工位安排的範圍：能不能進這頁由頁面權限決定；可安排全部部門的人看全部，其他人只能安排自己的部門。"""
-    if allows(user, "attendance-stations-all"):
-        return Department.objects.order_by("name")
-    if user.department_id:
-        return Department.objects.filter(pk=user.department_id)
-    return Department.objects.none()
 
 
 def can_arrange(user, date):

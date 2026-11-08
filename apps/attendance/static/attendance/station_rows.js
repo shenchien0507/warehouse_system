@@ -27,7 +27,7 @@
     refreshCount();
   }
 
-  // 按工位分組：依目前選的工位排，「未安排」放最前面；切回按部門恢復原本順序
+  // 按工位分組：依目前選的工位排，「未安排」放最前面；切回按工號恢復原本順序
   function regroup() {
     tbody.querySelectorAll("tr.group-row").forEach((header) => header.remove());
     const byStation = document.getElementById("group-station").checked;
@@ -44,7 +44,7 @@
         const header = document.createElement("tr");
         header.className = "group-row table-light";
         header.dataset.group = current;
-        header.innerHTML = `<td colspan="6" class="fw-bold"></td>`;
+        header.innerHTML = `<td colspan="5" class="fw-bold"></td>`;
         header.firstChild.textContent = `${current || "未安排"}（${count} 人）`;
         tbody.appendChild(header);
       }

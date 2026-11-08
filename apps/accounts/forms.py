@@ -6,13 +6,7 @@ from apps.backoffice.menu import MENU, MENU_BY_KEY
 from apps.personnel.models import Employee
 
 from .levels import is_admin, levels_below
-from .models import RANK_MAX, RANK_MIN, Department, Level, LevelRule, PagePermission, Station, User
-
-
-class DepartmentForm(forms.ModelForm):
-    class Meta:
-        model = Department
-        fields = ["name"]
+from .models import RANK_MAX, RANK_MIN, Level, LevelRule, PagePermission, Station, User
 
 
 class StationForm(forms.ModelForm):
@@ -40,7 +34,7 @@ class EmployeeChoiceField(forms.ModelChoiceField):
 
 
 class UserCreateForm(UserCreationForm):
-    """帳號一定要先有人員資料：工號、姓名、電話、部門、職級都取自人員資料，不在這裡另外填。
+    """帳號一定要先有人員資料：工號、姓名、電話、職級都取自人員資料，不在這裡另外填。
     要設成管理員，建立後再到帳號編輯修改。"""
 
     employee = EmployeeChoiceField(
@@ -70,8 +64,8 @@ class UserCreateForm(UserCreationForm):
     def save(self, commit=True):
         employee = self.cleaned_data["employee"]
         user = super().save(commit=False)
-        user.username, user.name, user.phone, user.department, user.level = (
-            employee.employee_no, employee.name, employee.phone, employee.department, employee.level,
+        user.username, user.name, user.phone, user.level = (
+            employee.employee_no, employee.name, employee.phone, employee.level,
         )
         if commit:
             with transaction.atomic():
@@ -82,12 +76,12 @@ class UserCreateForm(UserCreationForm):
 
 
 class UserUpdateForm(forms.ModelForm):
-    """有人員資料的帳號，工號、姓名、電話、部門、職級要到人員資料修改；沒有人員資料的舊帳號可直接改。
+    """有人員資料的帳號，工號、姓名、電話、職級要到人員資料修改；沒有人員資料的舊帳號可直接改。
     「管理員」是帳號身分，只有管理員能設定，也不能取消自己的管理員。非管理員只能設比自己低的職級。"""
 
     class Meta:
         model = User
-        fields = ["username", "name", "phone", "email", "level", "department", "is_admin", "is_active"]
+        fields = ["username", "name", "phone", "email", "level", "is_admin", "is_active"]
 
     def __init__(self, *args, editor, **kwargs):
         super().__init__(*args, **kwargs)
@@ -97,7 +91,7 @@ class UserUpdateForm(forms.ModelForm):
         if not is_admin(editor) or self.instance.pk == editor.pk or self.instance.is_superuser:
             self.fields["is_admin"].disabled = True
         if hasattr(self.instance, "employee"):
-            for field in ("name", "phone", "department", "level"):
+            for field in ("name", "phone", "level"):
                 self.fields[field].disabled = True
                 self.fields[field].help_text = "請到「人員資料」修改"
 
@@ -111,8 +105,7 @@ class PagePermissionForm(forms.ModelForm):
 
     class Meta:
         model = PagePermission
-        fields = ["page_key", "min_level", "departments"]
-        widgets = {"departments": forms.CheckboxSelectMultiple}
+        fields = ["page_key", "min_level"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

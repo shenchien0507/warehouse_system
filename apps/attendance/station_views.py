@@ -1,6 +1,4 @@
-"""工位安排：依部門安排到班人員的工位，每次確認儲存記成一批；同時只能一個人編輯（編輯鎖）。"""
-
-from collections import Counter
+"""工位安排：安排到班人員的工位，每次確認儲存記成一批；同時只能一個人編輯（編輯鎖）。"""
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
@@ -20,33 +18,18 @@ from . import locks
 from .forms import DateForm, StationAssignForm
 from .models import Attendance, StationBatch, StationBatchEntry, StationEditLock
 from .records import batch_diff, changes_since, same_entries, station_counts, timeline
-from .rules import can_arrange, station_departments
+from .rules import can_arrange
 from .views import PageMixin
 
 
-class StationScopeMixin(PageMixin):
+class StationPageMixin(PageMixin):
     page_key = "attendance-stations"
 
-    def check_scope(self, user):
-        return allows(user, "attendance-stations-all") or bool(user.department_id)
 
-    def in_scope(self, queryset, field="employee__department__in"):
-        """可安排全部部門的人看全部，其他人只看自己部門。"""
-        if not allows(self.request.user, "attendance-stations-all"):
-            queryset = queryset.filter(**{field: station_departments(self.request.user)})
-        return queryset
-
-    def can_see(self, employee):
-        user = self.request.user
-        if not hasattr(self, "_scope_ids"):
-            self._scope_ids = set(station_departments(user).values_list("pk", flat=True))
-        return allows(user, "attendance-stations-all") or employee.department_id in self._scope_ids
-
-
-class StationListView(StationScopeMixin, TemplateView):
+class StationListView(StationPageMixin, TemplateView):
     """工位安排首頁：按「建立安排」才進入編輯。上方是各工位人數，以及目前生效的批次之後誰離開、誰新到；
-    下方可切換「批次」（各部門、各工位人數、和上一批的差別，可展開看詳細工位）與「時間軸」。
-    別人建立的批次裡，自己範圍內的人完全沒變的不列出。"""
+    下方可切換「批次」（各工位人數、和上一批的差別，可展開看詳細工位）與「時間軸」。
+    人員和工位跟上一批完全一樣的批次不列出。"""
 
     template_name = "attendance/stations.html"
 
@@ -56,17 +39,15 @@ class StationListView(StationScopeMixin, TemplateView):
         is_today = date == timezone.localdate()
         view = "timeline" if self.request.GET.get("view") == "timeline" else "batches"
         batches = StationBatch.objects.filter(date=date).select_related("created_by").prefetch_related(
-            "entries__employee__department", "entries__employee__level", "entries__station"
+            "entries__employee__level", "entries__station"
         )
         rows = []
         for batch in batches:
-            entries = [e for e in batch.entries.all() if self.can_see(e.employee)]
+            entries = sorted(batch.entries.all(), key=lambda e: e.employee.employee_no)
             if not entries:
                 continue
-            entries.sort(key=lambda e: (e.employee.department.name if e.employee.department else "", e.employee.employee_no))
-            counts = Counter(e.employee.department.name if e.employee.department else "未設定部門" for e in entries)
             rows.append({
-                "batch": batch, "entries": entries, "total": len(entries), "departments": sorted(counts.items()),
+                "batch": batch, "entries": entries, "total": len(entries),
                 "stations": station_counts(e.station for e in entries),
             })
         rows = [row for i, row in enumerate(rows) if i + 1 == len(rows) or not same_entries(row["entries"], rows[i + 1]["entries"])]
@@ -74,9 +55,7 @@ class StationListView(StationScopeMixin, TemplateView):
             row["diff"] = batch_diff(row["entries"], rows[i + 1]["entries"] if i + 1 < len(rows) else None)
         changes, stations = [], None
         if is_today:
-            on_site = list(self.in_scope(
-                Attendance.objects.filter(date=date, on_site=True).select_related("employee__department", "station")
-            ))
+            on_site = list(Attendance.objects.filter(date=date, on_site=True).select_related("employee", "station"))
             stations = station_counts(r.station for r in on_site)
             context["on_site_count"] = len(on_site)
         if rows:
@@ -91,8 +70,8 @@ class StationListView(StationScopeMixin, TemplateView):
         context.update(
             date=date, batches=rows, changes=changes, view=view, is_today=is_today, stations=stations,
             can_arrange=can_arrange(user, date), can_create=can_arrange(user, date) and not lock,
-            lock=lock, lock_minutes=StationEditLock.LOCK_MINUTES, can_force_unlock=bool(lock) and allows(user, "attendance-stations-all"),
-            timeline=timeline(date, self.can_see) if view == "timeline" else None,
+            lock=lock, lock_minutes=StationEditLock.LOCK_MINUTES, can_force_unlock=bool(lock) and allows(user, "attendance-stations-unlock"),
+            timeline=timeline(date) if view == "timeline" else None,
         )
         return context
 
@@ -105,21 +84,20 @@ class StationListView(StationScopeMixin, TemplateView):
             entry.gone_at = record.clock_out if record else None
 
 
-class StationCreateView(StationScopeMixin, TemplateView):
+class StationCreateView(StationPageMixin, TemplateView):
     """建立安排：今天列出目前在場的人，之前的日期列出當天上過班的人；手動安排當日工位。
     改完先列出變更，確認後批次儲存並建立一筆批次紀錄。
     工位沒改、但名單和目前生效的批次不同（有人離開或新到）也算變更，可以建立新批次。
-    同一時間只有一個帳號能編輯（編輯鎖）；新批次會帶上目前生效批次裡自己範圍以外的人，
-    所以最新的一批永遠是全部部門的完整安排。"""
+    同一時間只有一個帳號能編輯（編輯鎖）。"""
 
     template_name = "attendance/station_form.html"
 
     def build_rows(self, date, data=None):
         here = {"on_site": True} if date == timezone.localdate() else {"clock_in__isnull": False}
-        records = self.in_scope(
+        records = (
             Attendance.objects.filter(date=date, **here)
-            .select_related("employee__department", "station")
-            .order_by("employee__department__name", "employee__employee_no")
+            .select_related("employee", "station")
+            .order_by("employee__employee_no")
         )
         editable = can_arrange(self.request.user, date)
         rows = []
@@ -176,12 +154,9 @@ class StationCreateView(StationScopeMixin, TemplateView):
                 record.station = change["new"]
                 record.updated_by = request.user
                 record.save()
-            latest = StationBatch.objects.filter(date=self.date).prefetch_related("entries__employee").first()
-            others = [e for e in latest.entries.all() if not self.can_see(e.employee)] if latest else []
             batch = StationBatch.objects.create(date=self.date, created_by=request.user)
             StationBatchEntry.objects.bulk_create(
                 [StationBatchEntry(batch=batch, employee=row["record"].employee, station=row["form"].cleaned_data["station"]) for row in rows]
-                + [StationBatchEntry(batch=batch, employee=e.employee, station=e.station) for e in others]
             )
         locks.release(request.user)
         roster = "、".join(text for text in (f"離開 {len(left)} 人" if left else "", f"新到 {len(arrived)} 人" if arrived else "") if text)
@@ -191,7 +166,7 @@ class StationCreateView(StationScopeMixin, TemplateView):
     def roster_changes(self, rows):
         """和目前生效的批次比，誰已經不在名單上、誰是新到的。當天還沒有批次時，所有人都算新到。"""
         latest = StationBatch.objects.filter(date=self.date).prefetch_related("entries__employee").first()
-        before = {e.employee_id: e.employee for e in latest.entries.all() if self.can_see(e.employee)} if latest else {}
+        before = {e.employee_id: e.employee for e in latest.entries.all()} if latest else {}
         now = {row["record"].employee_id for row in rows}
         left = [employee for pk, employee in before.items() if pk not in now]
         arrived = [row["record"].employee for row in rows if row["record"].employee_id not in before]
@@ -216,9 +191,9 @@ class StationCreateView(StationScopeMixin, TemplateView):
         return context
 
 
-class StationLockView(StationScopeMixin, View):
+class StationLockView(StationPageMixin, View):
     """編輯鎖：編輯頁每分鐘呼叫一次延長（touch）、離開頁面時放開（release）；
-    可安排全部部門的人可以強制解除別人的鎖（force）。"""
+    符合「強制解除編輯鎖」規則的人可以強制解除別人的鎖（force）。"""
 
     def post(self, request, *args, **kwargs):
         action = request.POST.get("action")
@@ -226,7 +201,7 @@ class StationLockView(StationScopeMixin, View):
             locks.release(request.user)
             return JsonResponse({"ok": True})
         if action == "force":
-            if not allows(request.user, "attendance-stations-all"):
+            if not allows(request.user, "attendance-stations-unlock"):
                 raise PermissionDenied
             lock = locks.current_lock()
             locks.release()

@@ -12,10 +12,9 @@ class Rule:
 
 # 新增依職級判斷的規則：在這裡加一筆，再到後台「職級規則」設定門檻
 RULES = [
-    Rule("attendance-register-own", "到班：登記自己部門的人員", 20),
-    Rule("attendance-register-all", "到班：登記全部部門的人員、看「未設定部門」", 40),
+    Rule("attendance-register", "到班：登記人員（看到班人數與名單）", 20),
     Rule("attendance-past-dates", "到班：修改之前日期的紀錄與工位、作廢別人登記的紀錄", 30),
-    Rule("attendance-stations-all", "工位安排：安排全部部門", 40),
+    Rule("attendance-stations-unlock", "工位安排：強制解除別人的編輯鎖", 40),
     Rule("records-edit-all", "登記紀錄：修改、刪除別人登記的紀錄", 30),
     Rule("worklog-edit-all", "作業登記：修改、刪除別的帳號登記的撿貨、配貨", 30),
     Rule("worklog-see-anomaly", "作業登記：看配貨的異常標記（撿貨還沒結束就開始配貨）", 30),

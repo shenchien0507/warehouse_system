@@ -94,7 +94,6 @@
             {% if row.current %}<span class="badge text-bg-success">目前生效</span>{% endif %}
             <span class="text-muted small">{{ row.batch.created_by.name|default:row.batch.created_by.username }} 建立</span>
             <span class="ms-3">共 {{ row.total }} 人</span>
-            {% for name, count in row.departments %}<span class="badge text-bg-light border">{{ name }} {{ count }}</span>{% endfor %}
             <span class="ms-auto text-muted small">點開看詳細工位</span>
           </div>
           <div class="small mt-1 d-flex flex-wrap gap-3">
@@ -115,13 +114,12 @@
           </div>
           <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
-              <thead class="table-light"><tr><th>工號</th><th>姓名</th><th>部門</th><th>職級</th><th>工位</th></tr></thead>
+              <thead class="table-light"><tr><th>工號</th><th>姓名</th><th>職級</th><th>工位</th></tr></thead>
               <tbody>
                 {% for entry in row.entries %}
                   <tr{% if entry.gone %} class="gone"{% endif %}>
                     <td>{{ entry.employee.employee_no }}</td>
                     <td>{{ entry.employee.name }}{% if entry.gone %} <span class="badge text-bg-secondary">已離開{% if entry.gone_at %} {{ entry.gone_at|time:"H:i" }}{% endif %}</span>{% endif %}</td>
-                    <td>{{ entry.employee.department|default:"" }}</td>
                     <td>{{ entry.employee.level|default:"" }}</td>
                     <td>{{ entry.station|default:"未安排" }}</td>
                   </tr>

@@ -68,8 +68,8 @@
         <button type="button" id="bulk-apply" class="btn btn-sm btn-outline-primary" disabled>套用</button>
         <span class="ms-md-4">排列：</span>
         <div class="btn-group btn-group-sm" role="group">
-          <input type="radio" class="btn-check" name="group-mode" id="group-dept" value="department" checked>
-          <label class="btn btn-outline-secondary" for="group-dept">按部門</label>
+          <input type="radio" class="btn-check" name="group-mode" id="group-no" value="employee_no" checked>
+          <label class="btn btn-outline-secondary" for="group-no">按工號</label>
           <input type="radio" class="btn-check" name="group-mode" id="group-station" value="station">
           <label class="btn btn-outline-secondary" for="group-station">按工位分組</label>
         </div>
@@ -83,14 +83,13 @@
       {% csrf_token %}
       <div class="table-responsive">
         <table class="table table-hover align-middle station-table">
-          <thead class="table-light"><tr>{% if editable %}<th style="width: 2rem;"><input type="checkbox" class="form-check-input" id="check-all" title="全選"></th>{% endif %}<th>工號</th><th>姓名</th><th>部門</th><th>職級</th><th>當日工位</th></tr></thead>
+          <thead class="table-light"><tr>{% if editable %}<th style="width: 2rem;"><input type="checkbox" class="form-check-input" id="check-all" title="全選"></th>{% endif %}<th>工號</th><th>姓名</th><th>職級</th><th>當日工位</th></tr></thead>
           <tbody id="station-rows">
             {% for row in rows %}
               <tr class="person-row" data-order="{{ forloop.counter0 }}">
                 {% if editable %}<td><input type="checkbox" class="form-check-input row-check"></td>{% endif %}
                 <td>{{ row.record.employee.employee_no }}</td>
                 <td>{{ row.record.employee.name }}{% if row.record.status == "partial" %} <span class="badge text-bg-warning">部分請假</span>{% endif %}{% if row.record.clock_out %} <span class="badge text-bg-light border">{{ row.record.clock_out|time:"H:i" }} 離開</span>{% endif %}</td>
-                <td>{{ row.record.employee.department|default:"" }}</td>
                 <td>{{ row.record.employee.level|default:"" }}</td>
                 <td>{{ row.form.station }}</td>
               </tr>
