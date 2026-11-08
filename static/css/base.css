@@ -5,8 +5,45 @@ main { flex: 1 0 auto; }
 /* 表單欄位：讓 Django 預設 widget 套用 Bootstrap 外觀 */
 .wh-field input:not([type=checkbox]):not([type=radio]):not([type=file]),
 .wh-field select,
-.wh-field textarea { display: block; width: 100%; padding: .375rem .75rem; border: 1px solid #ced4da; border-radius: .375rem; }
+.wh-field textarea { display: block; width: 100%; padding: .375rem .75rem; border: 1px solid var(--bs-border-color); border-radius: .375rem; background-color: var(--bs-body-bg); color: var(--bs-body-color); }
 .wh-field.has-error input,
 .wh-field.has-error select,
 .wh-field.has-error textarea { border-color: #dc3545; }
 .wh-field input[type=checkbox] { margin-right: .5rem; }
+
+/* 深色模式：各頁自己寫死的淺色背景、邊框改成跟著主題（Bootstrap 本身的元件會自己換） */
+[data-bs-theme=dark] .daily-board,
+[data-bs-theme=dark] .tower-board { --text-muted: #a8a7a1; }
+[data-bs-theme=dark] .daily-board .stat-tile,
+[data-bs-theme=dark] .tower-board .tower-tile,
+[data-bs-theme=dark] .tower-board .tower-card,
+[data-bs-theme=dark] .tower-board .tower-pop { background: var(--bs-body-bg); border-color: #3f4247; }
+[data-bs-theme=dark] .daily-board .stat-tile:hover,
+[data-bs-theme=dark] .tower-board .tower-tile:hover { border-color: #6c6f75; }
+[data-bs-theme=dark] .daily-board .stat-tile.is-ungrouped { background: #3a3220; border-color: #8a6d2b; }
+[data-bs-theme=dark] .tower-board .tower-track { background: #2b2e33; box-shadow: inset 0 0 0 1px #4a4d53; }
+[data-bs-theme=dark] .tower-board { --state-unregistered: #4a4d53; --state-not_started: #8d8f94; }
+[data-bs-theme=dark] .tower-board .seg-unregistered { background: repeating-linear-gradient(135deg, #4a4d53 0 4px, #5c5f65 4px 6px); box-shadow: inset 0 0 0 1px #6c6f75; }
+[data-bs-theme=dark] .carry-strip { background: #2f2a1c; border-color: #8a6d2b; }
+[data-bs-theme=dark] .carry-strip .carry-title,
+[data-bs-theme=dark] .carry-strip .carry-toggle { color: #f0c36d; }
+[data-bs-theme=dark] .carry-strip .carry-left,
+[data-bs-theme=dark] .carry-strip .carry-left strong,
+[data-bs-theme=dark] .carry-left-num { color: #ff8a80; }
+[data-bs-theme=dark] .carry-badge { background: #3a3220; color: #f0c36d; border-color: #8a6d2b; }
+[data-bs-theme=dark] .tower-board .carry-prior { color: #f0c36d; }
+[data-bs-theme=dark] .daily-board .register-short { color: #f0b46b; }
+[data-bs-theme=dark] .daily-board .register-even,
+[data-bs-theme=dark] .tower-board .tower-register.is-even { color: #5fd3a2; }
+[data-bs-theme=dark] .daily-board .register-over,
+[data-bs-theme=dark] .tower-board .tower-register.is-over,
+[data-bs-theme=dark] .daily-board .stat-held { color: #ff8a80; }
+[data-bs-theme=dark] .kind-live { background: #2b2e33; border-color: #4a4d53; }
+[data-bs-theme=dark] .kind-live.is-over,
+[data-bs-theme=dark] .record-grid .grid-cell.has-error .form-control { background: #4a2328; }
+[data-bs-theme=dark] .card select:disabled,
+[data-bs-theme=dark] .card input:disabled { background: #2b2e33; }
+[data-bs-theme=dark] .timeline-out { background: #4a2328; }
+[data-bs-theme=dark] .timeline-leave { background: #3a3220; }
+[data-bs-theme=dark] .table-light { --bs-table-bg: #2b2e33; --bs-table-color: var(--bs-body-color); --bs-table-border-color: #4a4d53; --bs-table-striped-bg: #33363b; --bs-table-hover-bg: #383b40; }
+[data-bs-theme=dark] .bg-light { background-color: #2b2e33 !important; }

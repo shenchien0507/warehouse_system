@@ -6,6 +6,7 @@
   --series-no-time: #a8a7a1; /* 沒有下單時間 */
   --series-added: #6250d6;   /* 這批新增 */
   --series-earlier: #d6d5d0; /* 之前批次累計 */
+  --series-carry: #f0b429;   /* 昨日轉來（和昨日未完成的黃色一致） */
   --text-muted: #6c6b66;
 }
 .daily-board .stat-tile { border: 1px solid #e3e2de; border-radius: .5rem; padding: .75rem 1rem; height: 100%; background: #fff; }
@@ -40,6 +41,7 @@
 .daily-board .seg-no_time { background: var(--series-no-time); }
 .daily-board .seg-earlier { background: var(--series-earlier); }
 .daily-board .seg-added { background: var(--series-added); }
+.daily-board .seg-carry { background: var(--series-carry); }
 .daily-board .legend { display: flex; flex-wrap: wrap; gap: 1rem; font-size: .875rem; color: var(--text-muted); }
 .daily-board .legend-swatch { display: inline-block; width: .75rem; height: .75rem; border-radius: 2px; margin-right: .35rem; vertical-align: -1px; }
 

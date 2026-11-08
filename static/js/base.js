@@ -109,3 +109,21 @@
     });
   }, true);
 })();
+
+// 深色／淺色模式切換：導覽列的按鈕，選好的模式記在瀏覽器（localStorage），每台電腦各自記
+(function () {
+  var root = document.documentElement;
+  function label() {
+    var dark = root.getAttribute("data-bs-theme") === "dark";
+    document.querySelectorAll("[data-theme-label]").forEach(function (el) { el.textContent = dark ? "淺色模式" : "深色模式"; });
+  }
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest && event.target.closest("[data-theme-toggle]");
+    if (!button) return;
+    var next = root.getAttribute("data-bs-theme") === "dark" ? "light" : "dark";
+    root.setAttribute("data-bs-theme", next);
+    try { localStorage.setItem("wh-theme", next); } catch (e) {}
+    label();
+  });
+  label();
+})();

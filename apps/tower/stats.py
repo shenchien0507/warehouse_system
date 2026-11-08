@@ -107,6 +107,15 @@ class KindBoard:
         """[(狀態, 名稱, 數量, 幾個編號, 長條寬度%, 前日的數量)]"""
         return [(key, label, *self.states[key], self._width(self.states[key][0]), self.prior[key]) for key, label in STATES]
 
+    @property
+    def bar(self):
+        """[(key, 名稱, 數量, 寬度%)]：卡片上的長條。完成 → 前日還沒做完（黃色，和昨日未完成一致）→ 今天的各狀態。"""
+        parts = [(DONE, "完成", self.states[DONE][0]), ("carry", "前日未完成", self.carried_left)]
+        labels = dict(STATES)
+        for key in (ALLOCATING, WAIT_ALLOCATION, PICKING, NOT_STARTED, UNREGISTERED):
+            parts.append((key, labels[key], self.states[key][0] - self.prior[key]))
+        return [(key, label, quantity, self._width(quantity)) for key, label, quantity in parts if quantity > 0]
+
     def _width(self, quantity):
         return max(0, quantity) * 100 / max(self.total, self.registered) if self.total > 0 or self.registered > 0 else 0
 

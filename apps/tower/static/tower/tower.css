@@ -1,9 +1,10 @@
 /* 數據塔：狀態顏色用角色變數，長條是純 HTML */
 .tower-board {
-  --state-unregistered: #f3f2ef;
-  --state-not_started: #d6d5d0;
+  --state-unregistered: #e4e2dc;
+  --state-not_started: #a9a79f;
   --state-picking: #2a78d6;
-  --state-wait_allocation: #e8a93a;
+  --state-wait_allocation: #8a63d2; /* 黃色留給前日未完成 */
+  --state-carry: #f0b429;
   --state-allocating: #eb6834;
   --state-done: #1baf7a;
   --text-muted: #6c6b66;
@@ -12,7 +13,7 @@
 .tower-board .tower-label { font-size: 1.125rem; font-weight: 600; }
 .tower-board .tower-sub { font-size: .8125rem; color: var(--text-muted); }
 .tower-board .tower-value { font-size: 2rem; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
-.tower-board .tower-track { display: flex; gap: 2px; height: 1.25rem; background: #f3f2ef; border-radius: 4px; overflow: hidden; }
+.tower-board .tower-track { display: flex; gap: 2px; height: 1.25rem; background: #f3f2ef; box-shadow: inset 0 0 0 1px #d6d5d0; border-radius: 4px; overflow: hidden; }
 .tower-board .tower-seg { height: 100%; min-width: 3px; }
 .tower-board .tower-states td { border: 0; padding: .15rem 0; font-variant-numeric: tabular-nums; }
 .tower-board .tower-swatch { display: inline-block; width: .75rem; height: .75rem; border-radius: 2px; margin-right: .4rem; vertical-align: -1px; }
@@ -21,6 +22,7 @@
 .tower-board .seg-wait_allocation { background: var(--state-wait_allocation); }
 .tower-board .seg-allocating { background: var(--state-allocating); }
 .tower-board .seg-done { background: var(--state-done); }
+.tower-board .seg-carry { background: var(--state-carry); }
 
 @media (max-width: 576px) {
   .tower-board .tower-value { font-size: 1.5rem; }
@@ -28,7 +30,7 @@
 .tower-board .tower-register { font-size: .875rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .tower-board .tower-register.is-even { color: #11704c; }
 .tower-board .tower-register.is-over { color: #b42318; font-weight: 600; }
-.tower-board .seg-unregistered { background: #f3f2ef; box-shadow: inset 0 0 0 1px #d6d5d0; }
+.tower-board .seg-unregistered { background: repeating-linear-gradient(135deg, var(--state-unregistered) 0 4px, #cfcdc6 4px 6px); box-shadow: inset 0 0 0 1px #b9b7b0; }
 
 /* 緊湊數字卡：停在上面一下（0.5 秒）才跳出詳細小窗（位置由 tower.js 算，開在卡片旁邊，不會超出畫面），點卡片進單獨頁 */
 .tower-board .tower-tile { position: relative; border: 1px solid #e3e2de; border-radius: .5rem; padding: .6rem 1rem; height: 100%; background: #fff; }

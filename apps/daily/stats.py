@@ -163,11 +163,20 @@ class GroupCard:
 
     @property
     def split(self):
-        """[(key, 名稱, 數字, 寬度%)]：卡片上切單前／後的小長條，沒切時間的分組不畫。"""
-        if not self.cutoff or not self.main:
+        """[(key, 名稱, 數字, 寬度%)]：卡片上的小長條，切單前／後（沒切時間是不分時段），有昨日轉來的接一段黃色。
+        沒切時間、也沒有昨日轉來的分組不畫。"""
+        carried = self.carry.total if self.carry else 0
+        if not self.cutoff and not carried:
             return []
-        parts = [("before", f"{self.cutoff} 前"), ("after", f"{self.cutoff} 後"), ("no_time", "沒有下單時間")]
-        return [(key, label, self.shown[key], self.shown[key] * 100 / self.main) for key, label in parts if self.shown.get(key)]
+        if self.cutoff:
+            parts = [("before", f"{self.cutoff} 前"), ("after", f"{self.cutoff} 後"), ("no_time", "沒有下單時間")]
+            rows = [(key, label, self.shown[key]) for key, label in parts if self.shown.get(key)]
+        else:
+            rows = [("all_day", "不分時段", self.main)] if self.main else []
+        if carried:
+            rows.append(("carry", "昨日", carried))
+        scale = sum(count for _, _, count in rows) or 1
+        return [(key, label, count, count * 100 / scale) for key, label, count in rows]
 
 
 @dataclass
