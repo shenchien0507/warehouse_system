@@ -45,3 +45,9 @@
 }
 .tower-board .tower-tile.is-open .tower-pop { opacity: 1; visibility: visible; transform: scale(1); transition: opacity .15s ease, transform .15s ease; }
 .tower-board .carry-prior { color: #8a5a00; }
+
+/* 兩條長條：前日（黃框）、今日，都照狀態上色 */
+.tower-board .tower-bar-label { display: flex; justify-content: space-between; font-size: .75rem; color: var(--text-muted); font-variant-numeric: tabular-nums; margin-top: .25rem; line-height: 1.3; }
+.tower-board .tower-track.tower-prior { box-shadow: 0 0 0 2px var(--state-carry); margin: 2px 0 .125rem; }
+.tower-board .tower-prior-swatch { background: transparent; box-shadow: inset 0 0 0 2px var(--state-carry); }
+.tower-board .tower-legend { display: flex; flex-wrap: wrap; gap: .25rem .75rem; font-size: .8125rem; color: var(--text-muted); }
