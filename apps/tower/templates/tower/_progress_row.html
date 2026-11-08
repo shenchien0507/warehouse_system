@@ -1,6 +1,6 @@
 {# 數據塔進行中／完成的一列：進行中顯示目前負責的人（有交接就是接手的人），完成的顯示配貨結束的人和時間 #}
 {% if key == "done" %}
-  <tr><td>{{ entry.number }}</td><td>{{ entry.end_employee.employee_no }} {{ entry.end_employee.name }}</td><td>{{ entry.ended_at|date:"H:i:s" }}</td></tr>
+  <tr><td>{{ entry.number }}{% if entry.prior_date %} <span class="carry-badge" title="{{ entry.prior_date|date:'Y/m/d' }} 登記，前日轉來">{{ entry.prior_date|date:'m/d' }}</span>{% endif %}</td><td>{{ entry.end_employee.employee_no }} {{ entry.end_employee.name }}</td><td>{{ entry.ended_at|date:"H:i:s" }}</td></tr>
 {% else %}
-  <tr><td>{{ entry.number }}</td><td>{{ entry.current_employee.label }}{% if entry.handovers %} <span class="small text-muted">（接手）</span>{% endif %}</td><td>{{ entry.started_at|date:"H:i:s" }}</td></tr>
+  <tr><td>{{ entry.number }}{% if entry.prior_date %} <span class="carry-badge" title="{{ entry.prior_date|date:'Y/m/d' }} 登記，前日轉來">{{ entry.prior_date|date:'m/d' }}</span>{% endif %}</td><td>{{ entry.current_employee.label }}{% if entry.handovers %} <span class="small text-muted">（接手）</span>{% endif %}</td><td>{{ entry.started_at|date:"H:i:s" }}</td></tr>
 {% endif %}

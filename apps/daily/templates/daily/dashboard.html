@@ -3,14 +3,14 @@
 
 {% block title %}當日統計{% endblock %}
 
-{% block extra_css %}<link rel="stylesheet" href="{% static 'daily/dashboard.css' %}">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'daily/dashboard.css' %}"><link rel="stylesheet" href="{% static 'closing/carry.css' %}">{% endblock %}
 
 {% block heading %}當日統計{% endblock %}
 
 {% block content %}
   {% if not is_today %}
     <div class="alert alert-secondary d-flex flex-wrap gap-2 align-items-center">
-      <span class="me-auto">這是 {{ work_date|date:"Y/m/d" }} 的歷史紀錄，只能查看、抽起、放回；匯入一律算進今天。</span>
+      <span class="me-auto">這是 {{ work_date|date:"Y/m/d" }} 的歷史紀錄，只能查看、抽起、放回；匯入一律算進目前的作業日。</span>
       <a class="btn btn-sm btn-outline-secondary" href="{% url 'daily:day_list' %}">回今天</a>
     </div>
   {% else %}
@@ -32,7 +32,7 @@
           </div>
         </div>
         <div class="form-text">
-          每次放一份這個時段確定要出的訂單檔，累加到今天（{{ work_date|date:"Y/m/d" }}）的資料池。之前匯過的訂單（含其他作業日）標記重複、不重複計算；內容一樣的檔案、或訂單全部都匯過的檔案會被擋下。
+          每次放一份這個時段確定要出的訂單檔，累加到目前作業日（{{ work_date|date:"Y/m/d" }}）的資料池。之前匯過的訂單（含其他作業日）標記重複、不重複計算；內容一樣的檔案、或訂單全部都匯過的檔案會被擋下。
           {% if active_version %}用欄位對應 {{ active_version }}{% if active_groups %}、統計分組 {{ active_groups }}{% else %}，<span class="text-danger">但沒有生效的統計分組版本</span>{% endif %}（和訂單統計共用）。{% else %}<span class="text-danger">目前沒有生效的欄位對應版本，請先到後台設定。</span>{% endif %}
         </div>
       </form>

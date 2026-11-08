@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}訂單統計{% endblock %}
 
@@ -16,7 +17,10 @@
   </p>
 {% endblock %}
 
+{% block extra_css %}<link rel="stylesheet" href="{% static 'closing/carry.css' %}">{% endblock %}
+
 {% block content %}
+  {% include "closing/_carry_strip.html" with carry_open=True %}
   <p class="small text-muted">
     作業日之前的訂單都算進切開時間前，作業日當天的依下單時間分前後；沒有切開時間的分組一天一列（都可以在分組設定改）。去重：同一個訂單號只算 1 張。非去重：有幾列就算幾張，分組有勾選才列出。
     每個分類一張表，最後一張是全部分類的合計，同一張訂單出現在幾個分類都只算 1 張。

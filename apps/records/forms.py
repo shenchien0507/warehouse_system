@@ -27,6 +27,17 @@ class RecordForm(forms.ModelForm):
             number.disabled = True
             number.help_text = f"{LINKED_NOTE}，編號不能修改。"
 
+    def clean_number(self):
+        """編號不能重複：撞到的話說是哪天、哪個種類登記的，通常是印條碼時打錯。"""
+        number = self.cleaned_data["number"]
+        other = Record.objects.filter(number=number).exclude(pk=self.instance.pk).first()
+        if other is not None:
+            day = f"{other.work_date:%m/%d} " if other.work_date else ""
+            raise forms.ValidationError(
+                f"這個編號已經登記過了（{day}登記成「{other.kind or '未分類'}」，名稱「{other.name}」）。"
+            )
+        return number
+
 
 class KindRecordForm(RecordForm):
     """多一個「種類」的單筆表單（列表上方固定輸入列、修改頁）。"""

@@ -1,5 +1,4 @@
 from django import forms
-from django.utils import timezone
 
 from apps.attendance.forms import TIME_FORMATS, time_input
 
@@ -71,7 +70,9 @@ class ImportForm(forms.Form):
 
     def __init__(self, *args, categories=(), **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["work_date"].initial = timezone.localdate()
+        from apps.closing.workday import current_work_date
+
+        self.fields["work_date"].initial = current_work_date()
         self.categories = list(categories)
         for category in self.categories:
             self.fields[self.file_field(category)] = forms.FileField(label=category.name, required=False)

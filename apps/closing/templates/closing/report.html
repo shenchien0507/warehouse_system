@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ close.work_date|date:"Y/m/d" }} 日結{% endblock %}
+
+{% block page_header %}
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <h1 class="h3 mb-0 me-auto">日結報表：{{ close.work_date|date:"Y/m/d" }}</h1>
+    <a class="btn btn-outline-secondary" href="{% url 'closing:index' %}">回日結</a>
+  </div>
+  <p class="text-muted small mb-3">{{ close.closed_at|date:"Y/m/d H:i" }} 由 {{ close.closed_by.name|default:close.closed_by.username|default:"（已刪除的帳號）" }} 日結。</p>
+{% endblock %}
+
+{% block content %}
+  {% if changed %}
+    <div class="alert alert-warning py-2 small">日結後有修改：這天的登記紀錄或配貨完成在日結之後被改過，下面是日結當下的數字，和現在的資料可能對不起來。</div>
+  {% endif %}
+  {% include "closing/_kinds_table.html" with kinds=close.kinds totals=totals %}
+  <p class="small text-muted">今日匯入 ＋ 前日轉來 ＝ 已出 ＋ 轉到下一天。待印、待撿、待包就是隔天的「昨日未完成」。</p>
+{% endblock %}

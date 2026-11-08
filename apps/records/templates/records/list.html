@@ -63,6 +63,12 @@
     </div>
     <div class="col-auto"><button type="submit" class="btn btn-outline-secondary">搜尋</button></div>
     {% if query %}<div class="col-auto"><a class="btn btn-link" href="{% url 'records:list' %}">清除</a></div>{% endif %}
+    <div class="col-auto ms-auto">
+      <div class="btn-group btn-group-sm" role="group" aria-label="列出哪些紀錄">
+        <a class="btn {% if scope == 'today' %}btn-secondary{% else %}btn-outline-secondary{% endif %}" href="{% url 'records:list' %}{% if chosen %}?kind={{ chosen|urlencode }}{% endif %}" title="作業日 {{ work_date|date:'Y/m/d' }} 登記的，加上之前登記、還沒配貨完成的">今天＋之前沒完成</a>
+        <a class="btn {% if scope == 'all' %}btn-secondary{% else %}btn-outline-secondary{% endif %}" href="?scope=all{% if chosen %}&kind={{ chosen|urlencode }}{% endif %}">全部</a>
+      </div>
+    </div>
   </form>
 
   <form method="post" action="{% url 'records:bulk_delete' %}" id="bulk-form" data-edit-url="{% url 'records:bulk_edit' %}"
@@ -78,18 +84,19 @@
   <div class="table-responsive">
     <table class="table table-sm table-hover align-middle">
       <thead class="table-light">
-        <tr><th class="text-center" style="width: 2.5rem;"><input type="checkbox" class="form-check-input" data-select-all aria-label="全選這頁可修改的紀錄"></th><th>編號</th><th>種類</th><th>日期</th><th>名稱</th><th class="text-end">數量</th><th>操作人帳號</th><th>登記時間</th><th></th></tr>
+        <tr><th class="text-center" style="width: 2.5rem;"><input type="checkbox" class="form-check-input" data-select-all aria-label="全選這頁可修改的紀錄"></th><th>編號</th><th>種類</th><th>日期</th><th>名稱</th><th class="text-end">數量</th><th>狀態</th><th>操作人帳號</th><th>登記時間</th><th></th></tr>
       </thead>
       <tbody>
         {% for row in rows %}
           {% with record=row.record %}
             <tr>
               <td class="text-center">{% if row.can_edit %}<input type="checkbox" class="form-check-input" name="ids" value="{{ record.pk }}" form="bulk-form" aria-label="勾選 {{ record.number }}">{% endif %}</td>
-              <td>{{ record.number }}</td>
+              <td>{{ record.number }}{% if row.prior %} <span class="carry-badge" title="{{ record.work_date|date:'Y/m/d' }} 登記">{{ record.work_date|date:"m/d" }}</span>{% endif %}</td>
               <td>{{ record.kind|default:"未分類" }}</td>
               <td>{{ record.date_text }}</td>
               <td>{{ record.name }}</td>
               <td class="text-end">{{ record.quantity }}</td>
+              <td class="text-nowrap"><span class="state-dot state-{{ row.state }}"></span>{{ row.state_label }}</td>
               <td>{% if record.created_by %}{{ record.created_by.username }} {{ record.created_by.name }}{% endif %}</td>
               <td class="small text-muted text-nowrap">
                 {{ record.created_at|date:"Y-m-d H:i" }}
@@ -112,7 +119,7 @@
             </tr>
           {% endwith %}
         {% empty %}
-          <tr><td colspan="9" class="text-muted">{% if query %}找不到符合「{{ query }}」的紀錄。{% else %}還沒有紀錄，按右上角「新增紀錄」開始。{% endif %}</td></tr>
+          <tr><td colspan="10" class="text-muted">{% if query %}找不到符合「{{ query }}」的紀錄。{% elif scope == "today" %}今天還沒有登記，之前的也都做完了。要看以前的紀錄請按「全部」。{% else %}還沒有紀錄，按右上角「新增紀錄」開始。{% endif %}</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -123,6 +130,7 @@
 {% block extra_css %}
   <link rel="stylesheet" href="{% static 'daily/dashboard.css' %}">
   <link rel="stylesheet" href="{% static 'records/list.css' %}">
+  <link rel="stylesheet" href="{% static 'closing/carry.css' %}">
 {% endblock %}
 
 {% block extra_js %}

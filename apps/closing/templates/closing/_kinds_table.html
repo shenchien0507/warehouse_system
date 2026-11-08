@@ -1,0 +1,42 @@
+{% comment %}日結數字表：kinds = [{"name", "today", "carried", "done", "unprinted", "picking", "packing"}]{% endcomment %}
+<div class="table-responsive">
+  <table class="table table-sm align-middle closing-table">
+    <thead class="table-light">
+      <tr>
+        <th>種類</th>
+        <th class="text-end" title="當天當日統計匯入的">今日匯入</th>
+        <th class="text-end" title="開工時從前面轉來的（待印＋還沒做完的編號）">前日轉來</th>
+        <th class="text-end" title="當天配貨完成">已出</th>
+        <th class="text-end">待印</th>
+        <th class="text-end">待撿</th>
+        <th class="text-end">待包</th>
+        <th class="text-end" title="待印＋待撿＋待包，轉到下一個作業日">轉到下一天</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for k in kinds %}
+        <tr>
+          <td>{{ k.name }}</td>
+          <td class="text-end">{{ k.today }}</td>
+          <td class="text-end">{{ k.carried }}</td>
+          <td class="text-end">{{ k.done }}</td>
+          <td class="text-end">{{ k.unprinted }}</td>
+          <td class="text-end">{{ k.picking }}</td>
+          <td class="text-end">{{ k.packing }}</td>
+          <td class="text-end fw-semibold">{{ k.unprinted|add:k.picking|add:k.packing }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="text-muted">沒有任何數字（這天沒有匯入、也沒有轉過來的）。</td></tr>
+      {% endfor %}
+    </tbody>
+    {% if totals %}
+      <tfoot>
+        <tr class="fw-semibold">
+          <td>合計</td><td class="text-end">{{ totals.today }}</td><td class="text-end">{{ totals.carried }}</td><td class="text-end">{{ totals.done }}</td>
+          <td class="text-end">{{ totals.unprinted }}</td><td class="text-end">{{ totals.picking }}</td><td class="text-end">{{ totals.packing }}</td>
+          <td class="text-end">{{ totals.unprinted|add:totals.picking|add:totals.packing }}</td>
+        </tr>
+      </tfoot>
+    {% endif %}
+  </table>
+</div>

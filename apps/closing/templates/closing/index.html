@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}日結{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'closing/carry.css' %}">{% endblock %}
+
+{% block heading %}日結{% endblock %}
+
+{% block content %}
+  {% if not carry_start %}
+    <div class="alert alert-light border">
+      還沒設定結轉起算日，不用日結：作業日就是系統日期，前一天沒做完的不會轉到隔天。
+      要開始結轉，請管理者到後台「撿貨配貨設定」填「結轉起算日」（通常填今天）。
+    </div>
+  {% else %}
+    <div class="d-flex flex-wrap align-items-baseline gap-3 mb-2">
+      <h2 class="h4 mb-0">目前作業日 {{ work_date|date:"Y/m/d" }}</h2>
+      <span class="text-muted small">結轉從 {{ carry_start|date:"Y/m/d" }} 起算{% if latest %}・上次日結 {{ latest.work_date|date:"Y/m/d" }}（{{ latest.closed_at|date:"m/d H:i" }}）{% endif %}</span>
+    </div>
+    <p class="small text-muted">按日結之前，匯入、登記、撿貨、配貨都算在這個作業日（做到半夜 12 點以後也一樣）。日結會把下面的數字存下來，待印、待撿、待包轉到下一個作業日，變成那天的「昨日未完成」。</p>
+    {% if overdue %}<div class="alert alert-warning py-2">今天是 {{ today|date:"Y/m/d" }}，作業日 {{ work_date|date:"Y/m/d" }} 還沒日結。</div>{% endif %}
+
+    {% include "closing/_carry_strip.html" %}
+
+    <h3 class="h6 mt-3">現在的數字（按日結時會存下來）</h3>
+    {% include "closing/_kinds_table.html" with kinds=preview totals=preview_totals %}
+
+    {% if checks %}
+      <div class="alert alert-light border py-2">
+        <div class="fw-semibold mb-1">日結前看一下（不會擋日結，沒處理的會轉到下一個作業日）</div>
+        <ul class="mb-0 small">
+          {% for text, count in checks %}<li>{{ text }}{% if count is not None %}：<strong>{{ count }}</strong>{% endif %}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    {% if can_close %}
+      {% if early %}
+        <div class="text-muted small mb-4">{{ work_date|date:"Y/m/d" }} 還沒到，等那天再日結。</div>
+      {% else %}
+        <form method="post" action="{% url 'closing:close' %}" class="mb-4"
+              onsubmit="if (!confirm('確定日結 {{ work_date|date:"Y/m/d" }}？之後的匯入、登記、撿貨、配貨都會算到下一個作業日。')) return false; this.querySelector('button').disabled = true; return true;">
+          {% csrf_token %}
+          <input type="hidden" name="work_date" value="{{ work_date|date:'Y-m-d' }}">
+          <button type="submit" class="btn btn-primary">日結 {{ work_date|date:"Y/m/d" }}</button>
+        </form>
+      {% endif %}
+    {% else %}
+      <div class="text-muted small mb-4">日結要職級規則「日結」允許的人（預設主任以上）才能按。</div>
+    {% endif %}
+
+    <h3 class="h6">日結紀錄</h3>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead class="table-light"><tr><th>作業日</th><th>日結時間</th><th>日結人</th><th class="text-end">轉到下一天</th><th></th></tr></thead>
+        <tbody>
+          {% for close in closes %}
+            <tr>
+              <td><a href="{% url 'closing:report' close.work_date %}">{{ close.work_date|date:"Y/m/d" }}</a></td>
+              <td>{{ close.closed_at|date:"m/d H:i" }}</td>
+              <td>{{ close.closed_by.name|default:close.closed_by.username }}</td>
+              <td class="text-end">{{ close.carry_total }}</td>
+              <td class="text-end">
+                {% if can_close and close == latest %}
+                  <form method="post" action="{% url 'closing:cancel' close.work_date %}" class="d-inline"
+                        onsubmit="return confirm('取消 {{ close.work_date|date:"Y/m/d" }} 的日結？作業日會回到這天，補完再重按日結。');">
+                    {% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-danger">取消日結</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="text-muted">還沒有日結過。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="form-text">取消日結只能取消最近一次（例如太早按了、還有檔案沒匯）。日結後才發現登記、撿貨、配貨的資料有錯，直接改原本的資料就好，報表會標「日結後有修改」。</div>
+    </div>
+  {% endif %}
+{% endblock %}

@@ -10,6 +10,8 @@ from django.views.generic import TemplateView
 
 from apps.backoffice.menu import MENU_BY_KEY, can_use
 
+from apps.closing.workday import carry_on
+
 from .stats import tower
 
 PAGE_KEY = "data-tower"
@@ -37,6 +39,7 @@ class TowerView(TemplateView):
             raise Http404("今天沒有這個種類")
         context.update(
             data,
+            overdue=carry_on() and data["work_date"] < timezone.localdate(),
             detail=kind,
             menu_item=MENU_BY_KEY[PAGE_KEY],
             refresh_seconds=REFRESH_SECONDS,

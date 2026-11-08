@@ -1,5 +1,7 @@
 {% comment %}dashboard 區塊：頁面第一次載入和定時更新（?partial=1）都用這個。{% endcomment %}
 <div class="small text-muted mb-3" id="daily-refreshed-at">更新時間 {{ refreshed_at|date:"H:i:s" }}</div>
+{% include "closing/_overdue.html" %}
+{% include "closing/_carry_strip.html" %}
 {% if not batches %}
   <div class="alert alert-light border">
     今天（{{ work_date|date:"Y/m/d" }}）還沒有匯入，上面選檔案匯入第一批。
@@ -14,6 +16,7 @@
     {% for card in board.groups %}
       <div class="col-6 col-md-4 col-xl-3">
         <div class="stat-tile{% if card.name == '未分組' %} is-ungrouped{% endif %}">
+          {% if card.carry %}<span class="carry-badge float-end position-relative" style="z-index: 2;" title="前日轉來 {{ card.carry.total }}（待印 {{ card.carry.unprinted }}、待撿 {{ card.carry.picking }}、待包 {{ card.carry.packing }}）{% if card.carry.left is not None %}，目前還剩 {{ card.carry.left }}{% endif %}">昨日 {{ card.carry.total }}{% if card.carry.left is not None %}・剩 {{ card.carry.left }}{% endif %}</span>{% endif %}
           <div class="stat-label">{% if can_register and card.name != '未分組' %}<a href="{% url 'records:list' %}?kind={{ card.name|urlencode }}" class="stretched-link text-reset text-decoration-none" title="登記這個種類">{{ card.name }}</a>{% else %}{{ card.name }}{% endif %}{% if card.show_rows %} <span class="stat-sub fw-normal">非去重</span>{% endif %}</div>
           <div class="stat-value">{{ card.main }}</div>
           {% if card.cutoff %}
@@ -29,7 +32,7 @@
           {% else %}
             <div class="stat-sub">不分時段</div>
           {% endif %}
-          <div class="register-line register-{{ card.register_state }} mt-1">已登記 <strong>{{ card.registered }}</strong> / {{ card.main }}{% if card.register_state == "over" %}（多 {{ card.over_by }}）{% endif %}</div>
+          <div class="register-line register-{{ card.register_state }} mt-1">已登記 <strong>{{ card.registered }}</strong> / {{ card.limit }}{% if card.limit != card.main %} <span class="stat-sub">（含前日待印 {{ card.carry.unprinted }}）</span>{% endif %}{% if card.register_state == "over" %}（多 {{ card.over_by }}）{% endif %}</div>
           {% if card.show_rows %}<div class="stat-sub mt-1">去重 {{ card.total }}</div>{% endif %}
           {% if card.held %}<div class="stat-held mt-1">抽起 {{ card.held }}（不算）</div>{% endif %}
           {% if card.shown.no_time %}<div class="stat-sub">沒有下單時間 {{ card.shown.no_time }}</div>{% endif %}

@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 
 from django.db import transaction
 from django.db.models import Max
-from django.utils import timezone
 
+from apps.closing.workday import current_work_date
 from apps.orders.batches import ImportOutcome, aware, check_versions, read_file
 
 from .models import DailyBatch, DailyHold, DailyLine, DailyOrder
@@ -66,11 +66,11 @@ def split_known(order_nos, work_date):
 
 
 def import_batch(user, uploaded):
-    """匯入一份檔案成為今天（作業日一律是系統日期的今天）的下一批。已在之前批次（含其他作業日）出現的訂單照存但標記重複，不算進當日統計。"""
+    """匯入一份檔案成為目前作業日（沒開結轉就是系統日期的今天；開了就是還沒日結的那天）的下一批。已在之前批次（含其他作業日）出現的訂單照存但標記重複，不算進當日統計。"""
     version, group_version, message = check_versions()
     if message:
         return BatchOutcome(message=message)
-    work_date = timezone.localdate()
+    work_date = current_work_date()
     fingerprint = file_hash(uploaded)
     same = DailyBatch.objects.filter(file_hash=fingerprint).first()
     if same:
@@ -113,7 +113,7 @@ def import_batch(user, uploaded):
 def carry_to_today(hold, user):
     """過了作業日才手動放回：訂單轉到今天，算進今天最新一批（商品列複製過去，原本那天繼續不算）。
     今天還沒匯入回傳 None，不放回。"""
-    today = timezone.localdate()
+    today = current_work_date()
     with transaction.atomic():
         batch = DailyBatch.objects.filter(work_date=today).order_by("-seq").first()
         if batch is None:

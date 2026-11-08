@@ -13,7 +13,8 @@ from django.views import View
 from django.views.generic import FormView, ListView, UpdateView
 
 from apps.backoffice.menu import MENU_BY_KEY, can_use
-from apps.tower.stats import kind_cards
+from apps.tower.stats import STATES, board_records, kind_cards, latest_by_number, state_of, work_date
+from apps.worklog.models import Stage
 
 from .forms import BulkEditFormSet, GridFormSet, KindRecordForm, QuickAddForm, kind_choices
 from .models import Record
@@ -64,6 +65,12 @@ class RecordListView(RecordPageMixin, ListView):
     def get_queryset(self):
         records = Record.objects.select_related("created_by", "updated_by")
         self.query = self.request.GET.get("q", "").strip()
+        # 預設只列「今天登記的 + 之前還沒做完的」（和數據塔一樣，等於以前每天複製出來的那張表）；搜尋或選「全部」才列全部
+        self.scope = "all" if self.query or self.request.GET.get("scope") == "all" else "today"
+        self.day = work_date()
+        if self.scope == "today":
+            today, prior = board_records(self.day)
+            records = records.filter(pk__in=[r.pk for r in today + prior])
         if self.query:
             records = records.filter(
                 Q(number__icontains=self.query) | Q(name__icontains=self.query) | Q(date_text__icontains=self.query)
@@ -77,33 +84,56 @@ class RecordListView(RecordPageMixin, ListView):
         context["quick_form"] = getattr(self, "quick_form", None) or QuickAddForm(initial={"kind": chosen_kind(self.request)})
         day, cards = kind_cards()
         context.update(card_day=day, cards=cards, chosen=chosen_kind(self.request))
-        linked = linked_numbers(r.number for r in context["object_list"])
+        page = list(context["object_list"])
+        linked = linked_numbers(r.number for r in page)
+        numbers = [r.number for r in page]
+        picking, allocation = latest_by_number(Stage.PICKING, numbers), latest_by_number(Stage.ALLOCATION, numbers)
+        labels = dict(STATES)
+        context.update(scope=self.scope, work_date=self.day)
         context["rows"] = [
-            {"record": r, "can_edit": can_edit(self.request.user, r), "linked": r.number in linked} for r in context["object_list"]
+            {
+                "record": r, "can_edit": can_edit(self.request.user, r), "linked": r.number in linked,
+                "state": (state := state_of(picking.get(r.number), allocation.get(r.number))), "state_label": labels[state],
+                "prior": r.work_date and r.work_date != self.day,
+            }
+            for r in page
         ]
         return context
 
 
-def latest_record():
-    """最新登記的一筆（不分種類、不管編號格式），新增登記頁顯示它的編號，讓人知道編到哪了。"""
-    record = Record.objects.select_related("created_by").first()
-    if not record:
-        return None
+def record_info(record):
     return {
         "number": record.number,
         "kind": record.kind,
         "by": record.created_by.username if record.created_by else "",
         "at": timezone.localtime(record.created_at).strftime("%m-%d %H:%M"),
+        "day": record.work_date.strftime("%m/%d") if record.work_date else "",
     }
 
 
+def latest_record(day):
+    """這個作業日最新登記的一筆（不分種類、不管編號格式），新增登記頁顯示它的編號，讓人知道編到哪了。
+    編號每天重新一輪，所以只看今天；今天還沒登記回傳 None。"""
+    record = Record.objects.of_day(day).select_related("created_by").first()
+    return record_info(record) if record else None
+
+
+def previous_record(day):
+    """前一個作業日最後一筆（今天還沒登記時給人參考，不是要接著編）。"""
+    record = Record.objects.filter(work_date__lt=day).select_related("created_by").order_by("-work_date", "-created_at", "-pk").first()
+    return record_info(record) if record else None
+
+
 def kind_stats():
-    """新增登記頁的即時數字：{"day": 今天, "kinds": {種類: {"registered": 已登記, "total": 當日統計總數}}, "latest": 最新一筆}。"""
+    """新增登記頁的即時數字：{"day": 作業日, "kinds": {種類: {"registered": 已登記, "total": 可以登記的總數}},
+    "latest": 今天最新一筆, "previous": 今天還沒登記時，前一個作業日最後一筆}。"""
     day, cards = kind_cards()
+    latest = latest_record(day)
     return {
         "day": day.isoformat(),
         "kinds": {name: {"registered": done, "total": total} for name, done, total in cards},
-        "latest": latest_record(),
+        "latest": latest,
+        "previous": None if latest else previous_record(day),
     }
 
 

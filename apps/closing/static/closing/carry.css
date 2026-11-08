@@ -1,0 +1,15 @@
+/* 昨日未完成：當日統計、訂單統計上方的橫條；日結頁、數據塔的前日標籤 */
+.carry-strip { border: 1px solid #f0c36d; background: #fffaf0; border-radius: .5rem; padding: .5rem 1rem; }
+.carry-strip > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem 1.25rem; }
+.carry-strip > summary::-webkit-details-marker { display: none; }
+.carry-strip .carry-title { font-weight: 600; color: #8a5a00; }
+.carry-strip .carry-num strong { font-size: 1.25rem; font-variant-numeric: tabular-nums; margin-left: .25rem; }
+.carry-strip .carry-left { margin-left: auto; color: #6c6b66; }
+.carry-strip .carry-left strong { color: #b42318; font-size: 1.25rem; margin-left: .25rem; font-variant-numeric: tabular-nums; }
+.carry-strip .carry-toggle { color: #8a5a00; font-size: .8125rem; }
+.carry-strip .carry-toggle::before { content: "▸ 點開看各分組"; }
+.carry-strip[open] .carry-toggle::before { content: "▾ 收起"; }
+.carry-strip table { font-variant-numeric: tabular-nums; }
+.carry-strip .table { --bs-table-bg: transparent; }
+.carry-badge { display: inline-block; font-size: .75rem; font-weight: 400; background: #fff1d6; color: #8a5a00; border: 1px solid #f0c36d; border-radius: 1rem; padding: 0 .5rem; white-space: nowrap; }
+.carry-left-num { color: #b42318; }

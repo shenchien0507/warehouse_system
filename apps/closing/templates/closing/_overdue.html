@@ -1,0 +1,3 @@
+{% if overdue %}
+  <div class="alert alert-warning py-2 small">作業日 {{ work_date|date:"Y/m/d" }} 還沒日結，現在匯入、登記、撿貨、配貨都還算在這天。<a href="{% url 'closing:index' %}" class="alert-link">去日結</a></div>
+{% endif %}

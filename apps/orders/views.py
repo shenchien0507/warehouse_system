@@ -7,6 +7,8 @@ from django.shortcuts import get_object_or_404, redirect
 from django.views.generic import DetailView, ListView, View
 
 from apps.backoffice.menu import MENU_BY_KEY, can_use
+from apps.closing.carry import carry_report
+from apps.closing.workday import current_work_date
 
 from .batches import check_versions, import_run, read_file
 from .forms import ImportForm
@@ -100,6 +102,8 @@ class RunDetailView(StatsPageMixin, DetailView):
         ]
         context["total"] = summary_context(total)
         context["first_batch"] = sections[0][0] if sections else None
+        # 昨日未完成（回報用）：只有作業日是目前作業日的統計才放；撿貨、配貨的狀態只有「現在」，查不回舊日期當時的樣子
+        context["carry"] = carry_report(self.object.work_date) if self.object.work_date == current_work_date() else None
         return context
 
 

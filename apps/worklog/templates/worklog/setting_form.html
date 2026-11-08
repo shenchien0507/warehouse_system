@@ -6,7 +6,8 @@
       <form method="post" novalidate>
         {% csrf_token %}
         {% include "components/_form_field.html" with field=form.rescan_seconds %}
-        {% for field in form %}{% if field.name != "rescan_seconds" %}
+        {% include "components/_form_field.html" with field=form.carry_start %}
+        {% for field in form %}{% if field.name != "rescan_seconds" and field.name != "carry_start" %}
           <fieldset class="mb-3{% if field.errors %} has-error{% endif %}">
             <legend class="form-label fs-6 mb-1">{{ field.label }}</legend>
             <div class="d-flex flex-wrap gap-3">

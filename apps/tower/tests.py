@@ -107,7 +107,9 @@ class TowerTests(TowerBase):
         self.import_day()
         self.record("U1", 5, "")
         old = self.record("OLD", 9, NEXT_DAY)
-        Record.objects.filter(pk=old.pk).update(created_at=timezone.now() - timezone.timedelta(days=2))
+        Record.objects.filter(pk=old.pk).update(
+            created_at=timezone.now() - timezone.timedelta(days=2), work_date=timezone.localdate() - timezone.timedelta(days=2)
+        )
         self.assertEqual(self.board("未分類").registered, 5)
         self.assertEqual(self.board(NEXT_DAY).registered, 0)
 

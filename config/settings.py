@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "apps.records",
     "apps.worklog",
     "apps.tower",
+    "apps.closing",
     "apps.testdata",  # 暫時的測試資料產生，正式開發完成後移除
 ]
 
