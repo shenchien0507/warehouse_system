@@ -6,7 +6,6 @@ from urllib.parse import urlencode
 
 
 from django.contrib import messages
-from django.core.exceptions import PermissionDenied
 from django.db.models import Max
 from django.http import Http404
 from django.db import IntegrityError, transaction
@@ -16,6 +15,7 @@ from django.utils import timezone
 from django.views.generic import TemplateView, View
 
 from apps.backoffice.menu import MENU_BY_KEY, can_use
+from apps.backoffice.views import PageMixin
 from apps.closing.carry import carry_report
 from apps.closing.workday import carry_on, current_work_date
 from apps.orders.models import GroupVersion, MappingVersion
@@ -38,18 +38,8 @@ def back_to_day(work_date, keyword=""):
     return redirect(f"{url}?{urlencode({'q': keyword})}#daily-search" if keyword else url)
 
 
-class DailyPageMixin:
+class DailyPageMixin(PageMixin):
     page_key = "daily-stats"
-
-    def dispatch(self, request, *args, **kwargs):
-        if not can_use(request.user, MENU_BY_KEY[self.page_key]):
-            raise PermissionDenied
-        return super().dispatch(request, *args, **kwargs)
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["menu_item"] = MENU_BY_KEY[self.page_key]
-        return context
 
 
 class DashboardView(DailyPageMixin, TemplateView):

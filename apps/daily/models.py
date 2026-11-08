@@ -6,7 +6,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from apps.orders.models import GroupVersion, MappingVersion
+from apps.orders.models import GroupVersion, MappingVersion, SourceLine
 
 
 class DailyBatch(models.Model):
@@ -66,34 +66,18 @@ class DailyOrder(models.Model):
         return f"{self.work_date:%Y/%m/%d} {self.order_no}"
 
 
-class DailyLine(models.Model):
-    """來源檔的一列（一個商品），欄位和訂單統計的 OrderLine 一樣。
+class DailyLine(SourceLine):
+    """當日統計的商品列，欄位和訂單統計的 OrderLine 一樣。
     is_duplicate：這張訂單已在同一作業日更早的批次出現過，這列不算進當日統計。"""
 
     batch = models.ForeignKey(DailyBatch, verbose_name="匯入批次", on_delete=models.CASCADE, related_name="lines")
     order = models.ForeignKey(DailyOrder, verbose_name="當日訂單", on_delete=models.CASCADE, related_name="lines")
     is_duplicate = models.BooleanField("重複", default=False)
-    row_no = models.PositiveIntegerField("來源檔第幾列")
-    order_no = models.CharField("訂單號", max_length=100)
-    platform_order_no = models.CharField("平台訂單編號", max_length=100, blank=True)
-    platform = models.CharField("平台", max_length=100, blank=True)
-    shop = models.CharField("店鋪", max_length=100, blank=True)
-    order_time = models.DateTimeField("下單時間", null=True, blank=True)
-    ship_time = models.DateTimeField("出貨時間", null=True, blank=True)
-    ship_type = models.CharField("出貨方式", max_length=100, blank=True)
-    shipment_no = models.CharField("出貨單號", max_length=100, blank=True)
-    product_code = models.CharField("商品編號", max_length=100, blank=True)
-    product_name = models.CharField("商品名稱", max_length=300, blank=True)
-    product_spec = models.CharField("商品樣式", max_length=300, blank=True)
-    quantity = models.IntegerField("數量", null=True, blank=True)
 
     class Meta:
         verbose_name = "當日商品列"
         verbose_name_plural = "當日商品列"
         indexes = [models.Index(fields=["batch", "order_no"])]
-
-    def __str__(self):
-        return f"{self.order_no} {self.product_code}"
 
 
 class DailyHold(models.Model):

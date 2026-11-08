@@ -1,3 +1,6 @@
+"""「登記紀錄」：列表（上方一列快速登記）、像 Excel 的多列新增與批量修改、刪除。
+種類卡和可登記的總數跟著當日統計與前日待印（apps/tower/stats.kind_cards）。"""
+
 from urllib.parse import quote
 
 from django.contrib import messages
@@ -12,8 +15,9 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import FormView, ListView, UpdateView
 
-from apps.backoffice.menu import MENU_BY_KEY, can_use
-from apps.tower.stats import STATES, board_records, kind_cards, latest_by_number, state_of, work_date
+from apps.backoffice.views import PageMixin
+from apps.closing.workday import current_work_date
+from apps.tower.stats import STATES, board_records, kind_cards, latest_by_number, state_of
 from apps.worklog.models import Stage
 
 from .forms import BulkEditFormSet, GridFormSet, KindRecordForm, QuickAddForm, kind_choices
@@ -21,18 +25,8 @@ from .models import Record
 from .rules import LINKED_NOTE, can_edit, editable_records, is_linked, kind_names, linked_numbers, over_total_errors
 
 
-class RecordPageMixin:
+class RecordPageMixin(PageMixin):
     page_key = "records"
-
-    def dispatch(self, request, *args, **kwargs):
-        if not can_use(request.user, MENU_BY_KEY[self.page_key]):
-            raise PermissionDenied
-        return super().dispatch(request, *args, **kwargs)
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["menu_item"] = MENU_BY_KEY[self.page_key]
-        return context
 
 
 def chosen_kind(request):
@@ -67,7 +61,7 @@ class RecordListView(RecordPageMixin, ListView):
         self.query = self.request.GET.get("q", "").strip()
         # 預設只列「今天登記的 + 之前還沒做完的」（和數據塔一樣，等於以前每天複製出來的那張表）；搜尋或選「全部」才列全部
         self.scope = "all" if self.query or self.request.GET.get("scope") == "all" else "today"
-        self.day = work_date()
+        self.day = current_work_date()
         if self.scope == "today":
             today, prior = board_records(self.day)
             records = records.filter(pk__in=[r.pk for r in today + prior])

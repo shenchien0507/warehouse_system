@@ -5,7 +5,7 @@ from django.urls import reverse
 from django.utils.http import urlencode
 from django.utils import timezone
 
-from apps.accounts.models import PagePermission, Station, User
+from apps.accounts.models import PagePermission, Station
 from apps.accounts.testing import Level, make_user
 from apps.personnel.models import Employee
 

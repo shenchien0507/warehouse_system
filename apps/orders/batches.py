@@ -9,8 +9,6 @@ from . import stats
 from .importer import ImportFileError, read_lines
 from .models import GroupVersion, ImportBatch, MappingVersion, OrderLine, StatRun
 
-TEXT_FIELDS = [f.name for f in OrderLine._meta.get_fields() if f.get_internal_type() == "CharField"]
-
 
 @dataclass
 class ImportOutcome:
@@ -19,19 +17,6 @@ class ImportOutcome:
     message: str = ""  # 整份不能匯入的原因
     errors: list = field(default_factory=list)  # [(第幾列, 欄位名稱, 原始值, 錯誤)]
     error_count: int = 0
-
-
-def aware(value):
-    return timezone.make_aware(value) if value is not None and timezone.is_naive(value) else value
-
-
-def to_line(batch, row_no, values):
-    data = {key: values[key] for key in values}
-    for key in TEXT_FIELDS:
-        if key in data:
-            data[key] = (data[key] or "")[: OrderLine._meta.get_field(key).max_length]
-    data["order_time"], data["ship_time"] = aware(data["order_time"]), aware(data["ship_time"])
-    return OrderLine(batch=batch, row_no=row_no, **data)
 
 
 def check_versions():
@@ -69,7 +54,7 @@ def create_batch(run, category, uploaded, result, version, group_version):
         mapping_version=version, group_version=group_version,
         line_count=len(result.lines), order_count=len({values["order_no"] for _, values in result.lines}),
     )
-    OrderLine.objects.bulk_create((to_line(batch, row_no, values) for row_no, values in result.lines), batch_size=2000)
+    OrderLine.objects.bulk_create((OrderLine.from_source(row_no, values, batch=batch) for row_no, values in result.lines), batch_size=2000)
     return batch
 
 

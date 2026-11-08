@@ -3,7 +3,7 @@ from django import forms
 from apps.attendance.forms import TIME_FORMATS, time_input
 
 from .fields import FIELDS, KIND_LABELS
-from .models import GroupVersion, ImportCategory, MappingVersion, StatCondition, StatGroup
+from .models import ImportCategory, MappingVersion, StatCondition, StatGroup
 
 
 class UploadForm(forms.Form):

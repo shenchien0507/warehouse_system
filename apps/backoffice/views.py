@@ -26,30 +26,39 @@ def dashboard(request):
     return render(request, "backoffice/dashboard.html", {"groups": groups, "menu_groups": groups})
 
 
-class ManageMixin:
-    """page_key 對應 menu.MENU；list_url_name 為列表頁的 url name。"""
+class PageMixin:
+    """所有頁面共用的權限檢查：page_key 對應 menu.MENU，沒有頁面權限回 403；畫面上拿得到 menu_item（頁面名稱）。"""
 
     page_key = None
-    list_url_name = None
-    edit_url_name = None
-    delete_url_name = None
-    create_url_name = None
-
-    def dispatch(self, request, *args, **kwargs):
-        if not can_use(request.user, MENU_BY_KEY[self.page_key]):
-            raise PermissionDenied
-        return super().dispatch(request, *args, **kwargs)
 
     @property
     def menu_item(self):
         return MENU_BY_KEY[self.page_key]
+
+    def dispatch(self, request, *args, **kwargs):
+        if not can_use(request.user, self.menu_item):
+            raise PermissionDenied
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["menu_item"] = self.menu_item
+        return context
+
+
+class ManageMixin(PageMixin):
+    """後台管理頁：list_url_name 為列表頁的 url name。"""
+
+    list_url_name = None
+    edit_url_name = None
+    delete_url_name = None
+    create_url_name = None
 
     def get_success_url(self):
         return reverse(self.list_url_name)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["menu_item"] = self.menu_item
         context["menu_groups"] = menu_groups(self.request.user)
         context["list_url"] = reverse(self.list_url_name)
         return context

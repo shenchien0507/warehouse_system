@@ -12,7 +12,8 @@ from django.utils.http import urlencode
 from django.views.generic import TemplateView
 
 from apps.accounts.levels import allows
-from apps.backoffice.menu import MENU_BY_KEY, can_use
+from apps.backoffice.menu import can_use
+from apps.backoffice.views import PageMixin
 from apps.personnel.models import Employee
 
 from .forms import DateForm, EventForm, LookupForm
@@ -58,16 +59,14 @@ def missing_clock_out(user):
     )
 
 
-class PageMixin:
-    """頁面權限檢查；職級不足時提示並回首頁。"""
-
-    page_key = None
+class AttendancePageMixin(PageMixin):
+    """到班的頁面：頁面權限之外，check_scope 不通過（職級不足）時提示並回首頁。"""
 
     def check_scope(self, user):
         return True
 
     def dispatch(self, request, *args, **kwargs):
-        if not can_use(request.user, MENU_BY_KEY[self.page_key]):
+        if not can_use(request.user, self.menu_item):
             raise PermissionDenied
         if not self.check_scope(request.user):
             messages.warning(request, "你的職級不足，不能使用這個功能。")
@@ -79,13 +78,8 @@ class PageMixin:
         form.is_valid()
         return form.cleaned_data.get("date") or timezone.localdate()
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["menu_item"] = MENU_BY_KEY[self.page_key]
-        return context
 
-
-class RegisterAccessMixin(PageMixin):
+class RegisterAccessMixin(AttendancePageMixin):
     page_key = "attendance-register"
 
     def check_scope(self, user):
@@ -239,7 +233,7 @@ class RegisterView(RegisterAccessMixin, TemplateView):
         if editable and "event_form" not in kwargs:
             context["event_form"] = EventForm(prefix="e", initial={"time": now_minute() if self.date == today else None})
         context.update(
-            menu_item=MENU_BY_KEY[self.page_key], date=self.date, employee_no=self.employee_no, employee=self.employee,
+            date=self.date, employee_no=self.employee_no, employee=self.employee,
             record=self.record, events=events, error=self.error, is_today=self.date == today, editable=editable,
             can_clock=editable and self.date == today, clock=clock_windows(), candidates=self.candidates[: self.MAX_CANDIDATES],
             more_candidates=len(self.candidates) > self.MAX_CANDIDATES,

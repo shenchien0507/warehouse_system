@@ -160,11 +160,6 @@ def latest_by_number(stage, numbers):
     return latest
 
 
-def work_date():
-    """目前的作業日：沒開結轉就是系統日期的今天，開了就是還沒日結的那天。"""
-    return current_work_date()
-
-
 def totals_by_kind(day):
     """當日統計那天各種類的總數（卡片上的大數字）：({種類: 總數}, 種類順序)。"""
     batches, summary = day_stats(day)
@@ -248,7 +243,7 @@ def boards_for(day):
         board.prior_shown.update(board.prior)
     # 長條：今天最早登記的那些是在印前日的待印，照登記先後算進前日那條
     left = {name: board.carried_unprinted for name, board in boards.items()}
-    for record in sorted((r for r in today_records), key=lambda r: (r.created_at, r.pk)):
+    for record in sorted(today_records, key=lambda r: (r.created_at, r.pk)):
         name = record.kind or UNCLASSIFIED
         take = min(record.quantity, left.get(name, 0))
         if take > 0:
@@ -261,7 +256,7 @@ def tower(kind=None):
     """kind 有值只看那個種類（單獨頁）：卡片、進行中、完成、編號清單都只留這個種類的；沒有這個種類回傳 None。
     picking / allocation 是撿貨、配貨進行中，done 是配貨完成，都是新的在前；畫面上先列 5 筆，其他收起來。
     前日登記的編號帶著 prior_date（登記的作業日），畫面上標日期。"""
-    day = work_date()
+    day = current_work_date()
     boards, records, picking, allocation = boards_for(day)
     prior_dates = {r.number: r.work_date for r in records if r.work_date and r.work_date != day}
     for entry in [*picking.values(), *allocation.values()]:
@@ -297,5 +292,5 @@ def tower(kind=None):
 def kind_cards():
     """登記紀錄頁最上面的種類卡：(作業日, [(種類, 已登記, 可以登記的總數)])。
     種類是當日統計今天有數字卡的，加上有前日待印的；總數 = 今天匯入的 + 前日待印。"""
-    day = work_date()
+    day = current_work_date()
     return day, [(name, registered, limit) for name, (registered, limit) in kind_limits(day).items()]

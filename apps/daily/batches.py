@@ -10,11 +10,9 @@ from django.db import transaction
 from django.db.models import Max
 
 from apps.closing.workday import current_work_date
-from apps.orders.batches import ImportOutcome, aware, check_versions, read_file
+from apps.orders.batches import ImportOutcome, check_versions, read_file
 
 from .models import DailyBatch, DailyHold, DailyLine, DailyOrder
-
-TEXT_FIELDS = [f.name for f in DailyLine._meta.get_fields() if f.get_internal_type() == "CharField"]
 
 
 @dataclass
@@ -22,15 +20,6 @@ class BatchOutcome:
     batch: DailyBatch = None
     message: str = ""
     file: ImportOutcome = field(default_factory=ImportOutcome)  # 檔案的問題（列錯誤）
-
-
-def to_line(batch, order, row_no, values, is_duplicate):
-    data = dict(values)
-    for key in TEXT_FIELDS:
-        if key in data:
-            data[key] = (data[key] or "")[: DailyLine._meta.get_field(key).max_length]
-    data["order_time"], data["ship_time"] = aware(data["order_time"]), aware(data["ship_time"])
-    return DailyLine(batch=batch, order=order, row_no=row_no, is_duplicate=is_duplicate, **data)
 
 
 def file_hash(uploaded):
@@ -98,7 +87,10 @@ def import_batch(user, uploaded):
         orders = {**existing, **{o.order_no: o for o in new_orders}}
         DailyLine.objects.bulk_create(
             (
-                to_line(batch, orders[values["order_no"][:max_length]], row_no, values, values["order_no"][:max_length] in existing)
+                DailyLine.from_source(
+                    row_no, values, batch=batch, order=orders[values["order_no"][:max_length]],
+                    is_duplicate=values["order_no"][:max_length] in existing,
+                )
                 for row_no, values in result.lines
             ),
             batch_size=2000,

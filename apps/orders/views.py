@@ -1,12 +1,11 @@
 """「訂單統計」：一次匯入多個分類的檔案，各分類一張表，最後合計。"""
 
 from django.contrib import messages
-from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.views.generic import DetailView, ListView, View
 
-from apps.backoffice.menu import MENU_BY_KEY, can_use
+from apps.backoffice.views import PageMixin
 from apps.closing.carry import carry_report
 from apps.closing.workday import current_work_date
 
@@ -16,18 +15,8 @@ from .models import GroupVersion, ImportCategory, MappingVersion, StatRun
 from .stats import run_stats
 
 
-class StatsPageMixin:
+class StatsPageMixin(PageMixin):
     page_key = "order-stats"
-
-    def dispatch(self, request, *args, **kwargs):
-        if not can_use(request.user, MENU_BY_KEY[self.page_key]):
-            raise PermissionDenied
-        return super().dispatch(request, *args, **kwargs)
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["menu_item"] = MENU_BY_KEY[self.page_key]
-        return context
 
 
 class CheckFileView(StatsPageMixin, View):
