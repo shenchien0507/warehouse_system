@@ -127,3 +127,42 @@
   });
   label();
 })();
+
+// 顏色條提示（data-tip）：滑鼠移到長條上馬上顯示這段是什麼數據（瀏覽器內建 title 要等一秒，又會被卡片連結蓋住）
+(function () {
+  var tip = null;
+
+  function box() {
+    if (!tip) {
+      tip = document.createElement("div");
+      tip.className = "wh-tip";
+      document.body.appendChild(tip);
+    }
+    return tip;
+  }
+
+  function place(event) {
+    var el = box(), x = event.clientX + 12, y = event.clientY + 16;
+    var w = el.offsetWidth, h = el.offsetHeight;
+    if (x + w > window.innerWidth - 8) x = window.innerWidth - w - 8;
+    if (y + h > window.innerHeight - 8) y = event.clientY - h - 10;
+    el.style.left = x + "px";
+    el.style.top = y + "px";
+  }
+
+  document.addEventListener("mousemove", function (event) {
+    var target = event.target.closest && event.target.closest("[data-tip]");
+    if (!target) {
+      if (tip) tip.classList.remove("is-on");
+      return;
+    }
+    var el = box();
+    if (el.textContent !== target.dataset.tip) el.textContent = target.dataset.tip;
+    el.classList.add("is-on");
+    place(event);
+  });
+
+  document.addEventListener("mouseleave", function () {
+    if (tip) tip.classList.remove("is-on");
+  });
+})();

@@ -187,7 +187,7 @@ class CarryTests(ClosingBase):
             self.import_orders(self.day2, [5, 6], "b.xlsx")
             response = self.client.get(reverse("daily:day_list"))
             self.assertContains(response, "昨日未完成")
-            self.assertContains(response, "昨日 4・剩 4")
+            self.assertContains(response, "昨日 已出 0・剩 <span class=\"carry-left-num\">4</span>", html=False)
             self.assertContains(response, "（含前日待印 1）")
             self.assertContains(self.client.get(reverse("tower:index")), "含前日 4")
 

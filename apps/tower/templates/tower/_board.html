@@ -21,7 +21,7 @@
             <div class="tower-value">{{ kind.done }}<span class="tower-sub fw-normal"> / {{ kind.total }}</span></div>
             <div class="tower-track tower-thin my-1">
               {% for key, label, quantity, width in kind.bar %}
-                <div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" title="{{ label }}：{{ quantity }}"></div>
+                <div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" data-tip="{{ label }}：{{ quantity }}"></div>
               {% endfor %}
             </div>
             <div class="tower-register {% if kind.over_by %}is-over{% elif kind.registered == kind.total %}is-even{% endif %}">已登記 {{ kind.registered }} / {{ kind.total }}</div>

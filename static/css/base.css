@@ -47,3 +47,11 @@ main { flex: 1 0 auto; }
 [data-bs-theme=dark] .timeline-leave { background: #3a3220; }
 [data-bs-theme=dark] .table-light { --bs-table-bg: #2b2e33; --bs-table-color: var(--bs-body-color); --bs-table-border-color: #4a4d53; --bs-table-striped-bg: #33363b; --bs-table-hover-bg: #383b40; }
 [data-bs-theme=dark] .bg-light { background-color: #2b2e33 !important; }
+
+/* 顏色條提示（static/js/base.js 的 data-tip） */
+.wh-tip { position: fixed; z-index: 1090; pointer-events: none; display: none; max-width: 18rem; padding: .25rem .5rem;
+  border-radius: .25rem; background: rgba(33, 37, 41, .94); color: #fff; font-size: .8125rem; line-height: 1.4; white-space: pre-line; }
+.wh-tip.is-on { display: block; }
+[data-bs-theme=dark] .wh-tip { background: rgba(248, 249, 250, .96); color: #212529; }
+/* 長條要蓋在卡片的整張連結（stretched-link）上面，滑鼠才指得到 */
+.bar-track[data-tip], .bar-track:has([data-tip]), .tower-track { position: relative; z-index: 3; cursor: help; }

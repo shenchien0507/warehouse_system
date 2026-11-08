@@ -8,7 +8,7 @@
 <div class="tower-register {% if kind.over_by %}is-over{% elif kind.registered == kind.total %}is-even{% endif %}">已登記 {{ kind.registered }} / {{ kind.total }}{% if kind.over_by %}（多登記 {{ kind.over_by }}）{% endif %}{% if not kind.has_total %}・當日統計沒有這個種類{% endif %}</div>
 <div class="tower-track my-2">
   {% for key, label, quantity, width in kind.bar %}
-    <div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" title="{{ label }}：{{ quantity }}"></div>
+    <div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" data-tip="{{ label }}：{{ quantity }}"></div>
   {% endfor %}
 </div>
 <table class="table table-sm mb-0 tower-states">
