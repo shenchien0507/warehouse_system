@@ -56,6 +56,8 @@ class KindBoard:
     carried_unprinted: int = 0  # 上次日結的待印
     registered_today: int = 0  # 今天登記的數量
     prior: dict = field(default_factory=lambda: OrderedDict((key, 0) for key, _ in STATES))  # 前日的部分：狀態 → 數量
+    # 前日那條長條用的：prior 再加上今天先登記、拿去扣前日待印的那些（照登記先後），合計 = 前日轉來的
+    prior_shown: dict = field(default_factory=lambda: OrderedDict((key, 0) for key, _ in STATES))
 
     @property
     def limit(self):
@@ -75,7 +77,7 @@ class KindBoard:
     @property
     def carried_left(self):
         """前日轉來的現在還剩多少（還沒配貨完成）。"""
-        return sum(self.prior[key] for key, _ in STATES if key != DONE)
+        return sum(self.prior_shown[key] for key, _ in STATES if key != DONE)
 
     @property
     def done(self):
@@ -105,16 +107,46 @@ class KindBoard:
     @property
     def rows(self):
         """[(狀態, 名稱, 數量, 幾個編號, 長條寬度%, 前日的數量)]"""
-        return [(key, label, *self.states[key], self._width(self.states[key][0]), self.prior[key]) for key, label in STATES]
+        return [(key, label, *self.states[key], self._width(self.states[key][0]), self.prior_shown[key]) for key, label in STATES]
+
+    BAR_ORDER = (DONE, ALLOCATING, WAIT_ALLOCATION, PICKING, NOT_STARTED, UNREGISTERED)
+
+    def _bar(self, quantities, prefix):
+        """[(key, 名稱, 數量, 寬度%)]：一條長條，照狀態上色，寬度用這條自己的合計算。"""
+        labels = dict(STATES)
+        parts = [(key, f"{prefix}・{labels[key]}", quantities[key]) for key in self.BAR_ORDER if quantities[key] > 0]
+        scale = sum(quantity for _, _, quantity in parts) or 1
+        return [(key, label, quantity, quantity * 100 / scale) for key, label, quantity in parts]
 
     @property
-    def bar(self):
-        """[(key, 名稱, 數量, 寬度%)]：卡片上的長條。完成 → 前日還沒做完（黃色，和昨日未完成一致）→ 今天的各狀態。"""
-        parts = [(DONE, "完成", self.states[DONE][0]), ("carry", "前日未完成", self.carried_left)]
-        labels = dict(STATES)
-        for key in (ALLOCATING, WAIT_ALLOCATION, PICKING, NOT_STARTED, UNREGISTERED):
-            parts.append((key, labels[key], self.states[key][0] - self.prior[key]))
-        return [(key, label, quantity, self._width(quantity)) for key, label, quantity in parts if quantity > 0]
+    def today_states(self):
+        """今天的部分：各狀態扣掉前日的。"""
+        return {key: self.states[key][0] - self.prior_shown[key] for key, _ in STATES}
+
+    @property
+    def prior_bar(self):
+        """前日那條（黃框）：前日轉來的照狀態上色。"""
+        return self._bar(self.prior_shown, "前日")
+
+    @property
+    def today_bar(self):
+        """今日那條：今天的部分照狀態上色。"""
+        return self._bar(self.today_states, "今日")
+
+    @property
+    def today_count(self):
+        """今日那條的合計（今天匯入的，加上今天登記時先扣掉的前日待印）。"""
+        return sum(self.today_states.values())
+
+    @property
+    def prior_count(self):
+        """前日那條的合計（= 前日轉來的）。"""
+        return sum(self.prior_shown.values())
+
+    @property
+    def today_left(self):
+        """今天的部分還剩多少（還沒配貨完成）。"""
+        return sum(quantity for key, quantity in self.today_states.items() if key != DONE)
 
     def _width(self, quantity):
         return max(0, quantity) * 100 / max(self.total, self.registered) if self.total > 0 or self.registered > 0 else 0
@@ -213,6 +245,15 @@ def boards_for(day):
         board.states[UNREGISTERED][0] = unregistered
         # 先印舊的：今天登記的先扣前日待印
         board.prior[UNREGISTERED] = min(unregistered, max(0, board.carried_unprinted - board.registered_today))
+        board.prior_shown.update(board.prior)
+    # 長條：今天最早登記的那些是在印前日的待印，照登記先後算進前日那條
+    left = {name: board.carried_unprinted for name, board in boards.items()}
+    for record in sorted((r for r in today_records), key=lambda r: (r.created_at, r.pk)):
+        name = record.kind or UNCLASSIFIED
+        take = min(record.quantity, left.get(name, 0))
+        if take > 0:
+            left[name] -= take
+            boards[name].prior_shown[state_of(picking.get(record.number), allocation.get(record.number))] += take
     return boards, records, picking, allocation
 
 

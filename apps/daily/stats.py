@@ -163,20 +163,29 @@ class GroupCard:
 
     @property
     def split(self):
-        """[(key, 名稱, 數字, 寬度%)]：卡片上的小長條，切單前／後（沒切時間是不分時段），有昨日轉來的接一段黃色。
-        沒切時間、也沒有昨日轉來的分組不畫。"""
-        carried = self.carry.total if self.carry else 0
-        if not self.cutoff and not carried:
-            return []
+        """[(key, 名稱, 數字, 寬度%)]：卡片上當日的長條，切單前／後（沒切時間是一整段不分時段）。"""
         if self.cutoff:
             parts = [("before", f"{self.cutoff} 前"), ("after", f"{self.cutoff} 後"), ("no_time", "沒有下單時間")]
             rows = [(key, label, self.shown[key]) for key, label in parts if self.shown.get(key)]
         else:
             rows = [("all_day", "不分時段", self.main)] if self.main else []
-        if carried:
-            rows.append(("carry", "昨日", carried))
         scale = sum(count for _, _, count in rows) or 1
         return [(key, label, count, count * 100 / scale) for key, label, count in rows]
+
+    @property
+    def carry_done(self):
+        """昨日轉來的今天已經出掉幾張（看歷史日期沒有「目前還剩」時是 None）。"""
+        if not self.carry or self.carry.left is None:
+            return None
+        return max(self.carry.total - self.carry.left, 0)
+
+    @property
+    def carry_done_width(self):
+        """昨日長條黃色填滿的寬度%：已出 / 昨日轉來；沒有還剩的數字時整條填滿。"""
+        if not self.carry or not self.carry.total:
+            return 0
+        done = self.carry_done
+        return 100 if done is None else done * 100 / self.carry.total
 
 
 @dataclass

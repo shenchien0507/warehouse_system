@@ -162,6 +162,9 @@ class CarryTests(ClosingBase):
             self.client.post(reverse("records:list"), {"kind": NEXT_DAY, "number": "丙", "name": "x", "quantity": 1})
             board = self.board()
             self.assertEqual((board.states[UNREGISTERED][0], board.prior[UNREGISTERED], board.registered_today), (0, 0, 1))
+            # 長條：今天登記的丙是在印前日待印，算在前日那條；前日還剩 4（丙還沒做）
+            self.assertEqual((board.prior_count, board.today_count, board.carried_left), (4, 0, 4))
+            self.assertEqual(board.prior_shown[NOT_STARTED], 3)
 
     def test_done_counts_on_the_day_it_finished(self):
         self.first_day()
@@ -187,7 +190,7 @@ class CarryTests(ClosingBase):
             self.import_orders(self.day2, [5, 6], "b.xlsx")
             response = self.client.get(reverse("daily:day_list"))
             self.assertContains(response, "昨日未完成")
-            self.assertContains(response, "昨日 4・剩 4")
+            self.assertContains(response, "昨日 已出 0・剩 <span class=\"carry-left-num\">4</span>", html=False)
             self.assertContains(response, "（含前日待印 1）")
             self.assertContains(self.client.get(reverse("tower:index")), "含前日 4")
 

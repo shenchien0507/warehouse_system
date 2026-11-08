@@ -13,7 +13,7 @@
 .daily-board .stat-value { font-size: 2rem; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .daily-board .stat-sub { font-size: .8125rem; color: var(--text-muted); }
 .daily-board .stat-label { font-size: 1rem; font-weight: 600; color: inherit; }
-.daily-board .stat-split { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .875rem; color: var(--text-muted); }
+.daily-board .stat-split { display: flex; flex-wrap: wrap; gap: .25rem .75rem; font-size: .875rem; color: var(--text-muted); }
 .daily-board .stat-split strong { color: var(--bs-body-color); font-variant-numeric: tabular-nums; }
 .daily-board .stat-tile.is-ungrouped { border-color: #f0c36d; background: #fffaf0; }
 .daily-board .stat-tile { position: relative; }
@@ -25,6 +25,9 @@
 .daily-board .register-over { color: #b42318; font-weight: 600; }
 .daily-board .stat-value.register-short { color: inherit; }
 .daily-board .bar-track.bar-thin { height: .5rem; }
+.daily-board .carry-caption { font-size: .75rem; color: var(--text-muted); margin-top: .125rem; font-variant-numeric: tabular-nums; }
+.daily-board .carry-track { background: #fbecc6; border-radius: 4px; box-shadow: inset 0 0 0 1px #e9c46a; }
+[data-bs-theme=dark] .daily-board .carry-track { background: #3a3220; box-shadow: inset 0 0 0 1px #8a6d2b; }
 
 .daily-board .bar-row { display: grid; grid-template-columns: 7rem 1fr 4.5rem; align-items: center; gap: .75rem; padding: .3rem 0; }
 .daily-board .bar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

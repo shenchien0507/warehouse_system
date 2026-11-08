@@ -6,6 +6,7 @@
 {% else %}
   <div class="d-flex flex-wrap align-items-baseline gap-3 mb-3">
     <h2 class="h4 mb-0">作業日 {{ work_date|date:"Y/m/d" }}</h2>
+    <div class="tower-legend"><span><span class="tower-swatch seg-done"></span>完成</span><span><span class="tower-swatch seg-allocating"></span>配貨進行中</span><span><span class="tower-swatch seg-wait_allocation"></span>未配貨</span><span><span class="tower-swatch seg-picking"></span>撿貨進行中</span><span><span class="tower-swatch seg-not_started"></span>未開始</span><span><span class="tower-swatch seg-unregistered"></span>未登記</span><span><span class="tower-swatch tower-prior-swatch"></span>黃框 = 前日轉來</span></div>
   </div>
 
   {% if detail %}
@@ -19,11 +20,7 @@
             {% if kind.carried %}<span class="carry-badge float-end position-relative" style="z-index: 2;" title="前日轉來 {{ kind.carried }}，目前還剩 {{ kind.carried_left }}">含前日 {{ kind.carried }}</span>{% endif %}
             <div class="tower-label"><a href="?kind={{ kind.name|urlencode }}" class="stretched-link text-reset text-decoration-none">{{ kind.name }}</a></div>
             <div class="tower-value">{{ kind.done }}<span class="tower-sub fw-normal"> / {{ kind.total }}</span></div>
-            <div class="tower-track tower-thin my-1">
-              {% for key, label, quantity, width in kind.bar %}
-                <div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" title="{{ label }}：{{ quantity }}"></div>
-              {% endfor %}
-            </div>
+            <div class="my-1">{% include "tower/_bars.html" with size="tower-thin" %}</div>
             <div class="tower-register {% if kind.over_by %}is-over{% elif kind.registered == kind.total %}is-even{% endif %}">已登記 {{ kind.registered }} / {{ kind.total }}</div>
             <div class="tower-pop"><div class="tower-card">{% include "tower/_card.html" %}</div></div>
           </div>

@@ -1,0 +1,11 @@
+{% comment %}數據塔長條：有前日轉來的分兩條，前日（黃框）、今日，都照狀態上色；size 是 tower-thin 或空白。{% endcomment %}
+{% if kind.carried %}
+  <div class="tower-bar-label"><span>前日 {{ kind.prior_count }}</span><span>剩 {{ kind.carried_left }}</span></div>
+  <div class="tower-track tower-prior {{ size }}">
+    {% for key, label, quantity, width in kind.prior_bar %}<div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" data-tip="{{ label }}：{{ quantity }}"></div>{% endfor %}
+  </div>
+  <div class="tower-bar-label"><span>今日 {{ kind.today_count }}</span><span>剩 {{ kind.today_left }}</span></div>
+{% endif %}
+<div class="tower-track {{ size }}">
+  {% for key, label, quantity, width in kind.today_bar %}<div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" data-tip="{{ label }}：{{ quantity }}"></div>{% endfor %}
+</div>
