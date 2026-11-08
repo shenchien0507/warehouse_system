@@ -73,7 +73,7 @@ class KindBoard:
 def latest_by_number(stage, numbers):
     """每個編號在這個階段最新的一筆登記。"""
     latest = {}
-    for entry in WorkEntry.objects.filter(stage=stage, number__in=numbers).select_related("start_employee").order_by("started_at", "pk"):
+    for entry in WorkEntry.objects.filter(stage=stage, number__in=numbers).select_related("start_employee", "end_employee").prefetch_related("segments__employee").order_by("started_at", "pk"):
         latest[entry.number] = entry
     return latest
 
@@ -92,8 +92,9 @@ def totals_by_kind(day):
     return {card.name: card.main for card in cards}, [card.name for card in cards]
 
 
-def tower(limit_recent=5, kind=None):
-    """kind 有值只看那個種類（單獨頁）：卡片、進行中、最近完成、編號清單都只留這個種類的；沒有這個種類回傳 None。"""
+def tower(kind=None):
+    """kind 有值只看那個種類（單獨頁）：卡片、進行中、完成、編號清單都只留這個種類的；沒有這個種類回傳 None。
+    picking / allocation 是撿貨、配貨進行中，done 是配貨完成，都是新的在前；畫面上先列 5 筆，其他收起來。"""
     day = work_date()
     totals, order = totals_by_kind(day)
     records = list(Record.objects.created_on(day).only("number", "quantity", "kind"))
@@ -122,23 +123,26 @@ def tower(limit_recent=5, kind=None):
         for r in sorted(records, key=lambda r: r.number)
         for s in [state_of(picking.get(r.number), allocation.get(r.number))]
     ]
-    active = [
-        (entry, "撿貨" if stage == Stage.PICKING else "配貨")
-        for stage, entries in ((Stage.PICKING, picking), (Stage.ALLOCATION, allocation))
-        for entry in entries.values()
-        if entry.ended_at is None
-    ]
-    active.sort(key=lambda item: item[0].started_at)
-    recent = sorted((e for e in allocation.values() if e.ended_at is not None), key=lambda e: e.ended_at, reverse=True)[:limit_recent]
+    picking_active = sorted((e for e in picking.values() if e.ended_at is None), key=lambda e: e.started_at, reverse=True)
+    allocation_active = sorted((e for e in allocation.values() if e.ended_at is None), key=lambda e: e.started_at, reverse=True)
+    done = sorted((e for e in allocation.values() if e.ended_at is not None), key=lambda e: e.ended_at, reverse=True)
     if kind is not None:
         if kind not in boards:
             return None
         mine = {r.number for r in records if (r.kind or UNCLASSIFIED) == kind}
         boards = OrderedDict([(kind, boards[kind])])
         listing = [row for row in listing if row[0] in mine]
-        active = [item for item in active if item[0].number in mine]
-        recent = [e for e in sorted((e for e in allocation.values() if e.ended_at is not None and e.number in mine), key=lambda e: e.ended_at, reverse=True)][:limit_recent]
-    return {"work_date": day, "kinds": list(boards.values()), "active": active, "recent": recent, "numbers": listing}
+        picking_active, allocation_active, done = (
+            [e for e in entries if e.number in mine] for entries in (picking_active, allocation_active, done)
+        )
+    return {
+        "work_date": day, "kinds": list(boards.values()), "numbers": listing,
+        "progress": [
+            ("picking", "撿貨進行中", "開始", picking_active, "現在沒有撿貨中的編號。"),
+            ("allocation", "配貨進行中", "開始", allocation_active, "現在沒有配貨中的編號。"),
+            ("done", "配貨完成", "完成", done, "還沒有配貨完成的編號。"),
+        ],
+    }
 
 
 def kind_cards():

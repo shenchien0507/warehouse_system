@@ -31,36 +31,31 @@
   {% endif %}
 
   <div class="row g-4 mb-4">
-    <div class="col-lg-7">
-      <h3 class="h6 mb-2">目前進行中</h3>
-      {% if active %}
-        <div class="table-responsive">
-          <table class="table table-sm align-middle">
-            <thead class="table-light"><tr><th>階段</th><th>編號</th><th>員工</th><th>開始</th></tr></thead>
+    {% for key, title, time_label, entries, empty_text in progress %}
+      <div class="col-lg-4">
+        <h3 class="h6 mb-2">{{ title }} <span class="text-muted fw-normal">{{ entries|length }}</span></h3>
+        {% if entries %}
+          <table class="table table-sm align-middle mb-1">
+            <thead class="table-light"><tr><th>編號</th><th>員工</th><th>{{ time_label }}</th></tr></thead>
             <tbody>
-              {% for entry, stage in active %}
-                <tr>
-                  <td>{{ stage }}</td>
-                  <td>{{ entry.number }}</td>
-                  <td>{{ entry.start_employee.employee_no }} {{ entry.start_employee.name }}</td>
-                  <td>{{ entry.started_at|date:"H:i:s" }}</td>
-                </tr>
-              {% endfor %}
+              {% for entry in entries|slice:":5" %}{% include "tower/_progress_row.html" %}{% endfor %}
             </tbody>
           </table>
-        </div>
-      {% else %}
-        <div class="text-muted small">現在沒有進行中的撿貨或配貨。</div>
-      {% endif %}
-    </div>
-    <div class="col-lg-5">
-      <h3 class="h6 mb-2">最近配貨完成</h3>
-      {% for entry in recent %}
-        <div class="small py-1 border-bottom">{{ entry.ended_at|date:"H:i:s" }}　{{ entry.number }}</div>
-      {% empty %}
-        <div class="text-muted small">還沒有配貨完成的編號。</div>
-      {% endfor %}
-    </div>
+          {% if entries|length > 5 %}
+            <details data-key="{{ key }}">
+              <summary class="small text-muted mb-1">其他 {{ entries|length|add:"-5" }} 筆</summary>
+              <table class="table table-sm align-middle">
+                <tbody>
+                  {% for entry in entries|slice:"5:" %}{% include "tower/_progress_row.html" %}{% endfor %}
+                </tbody>
+              </table>
+            </details>
+          {% endif %}
+        {% else %}
+          <div class="text-muted small">{{ empty_text }}</div>
+        {% endif %}
+      </div>
+    {% endfor %}
   </div>
 
   {% if detail %}

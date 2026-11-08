@@ -49,6 +49,47 @@ class WorkEntry(models.Model):
     def edited(self):
         return self.updated_by_id is not None
 
+    @property
+    def segment_list(self):
+        """這筆的作業片段（照時間順序）；列表頁有 prefetch_related("segments__employee") 時不會再查資料庫。"""
+        return sorted(self.segments.all(), key=lambda s: (s.started_at, s.pk))
+
+    @property
+    def current_employee(self):
+        """現在負責的人：最後一段的員工（還沒結束就是正在做的人）。"""
+        segments = self.segment_list
+        return segments[-1].employee if segments else self.start_employee
+
+    @property
+    def handovers(self):
+        """有交接時回傳片段清單，沒交接（只有一段）回傳空清單。"""
+        segments = self.segment_list
+        return segments if len(segments) > 1 else []
+
+
+class WorkSegment(models.Model):
+    """作業片段：一筆撿貨或配貨裡，每個人實際做的那一段。
+    同一個人再刷一次是完成；換別人刷是交接，前一段記成交接，接手的人開新的一段，等他再刷一次才完成。
+    之後要算個人產能，就用每段的時間（開始到結束）。"""
+
+    HANDOVER = "handover"
+    DONE = "done"
+    OUTCOMES = [(HANDOVER, "交接"), (DONE, "完成")]
+
+    entry = models.ForeignKey(WorkEntry, verbose_name="作業登記", on_delete=models.CASCADE, related_name="segments")
+    employee = models.ForeignKey("personnel.Employee", verbose_name="員工", on_delete=models.PROTECT, related_name="+")
+    started_at = models.DateTimeField("開始時間")
+    ended_at = models.DateTimeField("結束時間", null=True, blank=True)
+    outcome = models.CharField("結束方式", max_length=20, choices=OUTCOMES, blank=True)
+
+    class Meta:
+        verbose_name = "作業片段"
+        verbose_name_plural = "作業片段"
+        ordering = ["started_at", "pk"]
+
+    def __str__(self):
+        return f"{self.entry} {self.employee.employee_no}"
+
 
 class WorklogSetting(models.Model):
     """撿貨、配貨的設定（全公司一組）：同一個編號刷完後幾秒內再刷不算，避免條碼槍連刷或 Enter 按兩次就直接結束。"""

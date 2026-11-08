@@ -8,13 +8,17 @@
   function refresh() {
     if ((toggle && !toggle.checked) || document.hidden || (current && current.classList.contains("is-open"))) return;
     // 記住展開區塊是否開著，更新後照原樣打開
+    // 有 data-key 的照 key 對（進行中、完成的「其他 N 筆」可能出現或消失），其他照順序
     var open = Array.prototype.map.call(box.querySelectorAll("details"), function (el) { return el.open; });
+    var openKeys = {};
+    box.querySelectorAll("details[data-key]").forEach(function (el) { openKeys[el.dataset.key] = el.open; });
     fetch(box.dataset.url, { headers: { "X-Requested-With": "fetch" }, credentials: "same-origin" })
       .then(function (response) { return response.ok ? response.text() : Promise.reject(response.status); })
       .then(function (html) {
         box.innerHTML = html;
         box.querySelectorAll("details").forEach(function (el, i) {
-          if (i < open.length) el.open = open[i];
+          if (el.dataset.key) el.open = !!openKeys[el.dataset.key];
+          else if (i < open.length) el.open = open[i];
         });
       })
       .catch(function () {
