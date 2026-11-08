@@ -329,7 +329,7 @@ class RecordTests(TestCase):
 
     def test_new_page_shows_latest_number(self):
         response = self.client.get(reverse("records:new"))
-        self.assertContains(response, "還沒有紀錄")
+        self.assertContains(response, "今天還沒登記")
         self.assertIsNone(self.client.get(reverse("records:kind_stats")).json()["latest"])
         self.record(self.other, number="X-9", kind=KIND)
         self.record(self.other, number="260104-031")

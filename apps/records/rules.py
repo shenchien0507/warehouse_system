@@ -32,24 +32,24 @@ LINKED_NOTE = "已有撿貨或配貨登記"
 
 
 def kind_names():
-    """登記時可選的種類：今天當日統計有數字卡的種類（數字不是 0），沒有數字卡的不能選。"""
+    """登記時可選的種類：今天當日統計有數字卡的種類，加上有前日待印的種類；都沒有的不能選。"""
     from apps.tower.stats import kind_cards
 
     return [name for name, _, _ in kind_cards()[1]]
 
 
 def registered_by_kind(day):
-    """某天（登記日期）各種類登記的數量加總：{種類: 數量}，空白種類是未分類。"""
+    """某個作業日各種類登記的數量加總：{種類: 數量}，空白種類是未分類。"""
     totals = {}
-    for kind, quantity in Record.objects.created_on(day).values_list("kind", "quantity"):
+    for kind, quantity in Record.objects.of_day(day).values_list("kind", "quantity"):
         totals[kind] = totals.get(kind, 0) + quantity
     return totals
 
 
 def over_total_errors(new_rows=(), edited=()):
-    """登記後會超過當日統計總數的種類，回傳錯誤訊息（空的就是可以存）。
+    """登記後會超過當日統計總數（今天匯入的 + 前日待印）的種類，回傳錯誤訊息（空的就是可以存）。
     new_rows 是新登記的 [(種類, 數量)]；edited 是改好但還沒存的紀錄（修改、批量修改），先扣掉它們原本的數量再算，
-    不是今天登記的紀錄不算進今天的已登記，略過。
+    不是今天（作業日）登記的紀錄不算進今天的已登記，略過。
     已經超出的種類，只要這次沒有讓它更多就放行（例如把數量改小）；當日統計沒有的種類（未分類）不檢查。
     有新訂單要先到當日統計匯入，總數才會增加，不能直接登記上去。"""
     from apps.tower.stats import kind_cards
@@ -59,7 +59,7 @@ def over_total_errors(new_rows=(), edited=()):
     before = registered_by_kind(day)
     after = dict(before)
     rows = list(new_rows)
-    originals = Record.objects.created_on(day).filter(pk__in=[r.pk for r in edited if r.pk]).in_bulk()
+    originals = Record.objects.of_day(day).filter(pk__in=[r.pk for r in edited if r.pk]).in_bulk()
     for record in edited:
         original = originals.get(record.pk)
         if original is not None:

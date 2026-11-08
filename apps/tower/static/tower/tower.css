@@ -42,3 +42,4 @@
   transition: opacity .15s ease, transform .15s ease, visibility 0s .15s;
 }
 .tower-board .tower-tile.is-open .tower-pop { opacity: 1; visibility: visible; transform: scale(1); transition: opacity .15s ease, transform .15s ease; }
+.tower-board .carry-prior { color: #8a5a00; }

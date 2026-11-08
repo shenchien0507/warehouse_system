@@ -1,1 +1,8 @@
 .quick-submit { padding-top: 2rem; }
+
+/* 狀態：顏色和數據塔一樣 */
+.state-dot { display: inline-block; width: .65rem; height: .65rem; border-radius: 2px; margin-right: .35rem; vertical-align: -1px; background: #d6d5d0; }
+.state-dot.state-picking { background: #2a78d6; }
+.state-dot.state-wait_allocation { background: #e8a93a; }
+.state-dot.state-allocating { background: #eb6834; }
+.state-dot.state-done { background: #1baf7a; }

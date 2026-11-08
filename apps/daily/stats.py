@@ -134,7 +134,8 @@ class GroupCard:
     rows: int = 0  # 非去重
     show_rows: bool = False  # 分組勾選「另外列出非去重」：卡片主要顯示非去重，去重放小字
     cutoff: str = ""  # 切單時間文字，例如 14:00；沒切時間空白
-    registered: int = 0  # 登記紀錄裡這個種類今天登記的數量（對帳用）
+    registered: int = 0  # 登記紀錄裡這個種類今天（作業日）登記的數量（對帳用）
+    carry: object = None  # 昨日未完成（closing.carry.CarryRow）：前日轉來的待印、待撿、待包，和目前還剩
     held: int = 0  # 抽起中的訂單（和主要數字同一種：非去重或去重），不算在上面的數字裡
 
     @property
@@ -142,13 +143,18 @@ class GroupCard:
         return self.rows if self.show_rows else self.total
 
     @property
+    def limit(self):
+        """今天可以登記的總數：今天匯入的 + 前日待印（前日轉來還沒印的，今天要登記）。"""
+        return self.main + (self.carry.unprinted if self.carry else 0)
+
+    @property
     def register_state(self):
         """登記對總數：不足 short、剛好 even、超過 over。"""
-        return "even" if self.registered == self.main else "over" if self.registered > self.main else "short"
+        return "even" if self.registered == self.limit else "over" if self.registered > self.limit else "short"
 
     @property
     def over_by(self):
-        return self.registered - self.main
+        return self.registered - self.limit
 
     @property
     def shown(self):
@@ -180,9 +186,10 @@ def segment_key(period):
     return "no_time" if period == NO_TIME else "all_day"
 
 
-def dashboard(batches, summary, stat_groups, registered=None, held=None):
+def dashboard(batches, summary, stat_groups, registered=None, held=None, carry=None):
     """當日累計的數字整理成 dashboard：每個分組一張數字卡（切單前／後）、批次累計。
-    registered：{種類: 登記數量}，卡片上顯示「已登記 / 總數」。held：抽起中訂單的統計（held_stats），卡片上顯示「抽起 N」。"""
+    registered：{種類: 登記數量}，卡片上顯示「已登記 / 總數」。held：抽起中訂單的統計（held_stats），卡片上顯示「抽起 N」。
+    carry：昨日未完成（closing.carry.CarryReport），有轉過來的分組卡片標「昨日 N・剩 M」。"""
     cards = {
         g.name: GroupCard(g.name, {}, show_rows=g.show_rows, cutoff=g.cutoff.strftime("%H:%M") if g.cutoff else "")
         for g in stat_groups
@@ -200,6 +207,9 @@ def dashboard(batches, summary, stat_groups, registered=None, held=None):
     for name, quantity in (registered or {}).items():
         if name in cards:
             cards[name].registered = quantity
+    for name, row in (carry.by_name() if carry else {}).items():
+        if name in cards:
+            cards[name].carry = row
     total = sum(b.new_order_count for b in batches)
     rows, running = [], 0
     for batch in batches:

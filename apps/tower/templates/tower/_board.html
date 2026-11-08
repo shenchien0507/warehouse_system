@@ -1,10 +1,11 @@
 {% comment %}數據塔內容：頁面第一次載入和定時更新（?partial=1）都用這個。{% endcomment %}
 <div class="small text-muted mb-3" id="tower-refreshed-at">更新時間 {{ refreshed_at|date:"H:i:s" }}</div>
+{% include "closing/_overdue.html" %}
 {% if not kinds %}
   <div class="alert alert-light border">{{ work_date|date:"Y/m/d" }} 還沒有匯入當日統計，也沒有登記紀錄。</div>
 {% else %}
   <div class="d-flex flex-wrap align-items-baseline gap-3 mb-3">
-    <h2 class="h4 mb-0">{{ work_date|date:"Y/m/d" }}</h2>
+    <h2 class="h4 mb-0">作業日 {{ work_date|date:"Y/m/d" }}</h2>
   </div>
 
   {% if detail %}
@@ -15,10 +16,11 @@
       {% for kind in kinds %}
         <div class="col-6 col-md-4 col-xl-3 tower-col">
           <div class="tower-tile">
+            {% if kind.carried %}<span class="carry-badge float-end position-relative" style="z-index: 2;" title="前日轉來 {{ kind.carried }}，目前還剩 {{ kind.carried_left }}">含前日 {{ kind.carried }}</span>{% endif %}
             <div class="tower-label"><a href="?kind={{ kind.name|urlencode }}" class="stretched-link text-reset text-decoration-none">{{ kind.name }}</a></div>
             <div class="tower-value">{{ kind.done }}<span class="tower-sub fw-normal"> / {{ kind.total }}</span></div>
             <div class="tower-track tower-thin my-1">
-              {% for key, label, quantity, count, width in kind.rows %}
+              {% for key, label, quantity, count, width, prior in kind.rows %}
                 {% if quantity > 0 %}<div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%"></div>{% endif %}
               {% endfor %}
             </div>
@@ -65,8 +67,8 @@
       <table class="table table-sm align-middle">
         <thead class="table-light"><tr><th>編號</th><th>類別</th><th class="text-end">數量</th><th>狀態</th></tr></thead>
         <tbody>
-          {% for number, label, quantity, state_label, state in numbers %}
-            <tr><td>{{ number }}</td><td>{{ label }}</td><td class="text-end">{{ quantity }}</td><td><span class="tower-swatch seg-{{ state }}"></span>{{ state_label }}</td></tr>
+          {% for number, label, quantity, state_label, state, prior_date in numbers %}
+            <tr><td>{{ number }}{% if prior_date %} <span class="carry-badge">{{ prior_date|date:"m/d" }}</span>{% endif %}</td><td>{{ label }}</td><td class="text-end">{{ quantity }}</td><td><span class="tower-swatch seg-{{ state }}"></span>{{ state_label }}</td></tr>
           {% endfor %}
         </tbody>
       </table>

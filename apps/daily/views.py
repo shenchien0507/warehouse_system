@@ -16,6 +16,8 @@ from django.utils import timezone
 from django.views.generic import TemplateView, View
 
 from apps.backoffice.menu import MENU_BY_KEY, can_use
+from apps.closing.carry import carry_report
+from apps.closing.workday import carry_on, current_work_date
 from apps.orders.models import GroupVersion, MappingVersion
 from apps.orders.stats import version_groups
 from apps.orders.views import summary_context
@@ -75,8 +77,8 @@ class DashboardView(DailyPageMixin, TemplateView):
         return self.get(request, *args, **kwargs)
 
     def work_date(self):
-        """平常一律看今天；網址指定日期是查歷史。"""
-        return self.kwargs.get("work_date") or timezone.localdate()
+        """平常一律看目前的作業日（沒開結轉就是今天）；網址指定日期是查歷史。"""
+        return self.kwargs.get("work_date") or current_work_date()
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -90,9 +92,13 @@ class DashboardView(DailyPageMixin, TemplateView):
             partial_url=f"{self.request.path}?partial=1",
         )
         work_date = self.work_date()
+        current = current_work_date()
+        carry = carry_report(work_date)
         context.update(
             work_date=work_date,
-            is_today=work_date == timezone.localdate(),
+            is_today=work_date == current,
+            carry=carry,
+            overdue=carry_on() and current < timezone.localdate(),
             last_day=DailyBatch.objects.filter(work_date__lt=work_date).aggregate(day=Max("work_date"))["day"],
         )
         batches, total = day_stats(work_date)
@@ -105,7 +111,7 @@ class DashboardView(DailyPageMixin, TemplateView):
             work_date=work_date,
             batches=batches,
             latest=batches[-1],
-            board=dashboard(batches, total, groups, registered_by_kind(work_date), held_stats(batches, groups)),
+            board=dashboard(batches, total, groups, registered_by_kind(work_date), held_stats(batches, groups), carry),
             holds=DailyHold.objects.filter(order__work_date=work_date)
             .select_related("order__batch", "held_by", "released_by", "released_batch"),
             can_register=can_use(self.request.user, MENU_BY_KEY["records"]),
@@ -212,7 +218,7 @@ class ReleaseView(DailyPageMixin, View):
         elif not hold.release_moves:
             hold.close(DailyHold.RELEASED, request.user)
             messages.success(request, f"已放回訂單 {hold.order.order_no}。")
-        elif DailyOrder.objects.filter(work_date=timezone.localdate(), order_no=hold.order.order_no).exists():
+        elif DailyOrder.objects.filter(work_date=current_work_date(), order_no=hold.order.order_no).exists():
             messages.error(request, f"訂單 {hold.order.order_no} 今天已經有了，不能再放回到今天。")
         else:
             batch = carry_to_today(hold, request.user)

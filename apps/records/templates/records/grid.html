@@ -39,8 +39,8 @@
         </div>
       </div>
       <div class="latest-number small mb-2" id="latest-number">
-        目前最新一筆編號：<strong data-latest="number">{{ kind_stats.latest.number|default:"（還沒有紀錄）" }}</strong>
-        <span class="text-muted" data-latest="detail">{% if kind_stats.latest %}（{{ kind_stats.latest.kind|default:"未分類" }}，{{ kind_stats.latest.by }}，{{ kind_stats.latest.at }}）{% endif %}</span>
+        今天最新一筆編號：<strong data-latest="number">{{ kind_stats.latest.number|default:"（今天還沒登記）" }}</strong>
+        <span class="text-muted" data-latest="detail">{% if kind_stats.latest %}（{{ kind_stats.latest.kind|default:"未分類" }}，{{ kind_stats.latest.by }}，{{ kind_stats.latest.at }}）{% elif kind_stats.previous %}（前一個作業日 {{ kind_stats.previous.day }} 最後一筆是 {{ kind_stats.previous.number }}，編號每天重新一輪）{% endif %}</span>
       </div>
       {{ kind_stats|json_script:"kind-stats-data" }}
     {% endif %}

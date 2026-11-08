@@ -146,8 +146,10 @@ class DailyHold(models.Model):
 
     @property
     def release_moves(self):
-        """過了作業日：手動放回會轉到今天算，不改已經過去那天的數字。"""
-        return timezone.localdate() > self.order.work_date
+        """過了作業日：手動放回會轉到今天（目前的作業日）算，不改已經過去那天的數字。"""
+        from apps.closing.workday import current_work_date
+
+        return current_work_date() > self.order.work_date
 
     @property
     def outcome(self):

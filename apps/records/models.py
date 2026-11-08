@@ -9,6 +9,10 @@ from django.utils import timezone
 
 
 class RecordQuerySet(models.QuerySet):
+    def of_day(self, day):
+        """某個作業日登記的紀錄。"""
+        return self.filter(work_date=day)
+
     def created_on(self, day):
         """某天（台灣時間）登記的紀錄。不用 created_at__date：MySQL 沒載入時區表時 CONVERT_TZ 回傳 NULL，會一筆都對不到。"""
         start = timezone.make_aware(datetime.combine(day, time.min))
@@ -26,6 +30,8 @@ class Record(models.Model):
         settings.AUTH_USER_MODEL, verbose_name="操作人", null=True, on_delete=models.SET_NULL, related_name="+"
     )
     created_at = models.DateTimeField("登記時間", auto_now_add=True)
+    # 登記時的作業日（日結前做到半夜也算同一天）；當日統計、數據塔對帳、結轉都看它，不看登記時間的日期
+    work_date = models.DateField("作業日", null=True, blank=True, db_index=True)
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, verbose_name="最後修改人", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
@@ -40,6 +46,13 @@ class Record(models.Model):
 
     def __str__(self):
         return f"{self.number} {self.name}"
+
+    def save(self, *args, **kwargs):
+        if self.work_date is None:
+            from apps.closing.workday import current_work_date
+
+            self.work_date = current_work_date()
+        super().save(*args, **kwargs)
 
     @property
     def edited(self):

@@ -5,6 +5,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.levels import allows
+from apps.closing.workday import current_work_date
 from apps.attendance.models import Attendance
 from apps.personnel.models import Employee
 from apps.records.models import Record
@@ -124,8 +125,8 @@ def scan(stage, number, employee, user):
         if segment.employee_id == employee.pk:
             segment.ended_at, segment.outcome = now, WorkSegment.DONE
             segment.save(update_fields=["ended_at", "outcome"])
-            entry.end_employee, entry.ended_at = employee, now
-            entry.save(update_fields=["end_employee", "ended_at"])
+            entry.end_employee, entry.ended_at, entry.end_work_date = employee, now, current_work_date()
+            entry.save(update_fields=["end_employee", "ended_at", "end_work_date"])
             return entry, "end"
         segment.ended_at, segment.outcome = now, WorkSegment.HANDOVER
         segment.save(update_fields=["ended_at", "outcome"])

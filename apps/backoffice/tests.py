@@ -307,7 +307,8 @@ class NavbarTests(BackofficeTestCase):
         self.assertEqual(list(groups), ["到班", "訂單", "作業", "數據"])
         self.assertEqual([item.label for item in groups["作業"]], ["登記紀錄", "撿貨登記", "配貨登記"])
         self.assertContains(response, 'data-bs-toggle="dropdown" aria-expanded="false">作業</a>', html=False)
-        self.assertNotContains(response, 'aria-expanded="false">數據</a>')
+        self.assertEqual([item.label for item in groups["數據"]], ["數據塔", "日結"])
+        self.assertContains(response, 'data-bs-toggle="dropdown" aria-expanded="false">數據</a>', html=False)
         self.assertEqual([item.label for item in response.context["tool_menu"]], ["測試資料產生"])
 
     def test_only_one_page_in_group_shows_plain_link(self):

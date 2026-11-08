@@ -27,9 +27,11 @@
     var el = document.getElementById("latest-number");
     if (!el) return;
     var latest = stats.latest;
-    el.querySelector("[data-latest='number']").textContent = latest ? latest.number : "（還沒有紀錄）";
+    var previous = stats.previous;
+    el.querySelector("[data-latest='number']").textContent = latest ? latest.number : "（今天還沒登記）";
     el.querySelector("[data-latest='detail']").textContent = latest
-      ? "（" + (latest.kind || "未分類") + "，" + latest.by + "，" + latest.at + "）" : "";
+      ? "（" + (latest.kind || "未分類") + "，" + latest.by + "，" + latest.at + "）"
+      : previous ? "（前一個作業日 " + previous.day + " 最後一筆是 " + previous.number + "，編號每天重新一輪）" : "";
   }
 
   function render() {

@@ -1,0 +1,26 @@
+{% comment %}昨日未完成（carry = closing.carry.CarryReport）：一條橫條，平常只看合計，點開看各分組。
+當日統計、訂單統計共用；carry.live 才有「目前還剩」。{% endcomment %}
+{% if carry %}
+  <details class="carry-strip mb-3" id="carry-strip"{% if carry_open %} open{% endif %}>
+    <summary>
+      <span class="carry-title">昨日未完成（{{ carry.close.work_date|date:"m/d" }} 日結）</span>
+      <span class="carry-num">待印<strong>{{ carry.unprinted }}</strong></span>
+      <span class="carry-num">待撿<strong>{{ carry.picking }}</strong></span>
+      <span class="carry-num">待包<strong>{{ carry.packing }}</strong></span>
+      {% if carry.live %}<span class="carry-left">目前還剩<strong>{{ carry.left }}</strong></span>{% endif %}
+      <span class="carry-toggle{% if not carry.live %} ms-auto{% endif %}"></span>
+    </summary>
+    <div class="table-responsive mt-2">
+      <table class="table table-sm mb-1">
+        <thead><tr><th>分組</th><th class="text-end">待印</th><th class="text-end">待撿</th><th class="text-end">待包</th><th class="text-end">日結合計</th>{% if carry.live %}<th class="text-end">目前還剩</th>{% endif %}</tr></thead>
+        <tbody>
+          {% for row in carry.rows %}
+            <tr><td>{{ row.name }}</td><td class="text-end">{{ row.unprinted }}</td><td class="text-end">{{ row.picking }}</td><td class="text-end">{{ row.packing }}</td><td class="text-end">{{ row.total }}</td>{% if carry.live %}<td class="text-end carry-left-num">{{ row.left }}</td>{% endif %}</tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr class="fw-semibold"><td>合計</td><td class="text-end">{{ carry.unprinted }}</td><td class="text-end">{{ carry.picking }}</td><td class="text-end">{{ carry.packing }}</td><td class="text-end">{{ carry.total }}</td>{% if carry.live %}<td class="text-end carry-left-num">{{ carry.left }}</td>{% endif %}</tr></tfoot>
+      </table>
+      <div class="small text-muted">待印、待撿、待包是 {{ carry.close.work_date|date:"m/d" }} 日結那一刻的數字，不會變{% if carry.live %}；「目前還剩」是今天做掉之後即時往下扣{% endif %}。昨天全部做完的分組不列出來。</div>
+    </div>
+  </details>
+{% endif %}

@@ -22,6 +22,8 @@ class WorkEntry(models.Model):
         "personnel.Employee", verbose_name="結束員工", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
     )
     ended_at = models.DateTimeField("結束時間", null=True, blank=True)
+    # 刷結束時的作業日（日結前做到半夜也算同一天）；數據塔、日結用它算「當日完成」
+    end_work_date = models.DateField("結束的作業日", null=True, blank=True, db_index=True)
     # 配貨開始時，撿貨那邊同編號還沒刷結束：照樣登記，記下異常（只有職級規則允許的人看得到）
     anomaly = models.BooleanField("異常", default=False)
     created_by = models.ForeignKey(
@@ -97,6 +99,13 @@ class WorklogSetting(models.Model):
     rescan_seconds = models.PositiveSmallIntegerField(
         "重複刷的間隔（秒）", default=10, validators=[MaxValueValidator(600)],
         help_text="同一個編號在同一個階段刷過之後，這幾秒內再刷會被擋下；填 0 不限制",
+    )
+    # 結轉起算日：沒填 = 不結轉、不用日結（作業日就是系統日期）；填了之後，這天以後沒做完的會轉到下一個作業日，
+    # 每天要由主任以上按「日結」才換到下一個作業日
+    carry_start = models.DateField(
+        "結轉起算日", null=True, blank=True,
+        help_text="填了才開始結轉、要日結：這天以後沒做完的（待印、待撿、待包）會轉到下一個作業日。"
+        "通常填正式上線那天或今天；要重新歸零（例如對帳後）就改成今天。空白 = 不結轉，作業日就是系統日期",
     )
     # 員工編號當天工位（工位安排目前生效的那批）要在這裡面才能登記；沒勾任何工位 = 不限制
     picking_stations = models.ManyToManyField(
