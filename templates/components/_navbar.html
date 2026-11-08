@@ -30,6 +30,11 @@
         {% endfor %}
       </ul>
       <ul class="navbar-nav">
+        <li class="nav-item">
+          <button type="button" class="nav-link btn btn-link" data-theme-toggle title="切換深色／淺色模式" aria-label="切換深色／淺色模式">
+            <span data-theme-label>深色模式</span>
+          </button>
+        </li>
         {% if user.is_authenticated %}
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle{% if request.path|slice:":8" == "/manage/" %} active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">{{ user.name|default:user.get_username }}（{{ user.level_display }}）</a>

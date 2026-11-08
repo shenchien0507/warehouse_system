@@ -4,11 +4,11 @@
   <div class="tower-sub">完成 {{ kind.percent|floatformat:0 }}%</div>
 </div>
 <div class="tower-value">{{ kind.done }} <span class="tower-sub fw-normal">/ {{ kind.total }} 完成・剩餘 {{ kind.remaining }}</span></div>
-{% if kind.carried %}<div class="tower-sub">今日 {{ kind.today_part }} ＋ 前日轉來 {{ kind.carried }}（目前還剩 {{ kind.carried_left }}）</div>{% endif %}
+{% if kind.carried %}<div class="tower-sub">今日 {{ kind.today_part }} ＋ 前日轉來 {{ kind.carried }}（目前還剩 <span class="tower-swatch seg-carry"></span>{{ kind.carried_left }}）</div>{% endif %}
 <div class="tower-register {% if kind.over_by %}is-over{% elif kind.registered == kind.total %}is-even{% endif %}">已登記 {{ kind.registered }} / {{ kind.total }}{% if kind.over_by %}（多登記 {{ kind.over_by }}）{% endif %}{% if not kind.has_total %}・當日統計沒有這個種類{% endif %}</div>
 <div class="tower-track my-2">
-  {% for key, label, quantity, count, width, prior in kind.rows %}
-    {% if quantity > 0 %}<div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" title="{{ label }}：{{ quantity }}（{{ count }} 份）"></div>{% endif %}
+  {% for key, label, quantity, width in kind.bar %}
+    <div class="tower-seg seg-{{ key }}" style="width: {{ width|floatformat:2 }}%" title="{{ label }}：{{ quantity }}"></div>
   {% endfor %}
 </div>
 <table class="table table-sm mb-0 tower-states">
