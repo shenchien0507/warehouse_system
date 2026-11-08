@@ -22,12 +22,11 @@ class EmployeeMixin:
 
 class EmployeeList(EmployeeMixin, ManageListView):
     template_name = "personnel/employee_list.html"
-    queryset = Employee.objects.select_related("department", "level", "user")
+    queryset = Employee.objects.select_related("level", "user")
     columns = [
         ("工號", "employee_no"),
         ("姓名", "name"),
         ("職級", "level"),
-        ("部門", "department"),
         ("聯絡資料", "phone"),
         ("到職日", "hire_date"),
         ("在職", "is_active"),

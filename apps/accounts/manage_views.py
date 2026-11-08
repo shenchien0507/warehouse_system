@@ -11,10 +11,10 @@ from apps.backoffice.menu import MENU
 from apps.backoffice.views import ManageCreateView, ManageDeleteView, ManageListView, ManageMixin, ManageUpdateView
 
 from .forms import (
-    DepartmentForm, LevelForm, LevelRuleForm, PagePermissionForm, StationForm, UserCreateForm, UserPasswordForm, UserUpdateForm,
+    LevelForm, LevelRuleForm, PagePermissionForm, StationForm, UserCreateForm, UserPasswordForm, UserUpdateForm,
 )
 from .levels import RULES, RULES_BY_CODE, is_admin, levels_below
-from .models import Department, Level, LevelRule, PagePermission, Station, User
+from .models import Level, LevelRule, PagePermission, Station, User
 
 
 class LevelMixin:
@@ -110,34 +110,6 @@ class LevelRuleUpdate(ManageMixin, UpdateView):
         return redirect(self.get_success_url())
 
 
-class DepartmentMixin:
-    model = Department
-    form_class = DepartmentForm
-    page_key = "manage-departments"
-    list_url_name = "accounts_manage:department_list"
-
-
-class DepartmentList(DepartmentMixin, ManageListView):
-    queryset = Department.objects.order_by("name")
-    columns = [("部門名稱", "name")]
-    search_fields = ["name"]
-    create_url_name = "accounts_manage:department_create"
-    edit_url_name = "accounts_manage:department_edit"
-    delete_url_name = "accounts_manage:department_delete"
-
-
-class DepartmentCreate(DepartmentMixin, ManageCreateView):
-    pass
-
-
-class DepartmentUpdate(DepartmentMixin, ManageUpdateView):
-    pass
-
-
-class DepartmentDelete(DepartmentMixin, ManageDeleteView):
-    pass
-
-
 class StationMixin:
     model = Station
     form_class = StationForm
@@ -174,7 +146,7 @@ class UserMixin:
     list_url_name = "accounts_manage:user_list"
 
     def get_queryset(self):
-        queryset = User.objects.select_related("department", "level").order_by("username")
+        queryset = User.objects.select_related("level").order_by("username")
         editor = self.request.user
         if not is_admin(editor):
             below = Q(level__in=levels_below(editor))
@@ -194,7 +166,6 @@ class UserList(UserMixin, ManageListView):
         ("工號", "username"),
         ("姓名", "name"),
         ("職級", "level_display"),
-        ("部門", "department"),
         ("啟用", "is_active"),
         ("最後登入", lambda o: o.last_login.strftime("%Y-%m-%d %H:%M") if o.last_login else ""),
     ]
@@ -260,7 +231,7 @@ class PagePermissionList(PagePermissionMixin, ManageMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        configured = {p.page_key: p for p in PagePermission.objects.select_related("min_level").prefetch_related("departments")}
+        configured = {p.page_key: p for p in PagePermission.objects.select_related("min_level")}
         rows = []
         for item in MENU:
             if item.admin_only:
@@ -272,7 +243,6 @@ class PagePermissionList(PagePermissionMixin, ManageMixin, TemplateView):
                         item.group,
                         item.label,
                         f"{permission.min_level}以上",
-                        "、".join(d.name for d in permission.departments.all()) or "全部部門",
                     ],
                     "actions": [
                         ("編輯", reverse("accounts_manage:page_permission_edit", args=[permission.pk]), "primary"),
@@ -281,10 +251,10 @@ class PagePermissionList(PagePermissionMixin, ManageMixin, TemplateView):
                 })
             else:
                 rows.append({
-                    "cells": [item.group, item.label, "未開放（只有管理員）", ""],
+                    "cells": [item.group, item.label, "未開放（只有管理員）"],
                     "actions": [("開放", f"{reverse('accounts_manage:page_permission_create')}?page={item.page_key}", "success")],
                 })
-        context["headers"] = ["分類", "頁面", "可使用職級", "開放部門"]
+        context["headers"] = ["分類", "頁面", "可使用職級"]
         context["rows"] = rows
         context["note"] = "「頁面權限」本身只有管理員能用，不在這裡設定。"
         return context

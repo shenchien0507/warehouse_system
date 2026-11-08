@@ -70,7 +70,7 @@ def void_event(event, user):
 
 
 def person(employee):
-    return f"{employee.name}（{employee.department.name}）" if employee.department else employee.name
+    return employee.name
 
 
 def batch_diff(entries, previous):
@@ -117,22 +117,21 @@ def changes_since(date, batch_entries, on_site_records):
     return items
 
 
-def timeline(date, can_see):
+def timeline(date):
     """當天的上班、離開、請假、缺勤與建立安排，依時間排列，附上每一步之後的在場人數。
     同一分鐘多人上班（或下班）合併成一行。"""
     events = [
         e
         for e in AttendanceEvent.objects.filter(attendance__date=date, voided_at__isnull=True).select_related(
-            "attendance__employee__department", "created_by"
+            "attendance__employee", "created_by"
         )
-        if can_see(e.attendance.employee)
     ]
     rows = [((e.time or datetime.time.min), 0, e.created_at, e) for e in events]
     batches = StationBatch.objects.filter(date=date).select_related("created_by").prefetch_related("entries__employee")
     previous = None
     for batch in reversed(list(batches)):
-        entries = [x for x in batch.entries.all() if can_see(x.employee)]
-        # 別人的批次裡，自己範圍內的人和工位都沒變的不列出
+        entries = list(batch.entries.all())
+        # 人和工位都跟上一批一樣的不列出
         if entries and not (previous and same_entries(entries, previous)):
             rows.append((timezone.localtime(batch.created_at).time(), 1, batch.created_at, (batch, entries)))
         previous = entries or previous

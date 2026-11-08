@@ -12,7 +12,7 @@ class EmployeeForm(forms.ModelForm):
 
     class Meta:
         model = Employee
-        fields = ["employee_no", "name", "level", "department", "phone", "hire_date", "note", "is_active"]
+        fields = ["employee_no", "name", "level", "phone", "hire_date", "note", "is_active"]
         widgets = {
             "hire_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "note": forms.Textarea(attrs={"rows": 3}),

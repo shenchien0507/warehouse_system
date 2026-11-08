@@ -13,5 +13,5 @@ class AttendanceEventInline(admin.TabularInline):
 class AttendanceAdmin(admin.ModelAdmin):
     inlines = [AttendanceEventInline]
     list_display = ("date", "employee", "status", "clock_in", "clock_out", "on_site", "station", "updated_by")
-    list_filter = ("date", "status", "employee__department")
+    list_filter = ("date", "status")
     search_fields = ("employee__employee_no", "employee__name")

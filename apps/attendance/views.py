@@ -18,7 +18,7 @@ from apps.personnel.models import Employee
 from .forms import DateForm, EventForm, LookupForm
 from .models import Attendance, AttendanceEvent, ClockSetting, EventKind
 from .records import add_event, now_minute, void_event
-from .rules import can_add, can_register, can_void, employees_in_scope
+from .rules import can_add, can_register, can_register_any, can_void, employees_in_scope
 
 QUICK = {"clock_in": EventKind.CLOCK_IN, "clock_out": EventKind.CLOCK_OUT}
 MISSING_CLOCK_OUT_DAYS = 7  # 提醒最近幾天沒有下班紀錄的人
@@ -59,7 +59,7 @@ def missing_clock_out(user):
 
 
 class PageMixin:
-    """頁面權限檢查；範圍不足（例如沒有部門）時提示並回首頁。"""
+    """頁面權限檢查；職級不足時提示並回首頁。"""
 
     page_key = None
 
@@ -70,7 +70,7 @@ class PageMixin:
         if not can_use(request.user, MENU_BY_KEY[self.page_key]):
             raise PermissionDenied
         if not self.check_scope(request.user):
-            messages.warning(request, "你的帳號沒有設定部門，或職級不足，不能使用這個功能。")
+            messages.warning(request, "你的職級不足，不能使用這個功能。")
             return redirect("home")
         return super().dispatch(request, *args, **kwargs)
 
@@ -89,12 +89,12 @@ class RegisterAccessMixin(PageMixin):
     page_key = "attendance-register"
 
     def check_scope(self, user):
-        return allows(user, "attendance-register-all") or (allows(user, "attendance-register-own") and bool(user.department_id))
+        return can_register_any(user)
 
 
 def day_rows(user, date):
     """可登記範圍內的在職人員和他們當天的到班紀錄（沒有紀錄是 None）。"""
-    employees = employees_in_scope(user).filter(is_active=True).select_related("department", "level").order_by("employee_no")
+    employees = employees_in_scope(user).filter(is_active=True).select_related("level").order_by("employee_no")
     records = {r.employee_id: r for r in Attendance.objects.filter(date=date, employee__in=employees).select_related("station")}
     return [{"employee": e, "record": records.get(e.pk)} for e in employees]
 
@@ -160,7 +160,7 @@ class RegisterView(RegisterAccessMixin, TemplateView):
     def find(self, query):
         """先找完全相同的工號（下拉選單選的「工號 姓名」取第一段）；找不到再用姓名或部分工號在可登記範圍內找在職人員。
         只找到一個就直接帶出，找到多個就列出來讓人選。"""
-        people = Employee.objects.select_related("department")
+        people = Employee.objects.all()
         for key in dict.fromkeys((query, query.split()[0])):
             found = people.filter(employee_no__iexact=key).first()
             if found:
@@ -168,7 +168,7 @@ class RegisterView(RegisterAccessMixin, TemplateView):
         matches = list(
             employees_in_scope(self.request.user).filter(is_active=True)
             .filter(Q(name__icontains=query) | Q(employee_no__icontains=query))
-            .select_related("department")[: self.MAX_CANDIDATES + 1]
+            [: self.MAX_CANDIDATES + 1]
         )
         if len(matches) == 1:
             return matches[0]
@@ -251,7 +251,7 @@ class RegisterView(RegisterAccessMixin, TemplateView):
 
 
 class PersonListView(RegisterAccessMixin, TemplateView):
-    """從人數（應到、實到、未到、目前在場）點進來的人員名單，不分部門，列出部門欄。今天可以直接按每一列的上班、下班，或勾選多人一次上班、下班；
+    """從人數（應到、實到、未到、目前在場）點進來的人員名單，今天可以直接按每一列的上班、下班，或勾選多人一次上班、下班；
     其他登記（請假、補登、作廢）按「登記」去登記頁。"""
 
     template_name = "attendance/person_list.html"

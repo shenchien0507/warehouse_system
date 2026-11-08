@@ -3,7 +3,7 @@ from io import StringIO
 from django.core.management import call_command
 from django.test import TestCase
 
-from apps.accounts.models import Department, Station, User
+from apps.accounts.models import Station, User
 
 from .models import Employee
 
@@ -17,8 +17,6 @@ class SeedPersonnelTests(TestCase):
             self.assertTrue(e.name)
             self.assertTrue(len(e.phone) == 10 and e.phone.startswith("09"))
             self.assertIsNotNone(e.hire_date)
-            self.assertIsNone(e.department_id)
-        self.assertFalse(Department.objects.exists())
         self.assertFalse(Station.objects.exists())
         self.assertFalse(User.objects.exists())
 

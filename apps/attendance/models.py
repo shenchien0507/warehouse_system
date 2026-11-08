@@ -220,7 +220,7 @@ class ClockSetting(models.Model):
 
 
 class StationEditLock(models.Model):
-    """工位安排的編輯鎖：同一時間只有一個帳號能編輯（不分日期、部門）。
+    """工位安排的編輯鎖：同一時間只有一個帳號能編輯（不分日期）。
     編輯頁開著時每分鐘更新 touched_at；超過 LOCK_MINUTES 沒更新（關掉頁面、斷線）就自動失效。"""
 
     LOCK_MINUTES = 3

@@ -19,9 +19,9 @@ class _Levels:
 Level = _Levels()
 
 
-def make_user(username, level=None, department=None, **extra):
+def make_user(username, level=None, **extra):
     if level == Level.ADMIN:
         extra["is_admin"], level = True, None
     elif level is None:
         level = Level.STAFF
-    return User.objects.create_user(username, password="pw12345!", name=username, level=level, department=department, **extra)
+    return User.objects.create_user(username, password="pw12345!", name=username, level=level, **extra)

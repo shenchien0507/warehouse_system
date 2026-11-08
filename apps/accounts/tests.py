@@ -2,7 +2,7 @@ from django.core.exceptions import PermissionDenied
 from django.test import RequestFactory, TestCase
 from django.urls import reverse
 
-from .models import Department, PagePermission, User
+from .models import PagePermission, User
 from .testing import Level, make_user
 from .permissions import PageAccessMixin, can_access, page_access_required
 
@@ -43,35 +43,26 @@ class LoginTests(TestCase):
 
 class PagePermissionTests(TestCase):
     def setUp(self):
-        self.orders = Department.objects.create(name="訂單部")
-        self.punch = Department.objects.create(name="現場部")
         self.page = PagePermission.objects.create(page_key="orders", label="訂單整理", min_level=Level.LEADER)
-        self.page.departments.add(self.orders)
 
-    def test_level_and_department_must_both_match(self):
-        self.assertTrue(can_access(make_user("a", Level.LEADER, self.orders), "orders"))
-        self.assertTrue(can_access(make_user("b", Level.MANAGER, self.orders), "orders"))
-        self.assertFalse(can_access(make_user("c", Level.STAFF, self.orders), "orders"))
-        self.assertFalse(can_access(make_user("d", Level.MANAGER, self.punch), "orders"))
-        self.assertFalse(can_access(make_user("e", Level.MANAGER), "orders"))
-
-    def test_no_departments_means_all_departments(self):
-        self.page.departments.clear()
-        self.assertTrue(can_access(make_user("a", Level.LEADER, self.punch), "orders"))
+    def test_min_level_decides_access(self):
+        self.assertTrue(can_access(make_user("a", Level.LEADER), "orders"))
+        self.assertTrue(can_access(make_user("b", Level.MANAGER), "orders"))
+        self.assertFalse(can_access(make_user("c", Level.STAFF), "orders"))
 
     def test_admin_can_access_everything_even_unconfigured(self):
         self.assertTrue(can_access(make_user("boss", Level.ADMIN), "orders"))
         self.assertTrue(can_access(make_user("boss2", Level.ADMIN), "no-such-page"))
 
     def test_unconfigured_page_denied_for_others(self):
-        self.assertFalse(can_access(make_user("a", Level.MANAGER, self.orders), "no-such-page"))
+        self.assertFalse(can_access(make_user("a", Level.MANAGER), "no-such-page"))
 
     def test_inactive_user_denied(self):
-        self.assertFalse(can_access(make_user("a", Level.MANAGER, self.orders, is_active=False), "orders"))
+        self.assertFalse(can_access(make_user("a", Level.MANAGER, is_active=False), "orders"))
 
     def test_decorator_and_mixin_raise_403(self):
         request = RequestFactory().get("/")
-        request.user = make_user("c", Level.STAFF, self.orders)
+        request.user = make_user("c", Level.STAFF)
 
         @page_access_required("orders")
         def view(request):
@@ -89,7 +80,7 @@ class PagePermissionTests(TestCase):
     def test_home_lists_only_accessible_pages(self):
         PagePermission.objects.create(page_key="data-tower", label="數據塔", min_level=Level.STAFF)
         PagePermission.objects.create(page_key="records", label="登記紀錄", min_level=Level.LEADER)
-        make_user("c", Level.STAFF, self.orders)
+        make_user("c", Level.STAFF)
         self.client.login(username="c", password="pw12345!")
         content = self.client.get(reverse("home")).content.decode()
         self.assertIn(f'href="{reverse("tower:index")}"', content)
