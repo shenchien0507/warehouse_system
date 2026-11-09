@@ -19,10 +19,10 @@ from .forms import DateForm, StationAssignForm
 from .models import Attendance, StationBatch, StationBatchEntry, StationEditLock
 from .records import batch_diff, changes_since, same_entries, station_counts, timeline
 from .rules import can_arrange
-from .views import PageMixin
+from .views import AttendancePageMixin
 
 
-class StationPageMixin(PageMixin):
+class StationPageMixin(AttendancePageMixin):
     page_key = "attendance-stations"
 
 

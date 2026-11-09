@@ -8,28 +8,24 @@ from django.utils import timezone
 from django.views.generic import DetailView, TemplateView, View
 
 from apps.accounts.levels import allows
-from apps.backoffice.menu import MENU_BY_KEY, can_use
+from apps.backoffice.views import PageMixin
 from apps.daily.models import DailyBatch, DailyHold
 from apps.records.models import Record
 from apps.worklog.models import Stage, WorkEntry
 
-from .carry import carry_report, snapshot
+from .carry import SNAPSHOT_KEYS, carry_report, snapshot
 from .models import DayClose
 from .workday import carry_start, current_work_date, last_close
 
-PAGE_KEY = "day-close"
 RULE = "day-close"
 
 
-class ClosingPageMixin:
-    def dispatch(self, request, *args, **kwargs):
-        if not can_use(request.user, MENU_BY_KEY[PAGE_KEY]):
-            raise PermissionDenied
-        return super().dispatch(request, *args, **kwargs)
+class ClosingPageMixin(PageMixin):
+    page_key = "day-close"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context.update(menu_item=MENU_BY_KEY[PAGE_KEY], can_close=allows(self.request.user, RULE))
+        context["can_close"] = allows(self.request.user, RULE)
         return context
 
 
@@ -47,7 +43,8 @@ def checks(day):
 
 
 def kind_totals(kinds):
-    return {key: sum(k.get(key, 0) for k in kinds) for key in ("today", "carried", "done", "unprinted", "picking", "packing")}
+    """日結報表最下面的合計列。"""
+    return {key: sum(k.get(key, 0) for k in kinds) for key in SNAPSHOT_KEYS}
 
 
 def changed_after(close):

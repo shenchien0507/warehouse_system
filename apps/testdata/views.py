@@ -3,14 +3,13 @@
 這是暫時的功能，正式開發完成後整個 apps/testdata 移除（另外刪 settings、urls、選單各一行）。"""
 
 from django.contrib import messages
-from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect
 from django.utils import timezone
 from django.utils.http import content_disposition_header
 from django.views.generic import FormView, TemplateView, View
 
-from apps.backoffice.menu import MENU_BY_KEY, can_use
+from apps.backoffice.views import PageMixin
 
 from . import simulation
 from .forms import AdvanceForm, GenerateForm, ReleaseForm, SimulationStartForm
@@ -37,13 +36,8 @@ def load_caught_up():
     return state
 
 
-class TestDataPageMixin:
+class TestDataPageMixin(PageMixin):
     page_key = "test-data"
-
-    def dispatch(self, request, *args, **kwargs):
-        if not can_use(request.user, MENU_BY_KEY[self.page_key]):
-            raise PermissionDenied
-        return super().dispatch(request, *args, **kwargs)
 
 
 class GenerateView(TestDataPageMixin, FormView):

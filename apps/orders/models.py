@@ -1,3 +1,6 @@
+"""訂單相關資料表：匯入欄位對應（版本）、匯入分類、訂單統計的匯入紀錄與商品列、統計分組（版本）。
+SourceLine（商品列欄位）和當日統計（apps/daily）共用。"""
+
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
@@ -6,30 +9,9 @@ from django.utils import timezone
 from .fields import FIELD_CHOICES, FIELDS
 
 
-class MappingVersion(models.Model):
-    """欄位對應的一個版本：每個系統欄位讀來源檔的哪一欄。
-
-    同時只有一個版本生效（is_active）。生效過的版本（activated_at 有值）不能再改，要調整就複製成新版本。"""
-
-    number = models.PositiveIntegerField("版本", unique=True)
-    header_row = models.PositiveSmallIntegerField(
-        "欄名在第幾列", default=1, validators=[MinValueValidator(1), MaxValueValidator(50)],
-        help_text="欄名上面如果還有標題列，填欄名實際所在的列數。",
-    )
-    source_file_name = models.CharField("來源檔", max_length=200, blank=True)
-    source_columns = models.JSONField("來源檔的欄名", default=list, blank=True)  # 下拉選單的選項
-    note = models.CharField("備註", max_length=200, blank=True)
-    is_active = models.BooleanField("生效中", default=False)
-    activated_at = models.DateTimeField("第一次生效時間", null=True, blank=True)
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, verbose_name="建立人", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
-    )
-    created_at = models.DateTimeField("建立時間", auto_now_add=True)
-
-    class Meta:
-        verbose_name = "欄位對應版本"
-        verbose_name_plural = "欄位對應版本"
-        ordering = ["-number"]
+class Versioned:
+    """欄位對應版本、統計分組版本共用：版本號 number、生效中 is_active、第一次生效時間 activated_at。
+    同時只有一個版本生效；生效過的版本（activated_at 有值）鎖定不能再改，要調整就複製成新版本。"""
 
     def __str__(self):
         return f"v{self.number}"
@@ -53,6 +35,38 @@ class MappingVersion(models.Model):
             return "生效中"
         return "已停用" if self.is_locked else "草稿"
 
+    def activate(self):
+        """設成生效，原本生效的版本自動停用。"""
+        with transaction.atomic():
+            type(self).objects.filter(is_active=True).exclude(pk=self.pk).update(is_active=False)
+            self.is_active = True
+            self.activated_at = self.activated_at or timezone.now()
+            self.save(update_fields=["is_active", "activated_at"])
+
+
+class MappingVersion(Versioned, models.Model):
+    """欄位對應的一個版本：每個系統欄位讀來源檔的哪一欄。"""
+
+    number = models.PositiveIntegerField("版本", unique=True)
+    header_row = models.PositiveSmallIntegerField(
+        "欄名在第幾列", default=1, validators=[MinValueValidator(1), MaxValueValidator(50)],
+        help_text="欄名上面如果還有標題列，填欄名實際所在的列數。",
+    )
+    source_file_name = models.CharField("來源檔", max_length=200, blank=True)
+    source_columns = models.JSONField("來源檔的欄名", default=list, blank=True)  # 下拉選單的選項
+    note = models.CharField("備註", max_length=200, blank=True)
+    is_active = models.BooleanField("生效中", default=False)
+    activated_at = models.DateTimeField("第一次生效時間", null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="建立人", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField("建立時間", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "欄位對應版本"
+        verbose_name_plural = "欄位對應版本"
+        ordering = ["-number"]
+
     def mapping_dict(self):
         return {m.field: m.source_column for m in self.mappings.all()}
 
@@ -60,13 +74,6 @@ class MappingVersion(models.Model):
         """一定要對應、卻還沒選或選的欄名不在來源檔裡的系統欄位。"""
         mapped = self.mapping_dict()
         return [f for f in FIELDS if f.must_map and mapped.get(f.key) not in self.source_columns]
-
-    def activate(self):
-        with transaction.atomic():
-            MappingVersion.objects.filter(is_active=True).exclude(pk=self.pk).update(is_active=False)
-            self.is_active = True
-            self.activated_at = self.activated_at or timezone.now()
-            self.save(update_fields=["is_active", "activated_at"])
 
     def copy(self, user):
         new = MappingVersion.objects.create(
@@ -167,10 +174,9 @@ class ImportBatch(models.Model):
         return f"#{self.pk} {self.file_name}"
 
 
-class OrderLine(models.Model):
-    """來源檔的一列（一個商品），欄位就是 fields.FIELDS，只存系統用得到的資料。"""
+class SourceLine(models.Model):
+    """來源檔的一列（一個商品），欄位就是 fields.FIELDS，只存系統用得到的資料。訂單統計、當日統計共用。"""
 
-    batch = models.ForeignKey(ImportBatch, verbose_name="匯入批次", on_delete=models.CASCADE, related_name="lines")
     row_no = models.PositiveIntegerField("來源檔第幾列")
     order_no = models.CharField("訂單號", max_length=100)
     platform_order_no = models.CharField("平台訂單編號", max_length=100, blank=True)
@@ -186,17 +192,37 @@ class OrderLine(models.Model):
     quantity = models.IntegerField("數量", null=True, blank=True)
 
     class Meta:
-        verbose_name = "訂單商品列"
-        verbose_name_plural = "訂單商品列"
-        indexes = [models.Index(fields=["batch", "order_no"])]
+        abstract = True
 
     def __str__(self):
         return f"{self.order_no} {self.product_code}"
 
+    @classmethod
+    def from_source(cls, row_no, values, **extra):
+        """用來源檔讀到的一列建一筆（不存）：文字截到欄位長度，時間補上時區。"""
+        data = dict(values)
+        for f in SourceLine._meta.get_fields():
+            if isinstance(f, models.CharField) and f.name in data:
+                data[f.name] = (data[f.name] or "")[: f.max_length]
+        for key in ("order_time", "ship_time"):
+            if data.get(key) is not None and timezone.is_naive(data[key]):
+                data[key] = timezone.make_aware(data[key])
+        return cls(row_no=row_no, **data, **extra)
 
-class GroupVersion(models.Model):
-    """統計分組的一個版本，做法和欄位對應版本一樣：同時只有一個版本生效，生效過的版本不能再改，要調整就複製成新版本。
-    每個匯入批次記住匯入當下生效的版本，舊批次的數字不會因為之後改分組而變動。"""
+
+class OrderLine(SourceLine):
+    """訂單統計的商品列。"""
+
+    batch = models.ForeignKey(ImportBatch, verbose_name="匯入批次", on_delete=models.CASCADE, related_name="lines")
+
+    class Meta:
+        verbose_name = "訂單商品列"
+        verbose_name_plural = "訂單商品列"
+        indexes = [models.Index(fields=["batch", "order_no"])]
+
+
+class GroupVersion(Versioned, models.Model):
+    """統計分組的一個版本。每個匯入批次記住匯入當下生效的版本，舊批次的數字不會因為之後改分組而變動。"""
 
     number = models.PositiveIntegerField("版本", unique=True)
     note = models.CharField("備註", max_length=200, blank=True)
@@ -214,35 +240,6 @@ class GroupVersion(models.Model):
         verbose_name = "統計分組版本"
         verbose_name_plural = "統計分組版本"
         ordering = ["-number"]
-
-    def __str__(self):
-        return f"v{self.number}"
-
-    @classmethod
-    def next_number(cls):
-        last = cls.objects.order_by("-number").values_list("number", flat=True).first()
-        return (last or 0) + 1
-
-    @classmethod
-    def active(cls):
-        return cls.objects.filter(is_active=True).first()
-
-    @property
-    def is_locked(self):
-        return self.activated_at is not None
-
-    @property
-    def status(self):
-        if self.is_active:
-            return "生效中"
-        return "已停用" if self.is_locked else "草稿"
-
-    def activate(self):
-        with transaction.atomic():
-            GroupVersion.objects.filter(is_active=True).exclude(pk=self.pk).update(is_active=False)
-            self.is_active = True
-            self.activated_at = self.activated_at or timezone.now()
-            self.save(update_fields=["is_active", "activated_at"])
 
     def copy(self, user):
         new = GroupVersion.objects.create(

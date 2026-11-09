@@ -1,3 +1,5 @@
+"""「撿貨登記」「配貨登記」：同一套頁面，網址裡的階段決定是哪一頁；刷編號、員工編號登記開始或結束。"""
+
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
@@ -9,7 +11,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import FormView, UpdateView
 
-from apps.backoffice.menu import MENU_BY_KEY, can_use
+from apps.backoffice.views import PageMixin
 
 from .forms import EntryEditForm, ScanForm
 from .models import Stage, WorkEntry
@@ -18,14 +20,12 @@ from .rules import can_edit, can_see_anomaly, scan, sync_segments
 PAGE_KEYS = {Stage.PICKING: "worklog-picking", Stage.ALLOCATION: "worklog-allocation"}
 
 
-class StagePageMixin:
+class StagePageMixin(PageMixin):
     """網址裡的階段決定是撿貨還是配貨頁，兩頁各自有頁面權限。"""
 
     def dispatch(self, request, *args, **kwargs):
         self.stage = Stage(kwargs["stage"])
-        self.menu_item = MENU_BY_KEY[PAGE_KEYS[self.stage]]
-        if not can_use(request.user, self.menu_item):
-            raise PermissionDenied
+        self.page_key = PAGE_KEYS[self.stage]
         return super().dispatch(request, *args, **kwargs)
 
     def page_url(self):
@@ -33,7 +33,7 @@ class StagePageMixin:
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context.update(menu_item=self.menu_item, stage=self.stage, page_url=self.page_url())
+        context.update(stage=self.stage, page_url=self.page_url())
         return context
 
 

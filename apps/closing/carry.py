@@ -6,26 +6,29 @@
 
 from dataclasses import dataclass, field
 
-from apps.tower.stats import DONE, UNREGISTERED, boards_for
+from apps.tower.stats import UNREGISTERED, boards_for
 
 from .workday import current_work_date, last_close
 
+# 日結快照每個種類存的數字（意思見 models.DayClose.snapshot）
+SNAPSHOT_KEYS = ("today", "carried", "done", "unprinted", "picking", "packing")
+
 
 def snapshot(day):
+    """日結當下每個種類的數字；全部是 0 的種類不存。"""
     boards, _, _, _ = boards_for(day)
     kinds = []
     for board in boards.values():
         row = {
-            "name": board.name,
             "today": board.today,
             "carried": board.carried,
-            "done": board.states[DONE][0],
+            "done": board.done,
             "unprinted": board.states[UNREGISTERED][0],
             "picking": board.to_pick,
             "packing": board.to_pack,
         }
-        if any(row[key] for key in ("today", "carried", "done", "unprinted", "picking", "packing")):
-            kinds.append(row)
+        if any(row.values()):
+            kinds.append({"name": board.name, **row})
     return {"kinds": kinds}
 
 

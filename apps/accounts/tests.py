@@ -2,9 +2,11 @@ from django.core.exceptions import PermissionDenied
 from django.test import RequestFactory, TestCase
 from django.urls import reverse
 
+from apps.backoffice.views import PageMixin
+
 from .models import PagePermission, User
+from .permissions import can_access
 from .testing import Level, make_user
-from .permissions import PageAccessMixin, can_access, page_access_required
 
 
 
@@ -60,19 +62,12 @@ class PagePermissionTests(TestCase):
     def test_inactive_user_denied(self):
         self.assertFalse(can_access(make_user("a", Level.MANAGER, is_active=False), "orders"))
 
-    def test_decorator_and_mixin_raise_403(self):
+    def test_page_mixin_raises_403(self):
         request = RequestFactory().get("/")
         request.user = make_user("c", Level.STAFF)
 
-        @page_access_required("orders")
-        def view(request):
-            return "ok"
-
-        with self.assertRaises(PermissionDenied):
-            view(request)
-
-        class V(PageAccessMixin):
-            page_key = "orders"
+        class V(PageMixin):
+            page_key = "order-stats"
 
         with self.assertRaises(PermissionDenied):
             V().dispatch(request)

@@ -19,12 +19,17 @@ def can_register(user, employee):
     return can_register_any(user)
 
 
-def can_add(user, date):
-    """今天：範圍內的人員任何有登記權的人都能新增紀錄；之前的日期依「修改之前日期」規則；不能登記未來日期。"""
+def can_change_date(user, date):
+    """今天誰都可以；之前的日期依職級規則「修改之前日期」；未來的日期不行。"""
     today = timezone.localdate()
     if date > today:
         return False
     return date == today or allows(user, "attendance-past-dates")
+
+
+def can_add(user, date):
+    """到班登記新增紀錄：今天範圍內的人員任何有登記權的人都能新增。"""
+    return can_change_date(user, date)
 
 
 def can_void(user, event):
@@ -38,8 +43,5 @@ def can_void(user, event):
 
 
 def can_arrange(user, date):
-    """工位不鎖定：當天隨時可改；之前的日期依「修改之前日期」規則；不能安排未來日期。"""
-    today = timezone.localdate()
-    if date > today:
-        return False
-    return date == today or allows(user, "attendance-past-dates")
+    """工位安排：工位不鎖定，當天隨時可改。"""
+    return can_change_date(user, date)
