@@ -181,7 +181,6 @@ cloudflared tunnel --url http://localhost:8000
   - `apps/worklog/`：作業登記（撿貨、配貨）與撿貨配貨設定
   - `apps/tower/`：數據塔
   - `apps/closing/`：作業日、日結與結轉
-  - `apps/testdata/`：暫時的測試資料產生，正式開發完成後移除
 - `config/`：Django 設定（資料庫等設定皆由 `.env` 讀取）
 - `templates/`：全站共用 template
   - `base.html`：共用骨架（導覽列、訊息、`title` / `heading` / `content` / `extra_css` / `extra_js` 區塊）

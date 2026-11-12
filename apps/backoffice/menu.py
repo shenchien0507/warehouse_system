@@ -31,8 +31,6 @@ MENU = [
     MenuItem("worklog-allocation", "配貨登記", "worklog:allocation", "作業", section="feature"),
     MenuItem("data-tower", "數據塔", "tower:index", "數據", section="feature"),
     MenuItem("day-close", "日結", "closing:index", "數據", section="feature"),
-    # 暫時的測試資料產生，正式開發完成後移除
-    MenuItem("test-data", "測試資料產生", "testdata:generate", TOOLS_GROUP, admin_only=True, section="feature"),
     MenuItem("manage-levels", "職級", "accounts_manage:level_list", "組織", admin_only=True),
     MenuItem("manage-stations", "工位", "accounts_manage:station_list", "組織"),
     MenuItem("manage-employees", "人員資料", "personnel:employee_list", "帳號與權限"),
