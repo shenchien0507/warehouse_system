@@ -309,7 +309,7 @@ class NavbarTests(BackofficeTestCase):
         self.assertContains(response, 'data-bs-toggle="dropdown" aria-expanded="false">作業</a>', html=False)
         self.assertEqual([item.label for item in groups["數據"]], ["數據塔", "日結"])
         self.assertContains(response, 'data-bs-toggle="dropdown" aria-expanded="false">數據</a>', html=False)
-        self.assertEqual([item.label for item in response.context["tool_menu"]], ["測試資料產生"])
+        self.assertEqual(response.context["tool_menu"], [])
 
     def test_only_one_page_in_group_shows_plain_link(self):
         PagePermission.objects.create(page_key="worklog-picking", label="撿貨登記", min_level=Level.STAFF)

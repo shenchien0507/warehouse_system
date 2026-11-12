@@ -59,7 +59,6 @@ INSTALLED_APPS = [
     "apps.worklog",
     "apps.tower",
     "apps.closing",
-    "apps.testdata",  # 暫時的測試資料產生，正式開發完成後移除
 ]
 
 MIDDLEWARE = [
