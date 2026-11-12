@@ -166,3 +166,37 @@
     if (tip) tip.classList.remove("is-on");
   });
 })();
+
+// 防止連按送出（data-submit-once）：按下後按鈕變「儲存中…」並鎖住，等這次存完換頁；連按、按 Enter 都不會再送一次
+(function () {
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (event.defaultPrevented || !form.matches || !form.matches("form[data-submit-once]")) return;
+    if (form.dataset.submitting) {
+      event.preventDefault();
+      return;
+    }
+    form.dataset.submitting = "1";
+    var buttons = form.querySelectorAll("button[type=submit], input[type=submit]");
+    setTimeout(function () { // 等瀏覽器收好要送的資料再鎖，按鈕本身的值才不會漏送
+      buttons.forEach(function (button) {
+        button.disabled = true;
+        if (button.tagName === "BUTTON" && button.offsetParent !== null) {
+          button.dataset.label = button.innerHTML;
+          button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>儲存中…';
+        }
+      });
+    }, 0);
+  });
+
+  // 按瀏覽器「上一頁」回來時，頁面可能是存起來的舊畫面，把按鈕恢復
+  window.addEventListener("pageshow", function () {
+    document.querySelectorAll("form[data-submit-once][data-submitting]").forEach(function (form) {
+      delete form.dataset.submitting;
+      form.querySelectorAll("button[type=submit], input[type=submit]").forEach(function (button) {
+        button.disabled = false;
+        if (button.dataset.label) button.innerHTML = button.dataset.label;
+      });
+    });
+  });
+})();

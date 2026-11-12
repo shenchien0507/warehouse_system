@@ -16,7 +16,7 @@
 {% endblock %}
 
 {% block manage_content %}
-  <form method="post" novalidate>
+  <form method="post" novalidate data-submit-once>
     {% csrf_token %}
     {% if form.non_field_errors %}
       <div class="alert alert-danger">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>

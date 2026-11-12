@@ -127,6 +127,14 @@ class StatGroupForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["cutoff"].input_formats = TIME_FORMATS
 
+    def clean_name(self):
+        # 版本不在表單欄位裡，Django 不會檢查「同版本名稱不能重複」，要自己擋，不然存檔時資料庫報錯變成錯誤頁
+        name = self.cleaned_data["name"]
+        same = StatGroup.objects.filter(version=self.instance.version, name=name).exclude(pk=self.instance.pk)
+        if same.exists():
+            raise forms.ValidationError(f"這個版本已經有叫「{name}」的分組了。")
+        return name
+
 
 class StatConditionForm(forms.ModelForm):
     """一組條件：三個都可以勾多個，留空代表全部；選項來自版本的來源檔，畫面上依選到的平台、店鋪連動縮小範圍。"""

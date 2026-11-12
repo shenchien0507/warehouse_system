@@ -627,6 +627,20 @@ class StatGroupTests(TestCase):
         self.save_group(reverse("orders_manage:group_create", args=[v2.pk]), [{"platforms": ["MOMO"]}], name="全部")
         self.assertEqual(v2.groups.count(), 1)  # 沒有條件不能存；第二次可以
 
+    def test_duplicate_group_name_shows_error_not_crash(self):
+        v2 = self.new_version()
+        url = reverse("orders_manage:group_create", args=[v2.pk])
+        self.save_group(url, [{"platforms": ["MOMO"]}], name="重複")
+        response = self.save_group(url, [{"platforms": ["MOMO"]}], name="重複")  # 連按儲存，第二次送一樣的資料
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "這個版本已經有叫「重複」的分組了")
+        self.assertEqual(v2.groups.filter(name="重複").count(), 1)
+        group = v2.groups.get(name="重複")
+        response = self.save_group(
+            reverse("orders_manage:group_edit", args=[v2.pk, group.pk]), [{"platforms": ["friDay商城"]}], name="重複",
+        )  # 編輯時名字沒改不算重複
+        self.assertRedirects(response, reverse("orders_manage:group_version_detail", args=[v2.pk]))
+
     def test_create_version_needs_readable_file(self):
         response = self.client.post(reverse("orders_manage:group_version_create"), {"file": xlsx(["欄A"], [[1]])})
         self.assertContains(response, "找不到平台、店鋪、出貨方式任何一欄")
