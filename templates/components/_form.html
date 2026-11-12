@@ -2,7 +2,7 @@
 整份表單：CSRF、整體錯誤、逐欄位渲染與送出按鈕。
 用法：{% include "components/_form.html" with form=form submit_text="儲存" cancel_url=request.META.HTTP_REFERER %}
 {% endcomment %}
-<form method="post" enctype="multipart/form-data" novalidate data-submit-once>
+<form method="post" enctype="multipart/form-data" novalidate>
   {% csrf_token %}
   {% if form.non_field_errors %}
     <div class="alert alert-danger">

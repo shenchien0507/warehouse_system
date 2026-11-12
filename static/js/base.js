@@ -167,35 +167,51 @@
   });
 })();
 
-// 防止連按送出（data-submit-once）：按下後按鈕變「儲存中…」並鎖住，等這次存完換頁；連按、按 Enter 都不會再送一次
+// 送出按鈕轉圈：所有 POST 表單按下送出後，按下的按鈕前面出現轉圈，表單的送出按鈕都鎖住，等這次處理完換頁；連按、按 Enter 都不會再送一次。
+// 不適用：表單加 data-no-lock（例如按了是直接下載檔案、頁面不會換的），以及刷條碼的表單（data-scan-form，連續刷不能漏）。
 (function () {
+  var BUTTONS = "button[type=submit], button:not([type]), input[type=submit]";
+
+  function lockable(form) {
+    return form.matches && (form.getAttribute("method") || "").toLowerCase() === "post"
+      && !form.matches("[data-no-lock], [data-scan-form]") && !form.target;
+  }
+
   document.addEventListener("submit", function (event) {
     var form = event.target;
-    if (event.defaultPrevented || !form.matches || !form.matches("form[data-submit-once]")) return;
+    if (event.defaultPrevented || !lockable(form)) return;  // 跳出「確定要刪除？」按取消的不算
     if (form.dataset.submitting) {
       event.preventDefault();
       return;
     }
     form.dataset.submitting = "1";
-    var buttons = form.querySelectorAll("button[type=submit], input[type=submit]");
-    setTimeout(function () { // 等瀏覽器收好要送的資料再鎖，按鈕本身的值才不會漏送
-      buttons.forEach(function (button) {
+    var clicked = event.submitter || form.querySelector(BUTTONS);
+    setTimeout(function () { // 等瀏覽器收好要送的資料再鎖，按鈕本身的值（例如上班／下班）才不會漏送
+      form.querySelectorAll(BUTTONS).forEach(function (button) {
+        if (button.disabled) return;  // 本來就不能按的，回來時也維持不能按
         button.disabled = true;
-        if (button.tagName === "BUTTON" && button.offsetParent !== null) {
-          button.dataset.label = button.innerHTML;
-          button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>儲存中…';
-        }
+        button.dataset.locked = "1";
       });
+      if (clicked && clicked.tagName === "BUTTON") {
+        clicked.dataset.label = clicked.innerHTML;
+        clicked.insertAdjacentHTML("afterbegin", '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>');
+      }
+      document.body.style.cursor = "progress";
     }, 0);
   });
 
   // 按瀏覽器「上一頁」回來時，頁面可能是存起來的舊畫面，把按鈕恢復
   window.addEventListener("pageshow", function () {
-    document.querySelectorAll("form[data-submit-once][data-submitting]").forEach(function (form) {
+    document.body.style.cursor = "";
+    document.querySelectorAll("form[data-submitting]").forEach(function (form) {
       delete form.dataset.submitting;
-      form.querySelectorAll("button[type=submit], input[type=submit]").forEach(function (button) {
+      form.querySelectorAll("[data-locked]").forEach(function (button) {
         button.disabled = false;
-        if (button.dataset.label) button.innerHTML = button.dataset.label;
+        delete button.dataset.locked;
+      });
+      form.querySelectorAll("[data-label]").forEach(function (button) {
+        button.innerHTML = button.dataset.label;
+        delete button.dataset.label;
       });
     });
   });
