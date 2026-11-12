@@ -15,7 +15,7 @@
     <div class="alert alert-danger py-2">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>
   {% endif %}
 
-  <form method="post" novalidate>
+  <form method="post" novalidate data-no-lock>
     {% csrf_token %}
 
     <div class="card mb-4">

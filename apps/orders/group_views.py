@@ -1,7 +1,7 @@
 """後台「統計分組」：用版本管理分組條件，同時只有一個版本生效。"""
 
 from django.contrib import messages
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.functional import cached_property
@@ -201,10 +201,14 @@ class GroupFormView(DraftGroupMixin, FormView):
     def post(self, request, *args, **kwargs):
         form, formset = self.get_form(), self.get_formset()
         if form.is_valid() and formset.is_valid():
-            with transaction.atomic():
-                group = form.save()
-                formset.instance = group
-                formset.save()
+            try:
+                with transaction.atomic():
+                    group = form.save()
+                    formset.instance = group
+                    formset.save()
+            except IntegrityError:  # 同時送出兩次（例如連按儲存）時，另一次剛好先存了同名分組
+                form.add_error("name", f"這個版本已經有叫「{form.cleaned_data['name']}」的分組了。")
+                return self.render_to_response(self.get_context_data(form=form, formset=formset))
             messages.success(request, f"已儲存分組「{group}」。")
             return redirect(self.get_success_url())
         return self.render_to_response(self.get_context_data(form=form, formset=formset))
