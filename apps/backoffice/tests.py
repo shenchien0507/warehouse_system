@@ -84,6 +84,32 @@ class CrudTests(BackofficeTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Station.objects.count(), 1)
 
+    def test_delete_protected_shows_which_data_uses_it(self):
+        level = LevelModel.objects.create(name="見習", rank=5)
+        for no in ["P001", "P002", "P003", "P004"]:
+            Employee.objects.create(employee_no=no, name=f"員工{no}", level=level)
+        response = self.client.post(reverse("accounts_manage:level_delete", args=[level.pk]), follow=True)
+        self.assertContains(response, "人員（職級） 4 筆")
+        self.assertContains(response, " 等")
+        self.assertContains(response, "改成停用")
+        self.assertTrue(LevelModel.objects.filter(pk=level.pk).exists())
+
+    def test_inactive_level_hidden_but_current_value_kept(self):
+        old = LevelModel.objects.create(name="舊職級", rank=5, is_active=False)
+        response = self.client.get(reverse("personnel:employee_create"))
+        choices = list(response.context["form"].fields["level"].queryset)
+        self.assertIn(Level.STAFF, choices)
+        self.assertNotIn(old, choices)
+        employee = Employee.objects.create(employee_no="P009", name="老員工", level=old)
+        response = self.client.get(reverse("personnel:employee_edit", args=[employee.pk]))
+        self.assertIn(old, list(response.context["form"].fields["level"].queryset))
+
+    def test_station_can_be_deactivated(self):
+        station = Station.objects.create(name="出貨")
+        self.client.post(reverse("accounts_manage:station_edit", args=[station.pk]), {"name": "出貨"})
+        station.refresh_from_db()
+        self.assertFalse(station.is_active)
+
     def test_level_page_lists_levels_with_headcount(self):
         Employee.objects.create(employee_no="P001", name="王小明", level=Level.LEADER)
         Employee.objects.create(employee_no="P002", name="李大華", level=Level.LEADER)

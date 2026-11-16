@@ -166,6 +166,9 @@ class StationBatchEntry(models.Model):
         verbose_name_plural = "工位安排明細"
         constraints = [models.UniqueConstraint(fields=["batch", "employee"], name="unique_employee_per_station_batch")]
 
+    def __str__(self):
+        return f"{self.batch.date} {self.employee} {self.station or '未安排'}"
+
 
 def _minutes(value):
     return value.hour * 60 + value.minute
