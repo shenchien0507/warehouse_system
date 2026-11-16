@@ -12,13 +12,13 @@ from .models import RANK_MAX, RANK_MIN, Level, LevelRule, PagePermission, Statio
 class StationForm(forms.ModelForm):
     class Meta:
         model = Station
-        fields = ["name"]
+        fields = ["name", "is_active"]
 
 
 class LevelForm(forms.ModelForm):
     class Meta:
         model = Level
-        fields = ["name", "rank"]
+        fields = ["name", "rank", "is_active"]
         widgets = {"rank": forms.NumberInput(attrs={"min": RANK_MIN, "max": RANK_MAX})}
 
 
